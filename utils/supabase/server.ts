@@ -1,8 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-export async function createClient() { // 1. async 추가
-  const cookieStore = await cookies() // 2. 🚨 반드시 await를 붙여야 합니다!
+export async function createClient() {
+  // 🚨 여기 await가 없어서 빌드가 깨지는 것입니다!
+  const cookieStore = await cookies() 
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,7 +19,7 @@ export async function createClient() { // 1. async 추가
               cookieStore.set(name, value, options)
             )
           } catch {
-            // 서버 컴포넌트 에러 무시
+            // 서버 컴포넌트에서는 쿠키 수정을 무시합니다.
           }
         },
       },
