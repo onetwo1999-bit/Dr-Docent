@@ -2,7 +2,7 @@ import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
 export async function createClient() {
-  // 🚨 여기 await가 없어서 빌드가 깨지는 것입니다!
+  // ✅ Next.js 15+ 에서는 cookies()가 Promise를 반환하므로 await 필수!
   const cookieStore = await cookies() 
 
   return createServerClient(
