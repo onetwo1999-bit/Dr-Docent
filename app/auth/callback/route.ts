@@ -1,37 +1,24 @@
 import { NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+// 1세트에서 만든 파일을 불러옵니다.
+import { createClient } from '@/utils/supabase/server'
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
+  // 로그인 성공 후 메인 페이지로 보냅니다.
+  const next = searchParams.get('next') ?? '/'
 
   if (code) {
-    const cookieStore = await cookies()
-    // 💡 리다이렉트 응답 객체를 먼저 만듭니다.
-    const response = NextResponse.redirect(`${origin}/chat`)
-
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return cookieStore.getAll() },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              // 💡 [핵심] 서버 저장소와 리다이렉트 응답 양쪽에 티켓을 강제로 박아넣습니다.
-              cookieStore.set(name, value, { ...options, path: '/', secure: false })
-              response.cookies.set(name, value, { ...options, path: '/', secure: false })
-            })
-          },
-        },
-      }
-    )
+    const supabase = createClient()
+    // 인증 코드를 세션으로 교환합니다.
+    // 이 과정이 성공해야 브라우저 주머니에 진짜 티켓이 들어옵니다.
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
     
-    // 이 과정에서 auth-token이 생성되어 response에 담깁니다.
-    await supabase.auth.exchangeCodeForSession(code)
-    return response
+    if (!error) {
+      return NextResponse.redirect(`${origin}${next}`)
+    }
   }
 
-  return NextResponse.redirect(`${origin}/?error=no_code`)
+  // 에러 발생 시 메인 페이지로 돌려보냅니다.
+  return NextResponse.redirect(`${origin}`)
 }
