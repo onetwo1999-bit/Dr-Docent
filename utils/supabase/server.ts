@@ -1,9 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-// 🚨 함수 앞에 async를 붙여 비동기로 만듭니다.
 export async function createClient() {
-  // 🚨 cookies() 앞에 await를 추가합니다.
+  // 🚨 여기 await가 없으면 Vercel에서 에러가 납니다.
   const cookieStore = await cookies()
 
   return createServerClient(
@@ -20,7 +19,7 @@ export async function createClient() {
               cookieStore.set(name, value, options)
             )
           } catch {
-            // 서버 컴포넌트 에러 무시
+            // 서버 컴포넌트 처리
           }
         },
       },
