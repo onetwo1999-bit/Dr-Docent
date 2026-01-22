@@ -1,8 +1,18 @@
+import { createClient } from '@/utils/supabase/server'
+
 export async function GET(request: Request) {
-    // ... 
-    if (code) {
-      const supabase = await createClient() // 🚨 여기서도 await를 꼭 붙이세요!
-      const { error } = await supabase.auth.exchangeCodeForSession(code)
-      // ...
+  const { searchParams } = new URL(request.url)
+  const code = searchParams.get('code')
+
+  if (code) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (!error) {
+      return Response.redirect(new URL('/', request.url))
     }
   }
+
+  // 에러 발생 시 에러 페이지로 리디렉션
+  return Response.redirect(new URL('/auth/error', request.url))
+}
