@@ -1,42 +1,43 @@
-import { createClient } from '@/utils/supabase/server'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 
 export async function GET(request: Request) {
-  const requestUrl = new URL(request.url)
-  const code = requestUrl.searchParams.get('code')
-  const error = requestUrl.searchParams.get('error')
-  const errorDescription = requestUrl.searchParams.get('error_description')
-  const next = requestUrl.searchParams.get('next') ?? '/'
-
-  // OAuth 에러 체크 (사용자가 로그인 취소 등)
-  if (error) {
-    console.error('OAuth error:', error, errorDescription)
-    return NextResponse.redirect(
-      new URL(`/auth/error?error=${encodeURIComponent(error)}&message=${encodeURIComponent(errorDescription || '')}`, requestUrl.origin)
-    )
-  }
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/'
 
   if (code) {
-    const supabase = await createClient()
-    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+    const cookieStore = await cookies()
+    // 1. 리다이렉트 응답 객체를 먼저 만듭니다.
+    const response = NextResponse.redirect(`${origin}${next}`)
 
-    if (exchangeError) {
-      console.error('Exchange code error:', exchangeError.message)
-      return NextResponse.redirect(
-        new URL(`/auth/error?error=exchange_failed&message=${encodeURIComponent(exchangeError.message)}`, requestUrl.origin)
-      )
-    }
+    // 2. 수파베이스 클라이언트를 응답 객체와 연결합니다.
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return cookieStore.getAll() },
+          setAll(cookiesToSet) {
+            // 🚨 핵심: 발행된 티켓을 리다이렉트 응답에 직접 심습니다.
+            cookiesToSet.forEach(({ name, value, options }) =>
+              response.cookies.set(name, value, options)
+            )
+          },
+        },
+      }
+    )
 
-    if (data.session) {
-      console.log('Login successful, redirecting to:', next)
-      // 성공 시 지정된 경로 또는 루트('/')로 리다이렉트
-      return NextResponse.redirect(new URL(next, requestUrl.origin))
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (!error && data.session) {
+      console.log('✅ [성공] 티켓 발행 완료, 메인으로 안전하게 전달합니다.')
+      return response // 티켓이 심어진 응답을 반환합니다.
     }
+    
+    console.error('❌ [실패] 세션 교환 에러:', error?.message)
   }
 
-  // code가 없는 경우
-  console.error('No code provided in callback')
-  return NextResponse.redirect(
-    new URL('/auth/error?error=no_code&message=인증 코드가 없습니다', requestUrl.origin)
-  )
+  return NextResponse.redirect(`${origin}`)
 }
