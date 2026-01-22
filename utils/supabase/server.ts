@@ -1,8 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-export async function createClient() {
-  const cookieStore = await cookies()
+export async function createClient() { // 1. async 추가
+  const cookieStore = await cookies() // 2. 🚨 반드시 await를 붙여야 합니다!
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,8 +18,7 @@ export async function createClient() {
               cookieStore.set(name, value, options)
             )
           } catch {
-            // setAll이 Server Component에서 호출되면 무시됩니다.
-            // middleware에서 세션을 갱신하는 경우에 해당합니다.
+            // 서버 컴포넌트 에러 무시
           }
         },
       },
