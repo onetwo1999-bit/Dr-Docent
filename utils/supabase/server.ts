@@ -1,28 +1,4 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-
-export async function createClient() {
-  // 🚨 여기 await가 없으면 Vercel에서 에러가 납니다.
-  const cookieStore = await cookies()
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {
-            // 서버 컴포넌트 처리
-          }
-        },
-      },
-    }
-  )
-}
+export async function createClient() { // async 확인
+    const cookieStore = await cookies() // 🚨 반드시 await를 붙여야 에러가 안 납니다!
+    // ... 나머지 코드
+  }
