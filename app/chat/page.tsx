@@ -1,17 +1,21 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
-// ... 기존 임포트
+import ChatInterface from './ChatInterface'
 
-export default async function Home() {
+export default async function ChatPage() {
   const supabase = await createClient()
   
-  // 🚨 이 부분이 있어야 쿠키를 확인하고 대시보드로 보냅니다!
+  // 🚨 로그인 체크: 로그인 안 했으면 메인으로 리다이렉트
   const { data: { user } } = await supabase.auth.getUser()
-  if (user) {
-    redirect('/dashboard')
+  if (!user) {
+    redirect('/')
   }
 
-  return (
-    // ... 기존 랜딩 페이지 JSX 코드
-  )
+  // 유저 이름 추출
+  const userName = user.user_metadata?.full_name 
+    || user.user_metadata?.name 
+    || user.email 
+    || '사용자'
+
+  return <ChatInterface userName={userName} />
 }
