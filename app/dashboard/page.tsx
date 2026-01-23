@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
 import LogoutButton from '../components/LogoutButton'
+import SimpleLogoutButton from '../components/SimpleLogoutButton'
 import Link from 'next/link'
 import { MessageSquare } from 'lucide-react'
 
@@ -127,8 +128,11 @@ export default async function DashboardPage() {
           AI 건강 상담 시작하기
         </Link>
 
-        {/* 로그아웃 버튼 */}
-        <LogoutButton />
+        {/* 로그아웃 버튼 (테스트용 - 두 가지) */}
+        <div className="space-y-2">
+          <LogoutButton />
+          <SimpleLogoutButton />
+        </div>
       </div>
     </div>
   )
