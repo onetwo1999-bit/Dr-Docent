@@ -1,52 +1,52 @@
-'use client'
+import { redirect } from 'next/navigation'
+import { createClient } from '@/utils/supabase/server'
+import { cookies } from 'next/headers'
+
+// Server Action - JavaScript 없이도 작동
+async function handleLogout() {
+  'use server'
+  
+  console.log('🔄 [Server Action] 로그아웃 시작')
+  
+  try {
+    // 1. Supabase 세션 종료
+    const supabase = await createClient()
+    await supabase.auth.signOut()
+    console.log('✅ [Server Action] Supabase 세션 종료')
+  } catch (error) {
+    console.error('❌ [Server Action] Supabase 에러:', error)
+  }
+  
+  // 2. 모든 sb- 쿠키 삭제
+  try {
+    const cookieStore = await cookies()
+    const allCookies = cookieStore.getAll()
+    
+    for (const cookie of allCookies) {
+      if (cookie.name.startsWith('sb-')) {
+        cookieStore.delete(cookie.name)
+        console.log(`🗑️ [Server Action] 쿠키 삭제: ${cookie.name}`)
+      }
+    }
+  } catch (error) {
+    console.error('❌ [Server Action] 쿠키 삭제 에러:', error)
+  }
+  
+  console.log('🏠 [Server Action] 메인으로 리다이렉트')
+  
+  // 3. 메인으로 리다이렉트
+  redirect('/')
+}
 
 export default function LogoutSection() {
-  const handleLogout = () => {
-    // 알림으로 클릭 확인
-    alert('로그아웃 버튼이 클릭되었습니다!')
-    
-    console.log('🔴 로그아웃 시작!')
-    
-    // 쿠키 삭제
-    const cookies = document.cookie.split(';')
-    cookies.forEach(cookie => {
-      const name = cookie.split('=')[0].trim()
-      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
-    })
-    
-    console.log('✅ 쿠키 삭제 완료')
-    
-    // 메인으로 이동
-    window.location.href = '/'
-  }
-
   return (
-    <div className="space-y-2">
-      {/* 메인 로그아웃 버튼 */}
+    <form action={handleLogout}>
       <button
-        onClick={handleLogout}
+        type="submit"
         className="w-full bg-white/20 hover:bg-white/30 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
       >
         🚪 로그아웃
       </button>
-      
-      {/* 테스트용 a 태그 (버튼이 안 될 경우) */}
-      <a
-        href="/"
-        onClick={(e) => {
-          e.preventDefault()
-          alert('a 태그 클릭됨!')
-          // 쿠키 삭제
-          document.cookie.split(';').forEach(c => {
-            const name = c.split('=')[0].trim()
-            document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
-          })
-          window.location.href = '/'
-        }}
-        className="block w-full bg-red-500/50 hover:bg-red-500/70 text-white py-3 rounded-xl font-semibold text-center cursor-pointer"
-      >
-        🔴 로그아웃 (테스트)
-      </a>
-    </div>
+    </form>
   )
 }
