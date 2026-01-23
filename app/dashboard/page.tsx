@@ -1,9 +1,8 @@
 import { createClient } from '@/utils/supabase/server'
 import { redirect } from 'next/navigation'
-import LogoutButton from '../components/LogoutButton'
-import SimpleLogoutButton from '../components/SimpleLogoutButton'
 import Link from 'next/link'
 import { MessageSquare } from 'lucide-react'
+import LogoutSection from '../components/LogoutSection'
 
 // 🔒 HTTP → HTTPS 변환 함수
 function toSecureUrl(url: string | null | undefined): string | null {
@@ -20,14 +19,14 @@ export default async function DashboardPage() {
     redirect('/')
   }
 
-  // 📧 이메일 추출 (여러 소스에서 확인)
+  // 📧 이메일 추출
   const email = 
     user.email ||
     user.user_metadata?.email ||
     user.identities?.[0]?.identity_data?.email ||
     null
 
-  // 👤 이름 추출 (여러 소스에서 확인)
+  // 👤 이름 추출
   const displayName = 
     user.user_metadata?.full_name ||
     user.user_metadata?.name ||
@@ -36,7 +35,7 @@ export default async function DashboardPage() {
     email?.split('@')[0] ||
     '사용자'
 
-  // 🖼️ 프로필 이미지 추출 + HTTPS 강제 변환
+  // 🖼️ 프로필 이미지
   const rawAvatarUrl = 
     user.user_metadata?.avatar_url ||
     user.user_metadata?.picture ||
@@ -128,11 +127,8 @@ export default async function DashboardPage() {
           AI 건강 상담 시작하기
         </Link>
 
-        {/* 로그아웃 버튼 (테스트용 - 두 가지) */}
-        <div className="space-y-2">
-          <LogoutButton />
-          <SimpleLogoutButton />
-        </div>
+        {/* 로그아웃 섹션 (클라이언트 컴포넌트) */}
+        <LogoutSection />
       </div>
     </div>
   )
