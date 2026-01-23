@@ -1,7 +1,8 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+// Next.js 16: proxy 함수로 변경
+export async function proxy(request: NextRequest) {
   // 1. 기본 응답 객체 생성
   let response = NextResponse.next({ request })
 
@@ -11,7 +12,9 @@ export async function middleware(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return request.cookies.getAll() },
+        getAll() { 
+          return request.cookies.getAll() 
+        },
         setAll(cookiesToSet) {
           // 브라우저 쿠키 업데이트
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
