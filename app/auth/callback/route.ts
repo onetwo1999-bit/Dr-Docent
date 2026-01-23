@@ -9,10 +9,10 @@ export async function GET(request: Request) {
 
   if (code) {
     const cookieStore = await cookies()
-    // 1. 리다이렉트 응답 객체를 먼저 만듭니다.
+    // 1. 리다이렉트 응답 객체를 먼저 생성합니다.
     const response = NextResponse.redirect(`${origin}${next}`)
 
-    // 2. 수파베이스 클라이언트를 응답 객체와 연결합니다.
+    // 2. 응답 객체에 쿠키를 직접 심어주는 클라이언트를 생성합니다.
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -20,7 +20,7 @@ export async function GET(request: Request) {
         cookies: {
           getAll() { return cookieStore.getAll() },
           setAll(cookiesToSet) {
-            // 🚨 핵심: 발행된 티켓을 리다이렉트 응답에 직접 심습니다.
+            // 🚨 브라우저의 차단을 뚫기 위해 응답 헤더에 직접 쿠키를 구워 넣습니다.
             cookiesToSet.forEach(({ name, value, options }) =>
               response.cookies.set(name, value, options)
             )
@@ -29,14 +29,12 @@ export async function GET(request: Request) {
       }
     )
 
-    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
-
-    if (!error && data.session) {
-      console.log('✅ [성공] 티켓 발행 완료, 메인으로 안전하게 전달합니다.')
-      return response // 티켓이 심어진 응답을 반환합니다.
-    }
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
     
-    console.error('❌ [실패] 세션 교환 에러:', error?.message)
+    if (!error) {
+      console.log('✅ 쿠키 생성 성공! 이제 메인으로 이동합니다.')
+      return response // 🚨 쿠키가 포함된 응답을 반환합니다.
+    }
   }
 
   return NextResponse.redirect(`${origin}`)
