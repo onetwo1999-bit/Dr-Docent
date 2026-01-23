@@ -2,17 +2,27 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-// 🔒 퍼스트 파티 쿠키 옵션 (Chrome Bounce Tracking 우회)
-const COOKIE_OPTIONS = {
-  sameSite: 'lax' as const,
-  secure: true,
-  httpOnly: true,
-  path: '/',
+// 🌐 배포 도메인 설정
+const PRODUCTION_DOMAIN = 'dr-docent.vercel.app'
+
+// 🔒 퍼스트 파티 쿠키 옵션 생성 함수
+function getCookieOptions() {
+  const isProduction = process.env.NODE_ENV === 'production'
+  
+  return {
+    sameSite: 'lax' as const,
+    secure: true,
+    httpOnly: true,
+    path: '/',
+    // ⚠️ 로컬에서는 domain 생략, 프로덕션에서만 명시적 설정
+    ...(isProduction && { domain: PRODUCTION_DOMAIN }),
+  }
 }
 
 // ✅ Next.js 16: proxy.ts 파일에서는 함수명도 'proxy'여야 합니다!
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })
+  const cookieOptions = getCookieOptions()
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -31,11 +41,11 @@ export async function proxy(request: NextRequest) {
           // 새 응답 객체 생성
           response = NextResponse.next({ request })
           
-          // 🔑 퍼스트 파티 쿠키 옵션으로 응답에 쿠키 설정
+          // 🔑 퍼스트 파티 쿠키 옵션 강제 적용
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, {
-              ...COOKIE_OPTIONS,
-              maxAge: options?.maxAge, // 세션 만료 시간 유지
+              ...cookieOptions,
+              maxAge: options?.maxAge,
             })
           )
         },
