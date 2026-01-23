@@ -41,23 +41,51 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     setIsLoading(true)
 
     try {
+      console.log('🔄 [Chat] API 요청 시작:', userMessage)
+      
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage }),
       })
 
-      if (!response.ok) throw new Error('API 요청 실패')
+      console.log('📡 [Chat] 응답 상태:', response.status)
+
+      // 에러 상태 코드별 처리
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('❌ [Chat] API 에러:', response.status, errorData)
+        
+        let errorMessage = '일시적인 오류가 발생했습니다.'
+        
+        if (response.status === 401) {
+          errorMessage = '로그인이 만료되었습니다. 다시 로그인해주세요.'
+        } else if (response.status === 400) {
+          errorMessage = '메시지를 입력해주세요.'
+        } else if (response.status === 500) {
+          errorMessage = '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+        }
+        
+        throw new Error(errorMessage)
+      }
 
       const data = await response.json()
+      console.log('✅ [Chat] 응답 수신 완료')
       
       // AI 응답 추가
-      setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
+      if (data.reply) {
+        setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
+      } else {
+        throw new Error('응답 데이터가 없습니다.')
+      }
+      
     } catch (error) {
-      console.error('채팅 에러:', error)
+      console.error('❌ [Chat] 에러:', error)
+      const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
+      
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: '죄송합니다. 일시적인 오류가 발생했습니다. 다시 시도해주세요.' 
+        content: `죄송합니다. ${errorMessage}\n다시 시도해주세요. 🙏` 
       }])
     } finally {
       setIsLoading(false)
