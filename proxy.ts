@@ -1,9 +1,9 @@
-// my-app/proxy.ts (위치는 루트 폴더)
-
+// 파일 위치: my-app/proxy.ts
 import { createServerClient } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server' // 🚨 server에서 가져오기
+import { NextResponse, type NextRequest } from 'next/server' // 'next/server' 확인
 
-export async function middleware(request: NextRequest) { // 🚨 반드시 middleware여야 작동합니다!
+// 🚨 함수 이름을 반드시 'middleware'로 적어야 넥스트 엔진이 인식합니다.
+export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request })
 
   const supabase = createServerClient(
@@ -23,13 +23,13 @@ export async function middleware(request: NextRequest) { // 🚨 반드시 middl
     }
   )
 
-  // 🚨 이 부분이 실행되어야 브라우저 쿠키를 세션으로 전환합니다.
+  // 세션 갱신을 위해 필수인 부분
   await supabase.auth.getUser() 
 
   return response
 }
 
 export const config = {
-  // 모든 경로에서 미들웨어가 작동하도록 설정 (이미지/파비콘 제외)
+  // 정적 파일과 이미지를 제외한 모든 경로에서 실행
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }
