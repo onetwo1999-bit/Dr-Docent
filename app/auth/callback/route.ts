@@ -9,10 +9,8 @@ export async function GET(request: Request) {
 
   if (code) {
     const cookieStore = await cookies()
-    // 1. 리다이렉트 응답 객체를 먼저 생성합니다.
     const response = NextResponse.redirect(`${origin}${next}`)
 
-    // 2. 응답 객체에 쿠키를 직접 심어주는 클라이언트를 생성합니다.
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -20,22 +18,32 @@ export async function GET(request: Request) {
         cookies: {
           getAll() { return cookieStore.getAll() },
           setAll(cookiesToSet) {
-            // 🚨 브라우저의 차단을 뚫기 위해 응답 헤더에 직접 쿠키를 구워 넣습니다.
-            cookiesToSet.forEach(({ name, value, options }) =>
-              response.cookies.set(name, value, options)
-            )
+            // 🔒 Chrome Bounce Tracking 우회를 위한 쿠키 설정 강화
+            cookiesToSet.forEach(({ name, value, options }) => {
+              response.cookies.set(name, value, {
+                ...options,
+                // Chrome의 third-party cookie 차단 우회
+                sameSite: 'lax',        // 'none' 대신 'lax' 사용 (더 안전)
+                secure: true,            // HTTPS 필수
+                httpOnly: true,          // XSS 방지
+                path: '/',               // 전체 사이트에서 접근 가능
+              })
+            })
           },
         },
       }
     )
 
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code)
     
-    if (!error) {
-      console.log('✅ 쿠키 생성 성공! 이제 메인으로 이동합니다.')
-      return response // 🚨 쿠키가 포함된 응답을 반환합니다.
+    if (!error && data.session) {
+      console.log('✅ 세션 생성 성공! 사용자:', data.session.user.email)
+      return response
     }
+    
+    console.error('❌ 세션 교환 실패:', error?.message)
   }
 
+  // 실패 시 홈으로 리다이렉트
   return NextResponse.redirect(`${origin}`)
 }

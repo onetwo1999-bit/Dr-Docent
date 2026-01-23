@@ -15,21 +15,27 @@ export async function proxy(request: NextRequest) {
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
           response = NextResponse.next({ request })
+          // 🔒 Chrome Bounce Tracking 우회를 위한 쿠키 설정 강화
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, {
+              ...options,
+              sameSite: 'lax',
+              secure: true,
+              httpOnly: true,
+              path: '/',
+            })
           )
         },
       },
     }
   )
 
-  // 로그인이 튕기지 않게 세션을 강제로 갱신하는 핵심 로직입니다.
+  // 세션 갱신 (로그인 유지에 필수)
   await supabase.auth.getUser()
 
   return response
 }
 
 export const config = {
-  // 인증이 필요한 모든 경로에서 이 로직이 돌아가도록 설정합니다.
   matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }
