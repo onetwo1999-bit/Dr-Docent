@@ -2,13 +2,22 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
 export async function POST(req: Request) {
+  console.log('🔄 [Chat API] 요청 수신')
+  
   try {
-    console.log('🔄 [Chat API] 요청 수신')
-    
     // 1️⃣ 요청 본문 파싱
-    const body = await req.json()
-    const { message } = body
+    let body
+    try {
+      body = await req.json()
+    } catch (parseError) {
+      console.error('❌ [Chat API] JSON 파싱 실패:', parseError)
+      return NextResponse.json(
+        { error: 'JSON 형식이 올바르지 않습니다' }, 
+        { status: 400 }
+      )
+    }
     
+    const { message } = body
     console.log('📩 [Chat API] 메시지:', message)
 
     if (!message || typeof message !== 'string') {
@@ -19,23 +28,35 @@ export async function POST(req: Request) {
       )
     }
 
-    // 2️⃣ 세션 확인 (선택적 - 인증된 사용자만 허용하려면)
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    
-    if (!user) {
-      console.error('❌ [Chat API] 인증되지 않은 사용자')
-      return NextResponse.json(
-        { error: '로그인이 필요합니다' }, 
-        { status: 401 }
-      )
+    // 2️⃣ 세션 확인
+    let user = null
+    try {
+      const supabase = await createClient()
+      const { data, error } = await supabase.auth.getUser()
+      
+      if (error) {
+        console.error('❌ [Chat API] 세션 조회 에러:', error.message)
+      } else {
+        user = data.user
+      }
+    } catch (authError) {
+      console.error('❌ [Chat API] 인증 처리 에러:', authError)
+      // 인증 에러가 발생해도 계속 진행 (비로그인 사용자도 테스트 가능)
     }
     
-    console.log('👤 [Chat API] 사용자:', user.email)
-
-    // 3️⃣ AI 응답 생성 (테스트용 - 나중에 OpenAI로 교체)
-    const userName = user.user_metadata?.name || user.email?.split('@')[0] || '고객'
+    // 로그인 필수로 하려면 아래 주석 해제
+    // if (!user) {
+    //   console.error('❌ [Chat API] 인증되지 않은 사용자')
+    //   return NextResponse.json(
+    //     { error: '로그인이 필요합니다' }, 
+    //     { status: 401 }
+    //   )
+    // }
     
+    const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || '고객'
+    console.log('👤 [Chat API] 사용자:', userName)
+
+    // 3️⃣ AI 응답 생성 (테스트용)
     const reply = generateTestResponse(message, userName)
     
     console.log('✅ [Chat API] 응답 생성 완료')
@@ -44,8 +65,19 @@ export async function POST(req: Request) {
     
   } catch (error) {
     console.error('❌ [Chat API] 서버 에러:', error)
+    
+    // 에러 상세 정보 로깅
+    if (error instanceof Error) {
+      console.error('   - 에러 이름:', error.name)
+      console.error('   - 에러 메시지:', error.message)
+      console.error('   - 스택:', error.stack)
+    }
+    
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' }, 
+      { 
+        error: '서버 오류가 발생했습니다.',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      }, 
       { status: 500 }
     )
   }
@@ -71,5 +103,5 @@ function generateTestResponse(message: string, userName: string): string {
     return `안녕하세요, ${userName}님! 👋\n\n오늘 건강 상태는 어떠신가요? 궁금한 증상이나 건강 관련 질문이 있으시면 편하게 말씀해주세요!`
   }
   
-  return `${userName}님, 말씀하신 "${message}"에 대해 답변드릴게요.\n\n건강 관련 궁금한 점이 있으시면 구체적인 증상을 말씀해주시면 더 정확한 정보를 드릴 수 있어요. 예: "두통이 있어요", "피곤해요" 등`
+  return `${userName}님, 말씀하신 "${message}"에 대해 답변드릴게요.\n\n건강 관련 궁금한 점이 있으시면 구체적인 증상을 말씀해주시면 더 정확한 정보를 드릴 수 있어요.\n\n예시 질문:\n• "두통이 있어요"\n• "요즘 피곤해요"\n• "감기에 걸린 것 같아요"`
 }

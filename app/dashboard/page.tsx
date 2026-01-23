@@ -4,6 +4,12 @@ import LogoutButton from '../components/LogoutButton'
 import Link from 'next/link'
 import { MessageSquare } from 'lucide-react'
 
+// 🔒 HTTP → HTTPS 변환 함수
+function toSecureUrl(url: string | null | undefined): string | null {
+  if (!url) return null
+  return url.replace(/^http:\/\//i, 'https://')
+}
+
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -15,28 +21,30 @@ export default async function DashboardPage() {
 
   // 📧 이메일 추출 (여러 소스에서 확인)
   const email = 
-    user.email ||                                           // 1. 기본 이메일
-    user.user_metadata?.email ||                            // 2. OAuth 메타데이터
-    user.identities?.[0]?.identity_data?.email ||           // 3. 카카오 identity
+    user.email ||
+    user.user_metadata?.email ||
+    user.identities?.[0]?.identity_data?.email ||
     null
 
   // 👤 이름 추출 (여러 소스에서 확인)
   const displayName = 
-    user.user_metadata?.full_name ||                        // 카카오 전체 이름
-    user.user_metadata?.name ||                             // 카카오 닉네임
-    user.user_metadata?.preferred_username ||               // 선호 사용자명
-    user.identities?.[0]?.identity_data?.nickname ||        // 카카오 닉네임 (identity)
-    email?.split('@')[0] ||                                 // 이메일 앞부분
+    user.user_metadata?.full_name ||
+    user.user_metadata?.name ||
+    user.user_metadata?.preferred_username ||
+    user.identities?.[0]?.identity_data?.nickname ||
+    email?.split('@')[0] ||
     '사용자'
 
-  // 🖼️ 프로필 이미지 추출
-  const avatarUrl = 
+  // 🖼️ 프로필 이미지 추출 + HTTPS 강제 변환
+  const rawAvatarUrl = 
     user.user_metadata?.avatar_url ||
     user.user_metadata?.picture ||
     user.identities?.[0]?.identity_data?.avatar_url ||
     null
+  
+  const avatarUrl = toSecureUrl(rawAvatarUrl)
 
-  // 🔍 카카오 계정 정보 (디버깅용)
+  // 🔍 카카오 계정 정보
   const kakaoIdentity = user.identities?.find(i => i.provider === 'kakao')
   const kakaoEmail = kakaoIdentity?.identity_data?.email
   const kakaoNickname = kakaoIdentity?.identity_data?.nickname
@@ -51,7 +59,8 @@ export default async function DashboardPage() {
             <img 
               src={avatarUrl} 
               alt="프로필" 
-              className="w-20 h-20 rounded-full mx-auto border-2 border-[#40E0D0]"
+              className="w-20 h-20 rounded-full mx-auto border-2 border-[#40E0D0] object-cover"
+              referrerPolicy="no-referrer"
             />
           </div>
         )}
