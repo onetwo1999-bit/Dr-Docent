@@ -62,8 +62,8 @@ export async function POST(req: Request) {
     console.log('👤 [Profile API] 인증된 사용자:', user?.id || '없음')
     console.log('📤 [Profile API] 요청된 user_id:', user_id)
 
-    // 4. 프로필 데이터 준비
-    const profileData = {
+    // 4. 프로필 데이터 준비 (테이블에 있는 컬럼만 포함)
+    const profileData: Record<string, unknown> = {
       id: user_id,
       age: age ? parseInt(age) : null,
       gender: gender || null,
@@ -71,7 +71,6 @@ export async function POST(req: Request) {
       weight: weight ? parseFloat(weight) : null,
       conditions: conditions || null,
       medications: medications || null,
-      updated_at: new Date().toISOString()
     }
 
     console.log('💾 [Profile API] 저장할 데이터:', JSON.stringify(profileData, null, 2))
