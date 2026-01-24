@@ -38,6 +38,8 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
     setIsSubmitting(true)
     
     try {
+      console.log('📤 프로필 저장 시도:', { userId, data })
+      
       const response = await fetch('/api/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -52,14 +54,25 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
         })
       })
 
+      const result = await response.json()
+      console.log('📥 서버 응답:', result)
+
       if (response.ok) {
+        console.log('✅ 프로필 저장 성공!')
         onComplete()
       } else {
-        alert('프로필 저장 중 오류가 발생했습니다.')
+        console.error('❌ 프로필 저장 실패:', result)
+        
+        // 에러 메시지 상세히 표시
+        if (result.error?.includes('RLS') || result.error?.includes('policy')) {
+          alert('권한 오류: Supabase에서 profiles 테이블의 RLS 정책을 확인해주세요.\n\n' + result.error)
+        } else {
+          alert(`프로필 저장 실패: ${result.error || '알 수 없는 오류'}`)
+        }
       }
     } catch (error) {
       console.error('프로필 저장 에러:', error)
-      alert('프로필 저장 중 오류가 발생했습니다.')
+      alert('네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.')
     } finally {
       setIsSubmitting(false)
     }
