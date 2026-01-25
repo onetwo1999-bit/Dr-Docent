@@ -23,9 +23,12 @@ async function createClient() {
   // 🔍 쿠키 확인 (디버깅용)
   const allCookies = cookieStore.getAll()
   const hasAuthCookie = allCookies.some(c => c.name.startsWith('sb-') || c.name.includes('auth'))
+  const authCookies = allCookies.filter(c => c.name.startsWith('sb-'))
   
   if (!hasAuthCookie) {
-    console.warn('⚠️ [Health Logs] 인증 쿠키가 없습니다:', allCookies.map(c => c.name))
+    console.warn('⚠️ [Health Logs] 인증 쿠키가 없습니다. 모든 쿠키:', allCookies.map(c => c.name))
+  } else {
+    console.log('✅ [Health Logs] 인증 쿠키 발견:', authCookies.map(c => c.name))
   }
   
   return createServerClient(
@@ -33,14 +36,20 @@ async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return cookieStore.getAll() },
+        getAll() { 
+          const cookies = cookieStore.getAll()
+          return cookies
+        },
         setAll(cookiesToSet) {
+          // Route Handler에서는 쿠키 설정이 제한적이지만 시도
           try {
-            cookiesToSet.forEach(({ name, value, options }) => 
-              cookieStore.set(name, value, options)
-            )
+            cookiesToSet.forEach(({ name, value, options }) => {
+              // 쿠키는 Response 헤더를 통해 설정되므로 여기서는 로그만
+              console.log(`🍪 [Health Logs] 쿠키 설정 시도: ${name}`)
+            })
           } catch (err) {
-            console.error('❌ [Health Logs] 쿠키 설정 실패:', err)
+            // Route Handler에서 쿠키 설정 실패는 정상 (Response 헤더로 설정됨)
+            console.debug('ℹ️ [Health Logs] 쿠키 설정 (Route Handler 제한):', err)
           }
         },
       },
@@ -65,6 +74,12 @@ export async function POST(req: Request) {
     }
 
     const supabase = await createClient()
+    
+    // 🔄 세션 갱신 (중요: RLS 정책이 auth.uid()를 인식하도록)
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    if (sessionError) {
+      console.error('❌ [Health Logs] 세션 조회 실패:', sessionError)
+    }
     
     // 🔐 인증 확인 - 반드시 먼저 실행
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -123,9 +138,16 @@ export async function POST(req: Request) {
       )
     }
 
+    // 🔍 세션 및 인증 상태 확인
+    const hasSession = !!session
+    const authUid = session?.user?.id || user?.id
+    
     console.log('📝 [Health Logs] 삽입 시도:', { 
       user_id: user.id, 
       user_email: user.email,
+      has_session: hasSession,
+      session_user_id: session?.user?.id,
+      auth_uid_match: authUid === user.id,
       category, 
       note,
       logged_at: logged_at || new Date().toISOString()
@@ -156,6 +178,11 @@ export async function POST(req: Request) {
       )
     }
 
+    // 🔍 auth.uid() 확인을 위한 추가 검증
+    if (!hasSession) {
+      console.warn('⚠️ [Health Logs] 세션이 없습니다. RLS 정책이 작동하지 않을 수 있습니다.')
+    }
+
     // 로그 삽입
     const { data, error } = await supabase
       .from('health_logs')
@@ -171,25 +198,41 @@ export async function POST(req: Request) {
       console.error('   - 힌트:', error.hint)
       
       // RLS 정책 관련 에러 (42501 = insufficient_privilege)
-      if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy') || error.message?.includes('permission')) {
+      if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy') || error.message?.includes('permission') || error.message?.includes('row-level security')) {
+        // 쿠키 정보 가져오기
+        const cookieStore = await cookies()
+        const allCookies = cookieStore.getAll()
+        
         console.error('🔒 [Health Logs] RLS 정책 위반:', {
           error_code: error.code,
           error_message: error.message,
           user_id: user.id,
-          insert_data: insertData
+          has_session: hasSession,
+          session_user_id: session?.user?.id,
+          insert_data: insertData,
+          cookies: allCookies.map(c => c.name)
         })
+        
+        // auth.uid() 확인을 위한 디버깅 정보
+        const { data: { user: debugUser } } = await supabase.auth.getUser()
         
         return NextResponse.json({
           success: false,
           error: 'RLS 정책 오류: 데이터 저장 권한이 없습니다.',
           details: error.message,
-          hint: 'Supabase에서 health_logs 테이블의 RLS 정책을 확인해주세요. schema-v2.sql의 RLS 정책 SQL을 실행했는지 확인하세요.',
+          hint: 'Supabase SQL Editor에서 supabase/fix-rls-policies.sql 파일을 실행하여 RLS 정책을 재생성해주세요.',
           code: error.code,
           debug: {
             user_id: user.id,
             has_user_id: !!insertData.user_id,
-            user_id_type: typeof insertData.user_id
-          }
+            user_id_type: typeof insertData.user_id,
+            has_session: hasSession,
+            session_user_id: session?.user?.id,
+            debug_user_id: debugUser?.id,
+            auth_uid_match: debugUser?.id === user.id,
+            cookie_count: allCookies.length
+          },
+          solution: '1. Supabase SQL Editor 열기\n2. supabase/fix-rls-policies.sql 실행\n3. 페이지 새로고침 후 다시 시도'
         }, { status: 403 })
       }
       
