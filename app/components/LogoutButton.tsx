@@ -78,16 +78,16 @@ export default function LogoutButton() {
       type="button"
       onClick={handleLogout}
       disabled={isLoading}
-      className="w-full bg-white/20 hover:bg-white/30 disabled:bg-white/10 disabled:cursor-not-allowed text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
+      className="w-full bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:cursor-not-allowed text-gray-500 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors border border-gray-200"
     >
       {isLoading ? (
         <>
-          <Loader2 className="w-5 h-5 animate-spin" />
+          <Loader2 className="w-5 h-5 animate-spin text-[#2DD4BF]" />
           로그아웃 중...
         </>
       ) : (
         <>
-          <LogOut className="w-5 h-5" />
+          <LogOut className="w-5 h-5 text-[#2DD4BF]" />
           로그아웃
         </>
       )}

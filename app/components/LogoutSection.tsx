@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 import { cookies } from 'next/headers'
+import { LogOut } from 'lucide-react'
 
 // Server Action - JavaScript 없이도 작동
 async function handleLogout() {
@@ -43,9 +44,10 @@ export default function LogoutSection() {
     <form action={handleLogout}>
       <button
         type="submit"
-        className="w-full bg-white/20 hover:bg-white/30 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
+        className="w-full bg-white hover:bg-gray-50 text-gray-500 py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors border border-gray-200"
       >
-        🚪 로그아웃
+        <LogOut className="w-5 h-5 text-[#2DD4BF]" />
+        로그아웃
       </button>
     </form>
   )

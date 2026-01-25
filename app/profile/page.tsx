@@ -24,7 +24,7 @@ export default async function ProfilePage() {
     '사용자'
 
   return (
-    <div className="min-h-screen bg-[#008080] text-white flex flex-col items-center justify-center p-6">
+    <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6">
       <ProfileForm 
         userId={user.id} 
         userName={displayName} 

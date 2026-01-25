@@ -184,10 +184,10 @@ function calculateHealthScores(profile: Profile): {
 // ========================
 function getScoreColor(score: number | null | undefined): string {
   const safeScore = score ?? 0
-  if (safeScore >= 80) return '#4ade80' // green
-  if (safeScore >= 60) return '#facc15' // yellow
-  if (safeScore >= 40) return '#fb923c' // orange
-  return '#f87171' // red
+  if (safeScore >= 80) return '#22c55e' // green-500
+  if (safeScore >= 60) return '#eab308' // yellow-500
+  if (safeScore >= 40) return '#f97316' // orange-500
+  return '#ef4444' // red-500
 }
 
 function getScoreEmoji(score: number | null | undefined): string {
@@ -225,7 +225,7 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
       <div className="relative h-[280px] flex items-center justify-center">
         <div className="text-center">
           <div className="animate-pulse text-4xl mb-2">📊</div>
-          <div className="text-white/60 text-sm">차트 로딩 중...</div>
+          <div className="text-gray-400 text-sm">차트 로딩 중...</div>
         </div>
       </div>
     )
@@ -237,33 +237,34 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
       <ResponsiveContainer width="100%" height={280}>
         <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data}>
           <PolarGrid 
-            stroke="rgba(255,255,255,0.2)" 
+            stroke="#e5e7eb" 
             gridType="polygon"
           />
           <PolarAngleAxis 
             dataKey="subject" 
-            tick={{ fill: 'rgba(255,255,255,0.7)', fontSize: 12 }}
+            tick={{ fill: '#6b7280', fontSize: 12 }}
           />
           <PolarRadiusAxis 
             angle={90} 
             domain={[0, 100]} 
-            tick={{ fill: 'rgba(255,255,255,0.4)', fontSize: 10 }}
+            tick={{ fill: '#9ca3af', fontSize: 10 }}
             tickCount={5}
           />
           <Radar
             name="건강 점수"
             dataKey="score"
-            stroke="#40E0D0"
-            fill="#40E0D0"
-            fillOpacity={0.4}
+            stroke="#2DD4BF"
+            fill="#2DD4BF"
+            fillOpacity={0.1}
             strokeWidth={2}
           />
           <Tooltip 
             contentStyle={{ 
-              backgroundColor: 'rgba(0,80,80,0.95)', 
-              border: '1px solid rgba(64,224,208,0.5)',
+              backgroundColor: 'white', 
+              border: '1px solid #e5e7eb',
               borderRadius: '12px',
-              color: 'white'
+              color: '#374151',
+              boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
             }}
             formatter={(value: number | string | undefined) => {
               // undefined, null, NaN 안전 처리
@@ -283,7 +284,7 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
         >
           {scores?.overall ?? 0}
         </div>
-        <div className="text-white/60 text-xs">종합점수</div>
+        <div className="text-gray-400 text-xs">종합점수</div>
         <div className="text-xl mt-1">{overallEmoji}</div>
       </div>
       
@@ -297,14 +298,14 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
             >
               {item?.score ?? 0}
             </div>
-            <div className="text-white/50 text-[10px]">{item?.subject ?? '-'}</div>
+            <div className="text-gray-400 text-[10px]">{item?.subject ?? '-'}</div>
           </div>
         ))}
       </div>
       
       {/* 디버그 정보 (개발 환경에서만) */}
       {process.env.NODE_ENV === 'development' && (
-        <div className="mt-4 p-2 bg-black/30 rounded text-[10px] text-white/40">
+        <div className="mt-4 p-2 bg-gray-100 rounded text-[10px] text-gray-500">
           <div>BMI: {profile.height && profile.weight ? (profile.weight / Math.pow(profile.height / 100, 2)).toFixed(1) : 'N/A'}</div>
           <div>프로필: {profile.height}cm / {profile.weight}kg / {profile.age}세</div>
           <div>기저질환: {profile.conditions || '없음'}</div>

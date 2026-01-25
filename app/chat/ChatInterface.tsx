@@ -93,25 +93,25 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
   }
 
   return (
-    <div className="min-h-screen bg-[#008080] flex flex-col">
+    <div className="min-h-screen bg-white flex flex-col">
       {/* 헤더 */}
-      <header className="bg-white/10 backdrop-blur-md border-b border-white/20 p-4">
+      <header className="bg-white border-b border-gray-100 p-4 shadow-sm">
         <div className="max-w-2xl mx-auto flex items-center gap-4">
           <Link 
             href="/dashboard" 
-            className="text-white/70 hover:text-white transition-colors"
+            className="text-gray-400 hover:text-[#2DD4BF] transition-colors"
           >
             <ArrowLeft className="w-6 h-6" />
           </Link>
           <div>
-            <h1 className="text-white font-bold text-lg">닥터 도슨 AI</h1>
-            <p className="text-white/60 text-sm">건강 상담 챗봇</p>
+            <h1 className="text-gray-900 font-bold text-lg">닥터 도슨 AI</h1>
+            <p className="text-gray-400 text-sm">건강 상담 챗봇</p>
           </div>
         </div>
       </header>
 
       {/* 채팅 영역 */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
         <div className="max-w-2xl mx-auto space-y-4">
           {messages.map((message, index) => (
             <div
@@ -119,15 +119,15 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
               className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {message.role === 'assistant' && (
-                <div className="w-8 h-8 rounded-full bg-[#40E0D0] flex items-center justify-center flex-shrink-0">
-                  <Bot className="w-5 h-5 text-[#008080]" />
+                <div className="w-8 h-8 rounded-full bg-[#2DD4BF] flex items-center justify-center flex-shrink-0">
+                  <Bot className="w-5 h-5 text-white" />
                 </div>
               )}
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                   message.role === 'user'
-                    ? 'bg-white text-[#008080]'
-                    : 'bg-white/10 text-white'
+                    ? 'bg-[#2DD4BF] text-white'
+                    : 'bg-white text-gray-800 border border-gray-100 shadow-sm'
                 }`}
               >
                 <p className="whitespace-pre-wrap text-sm leading-relaxed">
@@ -135,8 +135,8 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                 </p>
               </div>
               {message.role === 'user' && (
-                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
-                  <User className="w-5 h-5 text-white" />
+                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                  <User className="w-5 h-5 text-gray-500" />
                 </div>
               )}
             </div>
@@ -145,14 +145,14 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
           {/* 로딩 인디케이터 */}
           {isLoading && (
             <div className="flex gap-3 justify-start">
-              <div className="w-8 h-8 rounded-full bg-[#40E0D0] flex items-center justify-center">
-                <Bot className="w-5 h-5 text-[#008080]" />
+              <div className="w-8 h-8 rounded-full bg-[#2DD4BF] flex items-center justify-center">
+                <Bot className="w-5 h-5 text-white" />
               </div>
-              <div className="bg-white/10 rounded-2xl px-4 py-3">
+              <div className="bg-white rounded-2xl px-4 py-3 border border-gray-100 shadow-sm">
                 <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-white/50 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 bg-white/50 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 bg-white/50 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span className="w-2 h-2 bg-[#2DD4BF] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                  <span className="w-2 h-2 bg-[#2DD4BF] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                  <span className="w-2 h-2 bg-[#2DD4BF] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                 </div>
               </div>
             </div>
@@ -163,20 +163,20 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
       </div>
 
       {/* 입력 영역 */}
-      <div className="bg-white/10 backdrop-blur-md border-t border-white/20 p-4">
+      <div className="bg-white border-t border-gray-100 p-4">
         <form onSubmit={handleSubmit} className="max-w-2xl mx-auto flex gap-3">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="건강에 관해 궁금한 점을 물어보세요..."
-            className="flex-1 bg-white/10 border border-white/20 rounded-xl px-4 py-3 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-[#40E0D0] focus:border-transparent"
+            className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
             disabled={isLoading}
           />
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="bg-[#40E0D0] hover:bg-[#3BC9BB] disabled:bg-white/20 disabled:cursor-not-allowed text-[#008080] px-4 py-3 rounded-xl transition-colors"
+            className="bg-[#2DD4BF] hover:bg-[#26b8a5] disabled:bg-gray-200 disabled:cursor-not-allowed text-white px-4 py-3 rounded-xl transition-colors"
           >
             <Send className="w-5 h-5" />
           </button>
