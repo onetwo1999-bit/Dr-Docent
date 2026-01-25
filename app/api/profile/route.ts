@@ -2,7 +2,179 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-// Route Handler 전용 Supabase 클라이언트 생성
+// ========================
+// 🔧 타입 정의
+// ========================
+interface ProfileInput {
+  user_id?: string
+  age?: string | number | null
+  gender?: string | null
+  height?: string | number | null
+  weight?: string | number | null
+  conditions?: string | null
+  medications?: string | null
+  // 프론트엔드에서 다른 이름으로 보낼 수 있는 필드들
+  diseases?: string | null  // conditions와 동일
+}
+
+interface ProfileData {
+  id: string
+  age: number | null
+  gender: string | null
+  height: number | null
+  weight: number | null
+  conditions: string | null
+  medications: string | null
+}
+
+interface ApiError {
+  error: string
+  code?: string
+  details?: string
+  field?: string
+  received?: unknown
+}
+
+// ========================
+// 🔄 데이터 타입 변환 유틸리티
+// ========================
+function toNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  
+  const num = Number(value)
+  
+  if (isNaN(num)) {
+    console.warn(`⚠️ [타입 변환] "${value}" → NaN (null 반환)`)
+    return null
+  }
+  
+  return num
+}
+
+function toString(value: unknown): string | null {
+  if (value === null || value === undefined || value === '') {
+    return null
+  }
+  return String(value).trim()
+}
+
+// ========================
+// 🔍 입력 데이터 검증 및 변환
+// ========================
+function validateAndTransform(input: ProfileInput, authenticatedUserId: string): { 
+  success: true; data: ProfileData 
+} | { 
+  success: false; error: ApiError 
+} {
+  console.log('🔍 [검증] 입력 데이터 검증 시작')
+  console.log('   - 입력:', JSON.stringify(input, null, 2))
+  
+  // 1. user_id 검증
+  const userId = input.user_id
+  if (!userId) {
+    return {
+      success: false,
+      error: {
+        error: 'user_id가 필요합니다',
+        code: 'MISSING_USER_ID',
+        field: 'user_id'
+      }
+    }
+  }
+  
+  // 2. 세션 검증: 인증된 사용자와 요청 user_id 일치 확인
+  if (userId !== authenticatedUserId) {
+    console.error(`❌ [보안] user_id 불일치! 요청: ${userId}, 인증: ${authenticatedUserId}`)
+    return {
+      success: false,
+      error: {
+        error: '권한이 없습니다. 자신의 프로필만 수정할 수 있습니다.',
+        code: 'UNAUTHORIZED_USER_ID',
+        details: `요청된 user_id(${userId.slice(0, 8)}...)가 인증된 사용자와 일치하지 않습니다.`
+      }
+    }
+  }
+  
+  // 3. 데이터 타입 변환
+  const age = toNumber(input.age)
+  const height = toNumber(input.height)
+  const weight = toNumber(input.weight)
+  const gender = toString(input.gender)
+  
+  // conditions와 diseases 모두 지원 (스키마 매칭)
+  const conditions = toString(input.conditions) || toString(input.diseases)
+  const medications = toString(input.medications)
+  
+  // 4. 범위 검증
+  if (age !== null && (age < 0 || age > 150)) {
+    return {
+      success: false,
+      error: {
+        error: '나이는 0-150 사이여야 합니다',
+        code: 'INVALID_AGE',
+        field: 'age',
+        received: input.age
+      }
+    }
+  }
+  
+  if (height !== null && (height < 50 || height > 300)) {
+    return {
+      success: false,
+      error: {
+        error: '키는 50-300cm 사이여야 합니다',
+        code: 'INVALID_HEIGHT',
+        field: 'height',
+        received: input.height
+      }
+    }
+  }
+  
+  if (weight !== null && (weight < 10 || weight > 500)) {
+    return {
+      success: false,
+      error: {
+        error: '몸무게는 10-500kg 사이여야 합니다',
+        code: 'INVALID_WEIGHT',
+        field: 'weight',
+        received: input.weight
+      }
+    }
+  }
+  
+  if (gender !== null && !['male', 'female'].includes(gender)) {
+    return {
+      success: false,
+      error: {
+        error: '성별은 male 또는 female이어야 합니다',
+        code: 'INVALID_GENDER',
+        field: 'gender',
+        received: input.gender
+      }
+    }
+  }
+  
+  console.log('✅ [검증] 검증 완료')
+  
+  return {
+    success: true,
+    data: {
+      id: userId,
+      age,
+      gender,
+      height,
+      weight,
+      conditions,
+      medications
+    }
+  }
+}
+
+// ========================
+// 🔌 Route Handler 전용 Supabase 클라이언트
+// ========================
 async function createRouteHandlerClient() {
   const cookieStore = await cookies()
   
@@ -28,106 +200,201 @@ async function createRouteHandlerClient() {
   )
 }
 
+// ========================
+// 📝 POST: 프로필 저장/업데이트
+// ========================
 export async function POST(req: Request) {
-  console.log('📝 [Profile API] POST 요청 시작')
+  const requestId = Math.random().toString(36).slice(2, 8)
+  console.log(`\n${'='.repeat(50)}`)
+  console.log(`📝 [Profile API] POST 요청 시작 (ID: ${requestId})`)
+  console.log(`${'='.repeat(50)}`)
   
   try {
-    // 1. 요청 본문 파싱
-    let body
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 1️⃣ 요청 본문 파싱
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    let body: ProfileInput
     try {
       body = await req.json()
-      console.log('📋 [Profile API] 받은 데이터:', JSON.stringify(body, null, 2))
+      console.log(`📋 [${requestId}] 받은 원본 데이터:`, JSON.stringify(body, null, 2))
     } catch (parseError) {
-      console.error('❌ [Profile API] JSON 파싱 실패:', parseError)
-      return NextResponse.json({ error: 'JSON 파싱 실패' }, { status: 400 })
+      console.error(`❌ [${requestId}] JSON 파싱 실패:`, parseError)
+      return NextResponse.json({
+        error: 'JSON 파싱 실패',
+        code: 'INVALID_JSON',
+        details: parseError instanceof Error ? parseError.message : 'Unknown parse error'
+      }, { status: 400 })
     }
 
-    const { user_id, age, gender, height, weight, conditions, medications } = body
-
-    if (!user_id) {
-      console.error('❌ [Profile API] user_id 누락')
-      return NextResponse.json({ error: '사용자 ID가 필요합니다' }, { status: 400 })
-    }
-
-    // 2. Supabase 클라이언트 생성
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 2️⃣ Supabase 클라이언트 생성 및 인증 확인
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     const supabase = await createRouteHandlerClient()
-
-    // 3. 현재 인증된 사용자 확인
+    
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
     if (authError) {
-      console.error('❌ [Profile API] 인증 에러:', authError.message)
+      console.error(`❌ [${requestId}] 인증 에러:`, {
+        message: authError.message,
+        status: authError.status
+      })
+      return NextResponse.json({
+        error: '인증 실패',
+        code: 'AUTH_ERROR',
+        details: authError.message
+      }, { status: 401 })
     }
     
-    console.log('👤 [Profile API] 인증된 사용자:', user?.id || '없음')
-    console.log('📤 [Profile API] 요청된 user_id:', user_id)
-
-    // 4. 프로필 데이터 준비 (테이블에 있는 컬럼만 포함)
-    const profileData: Record<string, unknown> = {
-      id: user_id,
-      age: age ? parseInt(age) : null,
-      gender: gender || null,
-      height: height ? parseFloat(height) : null,
-      weight: weight ? parseFloat(weight) : null,
-      conditions: conditions || null,
-      medications: medications || null,
+    if (!user) {
+      console.error(`❌ [${requestId}] 인증된 사용자 없음`)
+      return NextResponse.json({
+        error: '로그인이 필요합니다',
+        code: 'NOT_AUTHENTICATED'
+      }, { status: 401 })
     }
+    
+    console.log(`👤 [${requestId}] 인증된 사용자: ${user.id}`)
+    console.log(`📤 [${requestId}] 요청된 user_id: ${body.user_id}`)
 
-    console.log('💾 [Profile API] 저장할 데이터:', JSON.stringify(profileData, null, 2))
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 3️⃣ 데이터 검증 및 변환 (세션 검증 포함)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    const validation = validateAndTransform(body, user.id)
+    
+    if (!validation.success) {
+      console.error(`❌ [${requestId}] 검증 실패:`, validation.error)
+      return NextResponse.json(validation.error, { status: 400 })
+    }
+    
+    const profileData = validation.data
+    console.log(`💾 [${requestId}] 변환된 데이터:`, JSON.stringify(profileData, null, 2))
 
-    // 5. Upsert 실행 (Service Role Key가 없으면 RLS 적용됨)
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    // 4️⃣ Supabase Upsert 실행
+    // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    console.log(`🔄 [${requestId}] Supabase upsert 시작...`)
+    
     const { data, error } = await supabase
       .from('profiles')
-      .upsert(profileData, {
-        onConflict: 'id'
-      })
+      .upsert(profileData, { onConflict: 'id' })
       .select()
 
     if (error) {
-      console.error('❌ [Profile API] Supabase 에러:', {
+      console.error(`❌ [${requestId}] Supabase 에러:`, {
         message: error.message,
         code: error.code,
         details: error.details,
         hint: error.hint
       })
       
-      // RLS 정책 에러인 경우 안내
-      if (error.code === '42501' || error.message.includes('policy')) {
-        return NextResponse.json({ 
-          error: 'RLS 정책 에러: Supabase 대시보드에서 profiles 테이블의 RLS 정책을 확인하세요.',
-          details: error.message 
-        }, { status: 403 })
+      // 에러 유형별 상세 응답
+      let statusCode = 500
+      let errorResponse: ApiError = {
+        error: error.message,
+        code: error.code,
+        details: error.details || undefined
       }
       
-      return NextResponse.json({ 
-        error: error.message,
-        code: error.code 
-      }, { status: 500 })
+      // RLS 정책 에러
+      if (error.code === '42501' || error.message.includes('policy') || error.message.includes('permission')) {
+        statusCode = 403
+        errorResponse = {
+          error: 'RLS 정책 에러: 프로필 저장 권한이 없습니다.',
+          code: 'RLS_POLICY_VIOLATION',
+          details: `Supabase 대시보드에서 profiles 테이블의 RLS 정책을 확인하세요. (원본: ${error.message})`
+        }
+      }
+      
+      // 컬럼 없음 에러
+      if (error.message.includes('column') && error.message.includes('does not exist')) {
+        statusCode = 400
+        const columnMatch = error.message.match(/column "(\w+)"/)
+        errorResponse = {
+          error: `DB 스키마 불일치: ${columnMatch?.[1] || '알 수 없는'} 컬럼이 존재하지 않습니다.`,
+          code: 'SCHEMA_MISMATCH',
+          details: error.message,
+          field: columnMatch?.[1]
+        }
+      }
+      
+      // 테이블 없음 에러
+      if (error.message.includes('relation') && error.message.includes('does not exist')) {
+        statusCode = 500
+        errorResponse = {
+          error: 'profiles 테이블이 존재하지 않습니다.',
+          code: 'TABLE_NOT_FOUND',
+          details: 'Supabase에서 profiles 테이블을 생성해주세요.'
+        }
+      }
+      
+      // 데이터 타입 에러
+      if (error.message.includes('invalid input syntax')) {
+        statusCode = 400
+        errorResponse = {
+          error: '데이터 타입 오류',
+          code: 'TYPE_ERROR',
+          details: error.message
+        }
+      }
+      
+      return NextResponse.json(errorResponse, { status: statusCode })
     }
 
-    console.log('✅ [Profile API] 저장 성공:', data)
-    return NextResponse.json({ success: true, data })
+    console.log(`✅ [${requestId}] 저장 성공!`)
+    console.log(`   - 저장된 데이터:`, JSON.stringify(data, null, 2))
+    
+    return NextResponse.json({ 
+      success: true, 
+      data,
+      message: '프로필이 성공적으로 저장되었습니다.'
+    })
 
   } catch (error) {
-    console.error('❌ [Profile API] 예외 발생:', error)
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : '서버 오류가 발생했습니다' 
+    console.error(`❌ [${requestId}] 예외 발생:`, error)
+    
+    // 스택 트레이스 출력
+    if (error instanceof Error) {
+      console.error(`   - 이름: ${error.name}`)
+      console.error(`   - 메시지: ${error.message}`)
+      console.error(`   - 스택:\n${error.stack}`)
+    }
+    
+    return NextResponse.json({
+      error: '서버 내부 오류',
+      code: 'INTERNAL_ERROR',
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
 
+// ========================
+// 📖 GET: 프로필 조회
+// ========================
 export async function GET(req: Request) {
-  console.log('📖 [Profile API] GET 요청 시작')
+  const requestId = Math.random().toString(36).slice(2, 8)
+  console.log(`\n📖 [Profile API] GET 요청 (ID: ${requestId})`)
   
   try {
     const { searchParams } = new URL(req.url)
     const userId = searchParams.get('user_id')
 
     if (!userId) {
-      return NextResponse.json({ error: '사용자 ID가 필요합니다' }, { status: 400 })
+      return NextResponse.json({
+        error: 'user_id 파라미터가 필요합니다',
+        code: 'MISSING_USER_ID'
+      }, { status: 400 })
     }
 
     const supabase = await createRouteHandlerClient()
+    
+    // 인증 확인 (선택적 - 자신의 프로필만 조회 가능하게 하려면)
+    const { data: { user } } = await supabase.auth.getUser()
+    
+    if (user && user.id !== userId) {
+      console.warn(`⚠️ [${requestId}] 다른 사용자 프로필 조회 시도: ${userId}`)
+      // 필요시 차단 가능
+      // return NextResponse.json({ error: '권한 없음' }, { status: 403 })
+    }
 
     const { data, error } = await supabase
       .from('profiles')
@@ -135,16 +402,34 @@ export async function GET(req: Request) {
       .eq('id', userId)
       .single()
 
-    if (error && error.code !== 'PGRST116') {
-      console.error('❌ [Profile API] 조회 에러:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      // 데이터 없음 (정상 케이스)
+      if (error.code === 'PGRST116') {
+        console.log(`📭 [${requestId}] 프로필 없음: ${userId}`)
+        return NextResponse.json({ profile: null })
+      }
+      
+      console.error(`❌ [${requestId}] 조회 에러:`, {
+        message: error.message,
+        code: error.code
+      })
+      
+      return NextResponse.json({
+        error: error.message,
+        code: error.code
+      }, { status: 500 })
     }
 
-    console.log('✅ [Profile API] 조회 성공:', data ? '데이터 있음' : '데이터 없음')
-    return NextResponse.json({ profile: data || null })
+    console.log(`✅ [${requestId}] 조회 성공`)
+    return NextResponse.json({ profile: data })
 
   } catch (error) {
-    console.error('❌ [Profile API] 예외 발생:', error)
-    return NextResponse.json({ error: '서버 오류가 발생했습니다' }, { status: 500 })
+    console.error(`❌ [${requestId}] 예외 발생:`, error)
+    
+    return NextResponse.json({
+      error: '서버 내부 오류',
+      code: 'INTERNAL_ERROR',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
   }
 }
