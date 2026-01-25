@@ -180,19 +180,21 @@ function calculateHealthScores(profile: Profile): {
 }
 
 // ========================
-// 🎨 점수별 색상
+// 🎨 점수별 색상 (안전한 타입 처리)
 // ========================
-function getScoreColor(score: number): string {
-  if (score >= 80) return '#4ade80' // green
-  if (score >= 60) return '#facc15' // yellow
-  if (score >= 40) return '#fb923c' // orange
+function getScoreColor(score: number | null | undefined): string {
+  const safeScore = score ?? 0
+  if (safeScore >= 80) return '#4ade80' // green
+  if (safeScore >= 60) return '#facc15' // yellow
+  if (safeScore >= 40) return '#fb923c' // orange
   return '#f87171' // red
 }
 
-function getScoreEmoji(score: number): string {
-  if (score >= 80) return '😊'
-  if (score >= 60) return '😐'
-  if (score >= 40) return '😟'
+function getScoreEmoji(score: number | null | undefined): string {
+  const safeScore = score ?? 0
+  if (safeScore >= 80) return '😊'
+  if (safeScore >= 60) return '😐'
+  if (safeScore >= 40) return '😟'
   return '😰'
 }
 
@@ -263,7 +265,12 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
               borderRadius: '12px',
               color: 'white'
             }}
-            formatter={(value: number) => [`${value}점`, '점수']}
+            formatter={(value: number | string | undefined) => {
+              // undefined, null, NaN 안전 처리
+              const safeValue = value ?? 0
+              const numValue = typeof safeValue === 'string' ? parseFloat(safeValue) || 0 : safeValue
+              return [`${numValue}점`, '점수']
+            }}
           />
         </RadarChart>
       </ResponsiveContainer>
@@ -274,7 +281,7 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
           className="text-4xl font-bold"
           style={{ color: overallColor }}
         >
-          {scores.overall}
+          {scores?.overall ?? 0}
         </div>
         <div className="text-white/60 text-xs">종합점수</div>
         <div className="text-xl mt-1">{overallEmoji}</div>
@@ -286,11 +293,11 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
           <div key={item.subject} className="space-y-1">
             <div 
               className="font-semibold"
-              style={{ color: getScoreColor(item.score) }}
+              style={{ color: getScoreColor(item?.score) }}
             >
-              {item.score}
+              {item?.score ?? 0}
             </div>
-            <div className="text-white/50 text-[10px]">{item.subject}</div>
+            <div className="text-white/50 text-[10px]">{item?.subject ?? '-'}</div>
           </div>
         ))}
       </div>
