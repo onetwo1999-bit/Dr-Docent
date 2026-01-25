@@ -1,10 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { createClient } from '@/utils/supabase/client'
-import { Check, X, Loader2, RefreshCw, Utensils, Dumbbell, Pill } from 'lucide-react'
+import { Check, X, Loader2, RefreshCw, Utensils, Dumbbell, Pill, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
-import { ArrowLeft } from 'lucide-react'
 
 interface TestResult {
   name: string
