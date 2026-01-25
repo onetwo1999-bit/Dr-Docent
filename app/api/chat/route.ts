@@ -63,6 +63,62 @@ function selectModel(message: string): 'claude' | 'gpt' {
 }
 
 // ========================
+// 📋 건강 데이터 로깅
+// ========================
+function logHealthProfile(profile: UserProfile | null, userId: string): void {
+  console.log('\n' + '='.repeat(50))
+  console.log('📊 [건강 데이터 로깅] 사용자:', userId.slice(0, 8) + '...')
+  console.log('='.repeat(50))
+  
+  if (!profile) {
+    console.log('⚠️ 프로필 없음 - 기본 상담 모드')
+    return
+  }
+  
+  const bmi = calculateBMI(profile.height, profile.weight)
+  
+  console.log('👤 나이:', profile.age ? `${profile.age}세` : '미입력')
+  console.log('⚧️ 성별:', profile.gender === 'male' ? '남성' : profile.gender === 'female' ? '여성' : '미입력')
+  console.log('📏 신장:', profile.height ? `${profile.height}cm` : '미입력')
+  console.log('⚖️ 체중:', profile.weight ? `${profile.weight}kg` : '미입력')
+  
+  if (bmi) {
+    console.log(`📈 BMI: ${bmi.value} (${bmi.category})`)
+    
+    // 비만 경고
+    if (bmi.value >= 25) {
+      const idealWeight = Math.round(23 * Math.pow((profile.height || 170) / 100, 2))
+      const excess = (profile.weight || 0) - idealWeight
+      console.log(`⚠️ 과체중 경고: 적정 체중보다 ${excess}kg 초과`)
+      console.log(`   - 관절 부하 추정: ${excess * 4}kg`)
+    }
+  }
+  
+  if (profile.conditions) {
+    console.log('🏥 기저 질환:', profile.conditions)
+    
+    // 특정 질환 감지
+    const conditionsLower = profile.conditions.toLowerCase()
+    if (conditionsLower.includes('고혈압')) console.log('   ⚠️ 고혈압 환자 - 혈압 관련 조언 주의')
+    if (conditionsLower.includes('당뇨')) console.log('   ⚠️ 당뇨 환자 - 혈당/식이 조언 주의')
+    if (conditionsLower.includes('관절') || conditionsLower.includes('허리')) {
+      console.log('   ⚠️ 근골격계 문제 - 운동 강도 조절 필요')
+    }
+  } else {
+    console.log('🏥 기저 질환: 없음')
+  }
+  
+  if (profile.medications) {
+    console.log('💊 복용 약물:', profile.medications)
+    console.log('   ⚠️ 약물 상호작용 주의 필요')
+  } else {
+    console.log('💊 복용 약물: 없음')
+  }
+  
+  console.log('='.repeat(50) + '\n')
+}
+
+// ========================
 // 🏥 시스템 프롬프트 생성
 // ========================
 function buildSystemPrompt(profile: UserProfile | null): string {
@@ -187,9 +243,36 @@ async function incrementUsage(supabase: ReturnType<typeof createServerClient>, u
 }
 
 // ========================
+// 🔑 API 키 검증
+// ========================
+function validateApiKeys(): { 
+  hasClaudeKey: boolean; 
+  hasOpenAIKey: boolean; 
+  claudeKeyPreview: string;
+  openAIKeyPreview: string;
+} {
+  const claudeKey = process.env.ANTHROPIC_API_KEY || ''
+  const openAIKey = process.env.OPENAI_API_KEY || ''
+  
+  return {
+    hasClaudeKey: claudeKey.length > 0 && claudeKey.startsWith('sk-ant-'),
+    hasOpenAIKey: openAIKey.length > 0 && openAIKey.startsWith('sk-'),
+    claudeKeyPreview: claudeKey ? `${claudeKey.slice(0, 10)}...${claudeKey.slice(-4)}` : '(없음)',
+    openAIKeyPreview: openAIKey ? `${openAIKey.slice(0, 7)}...${openAIKey.slice(-4)}` : '(없음)',
+  }
+}
+
+// ========================
 // 🚀 메인 API 핸들러
 // ========================
 export async function POST(req: Request) {
+  const requestId = Math.random().toString(36).slice(2, 8).toUpperCase()
+  const startTime = Date.now()
+  
+  console.log('\n' + '🏥'.repeat(25))
+  console.log(`📩 [Chat API] 요청 시작 (ID: ${requestId})`)
+  console.log('🏥'.repeat(25))
+  
   try {
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'JSON 형식 오류' }, { status: 400 })
@@ -199,7 +282,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: '메시지가 필요합니다' }, { status: 400 })
     }
 
-    console.log('📩 [Chat API] 메시지:', message)
+    console.log(`💬 [${requestId}] 메시지: "${message.slice(0, 50)}${message.length > 50 ? '...' : ''}"`)
 
     // Supabase 클라이언트 생성
     const cookieStore = await cookies()
@@ -219,12 +302,16 @@ export async function POST(req: Request) {
     // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
+      console.log(`❌ [${requestId}] 인증 실패:`, authError?.message || '유저 없음')
       return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
     }
+    
+    console.log(`👤 [${requestId}] 사용자: ${user.email}`)
 
     // 일일 사용량 체크
     const { allowed, count } = await checkDailyLimit(supabase, user.id)
     if (!allowed) {
+      console.log(`⛔ [${requestId}] 일일 한도 초과: ${count}/${DAILY_LIMIT}`)
       return NextResponse.json({ 
         error: `일일 사용 제한(${DAILY_LIMIT}회)을 초과했습니다.`, 
         dailyLimit: true, 
@@ -233,85 +320,118 @@ export async function POST(req: Request) {
     }
 
     // 프로필 로드
-    const { data: profile } = await supabase
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('age, gender, height, weight, conditions, medications')
       .eq('id', user.id)
       .single()
+    
+    if (profileError && profileError.code !== 'PGRST116') {
+      console.log(`⚠️ [${requestId}] 프로필 로드 에러:`, profileError.message)
+    }
+
+    // 🔍 건강 데이터 로깅 (상세)
+    logHealthProfile(profile, user.id)
 
     // 스마트 모델 라우팅
     const selectedModel = selectModel(message)
-    console.log(`🤖 [Chat API] 선택된 모델: ${selectedModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
+    console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
 
     // 시스템 프롬프트 생성
     const systemPrompt = buildSystemPrompt(profile)
+
+    // 🔑 API 키 검증 (상세)
+    const apiKeys = validateApiKeys()
+    console.log(`🔑 [${requestId}] API 키 상태:`)
+    console.log(`   - Claude: ${apiKeys.hasClaudeKey ? '✅ ' + apiKeys.claudeKeyPreview : '❌ 없음'}`)
+    console.log(`   - OpenAI: ${apiKeys.hasOpenAIKey ? '✅ ' + apiKeys.openAIKeyPreview : '❌ 없음'}`)
 
     // AI 응답 생성
     let reply: string
     let actualModel = selectedModel
 
-    // API 키 확인
-    const hasClaudeKey = !!process.env.ANTHROPIC_API_KEY
-    const hasOpenAIKey = !!process.env.OPENAI_API_KEY
-    
-    console.log(`🔑 [Chat API] API 키 상태 - Claude: ${hasClaudeKey ? '✅' : '❌'}, OpenAI: ${hasOpenAIKey ? '✅' : '❌'}`)
-
-    // Claude 키만 있으면 항상 Claude 사용
-    if (hasClaudeKey && !hasOpenAIKey) {
+    // 모델 결정 로직
+    if (apiKeys.hasClaudeKey && !apiKeys.hasOpenAIKey) {
       actualModel = 'claude'
-    }
-    // OpenAI 키만 있으면 항상 OpenAI 사용
-    else if (!hasClaudeKey && hasOpenAIKey) {
+      console.log(`📍 [${requestId}] Claude 전용 모드 (OpenAI 키 없음)`)
+    } else if (!apiKeys.hasClaudeKey && apiKeys.hasOpenAIKey) {
       actualModel = 'gpt'
-    }
-    // 둘 다 없으면 에러
-    else if (!hasClaudeKey && !hasOpenAIKey) {
-      console.error('❌ [Chat API] API 키가 설정되지 않았습니다!')
+      console.log(`📍 [${requestId}] OpenAI 전용 모드 (Claude 키 없음)`)
+    } else if (!apiKeys.hasClaudeKey && !apiKeys.hasOpenAIKey) {
+      console.error(`❌ [${requestId}] 치명적 오류: API 키가 설정되지 않았습니다!`)
+      console.error(`   환경 변수 확인 필요:`)
+      console.error(`   - ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? '설정됨' : '없음'}`)
+      console.error(`   - OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? '설정됨' : '없음'}`)
+      
       return NextResponse.json({ 
-        error: 'AI 서비스 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.' 
+        error: 'AI 서비스 API 키가 설정되지 않았습니다.',
+        details: 'Vercel 환경 변수에 ANTHROPIC_API_KEY 또는 OPENAI_API_KEY를 설정해주세요.',
+        hint: 'Vercel 대시보드 → Settings → Environment Variables'
       }, { status: 500 })
     }
 
     try {
-      console.log(`🤖 [Chat API] 실제 사용 모델: ${actualModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
+      console.log(`🚀 [${requestId}] AI 호출 시작: ${actualModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
       
       if (actualModel === 'claude') {
-        // Claude 3.5 Haiku
         const result = await generateText({
           model: anthropic('claude-3-5-haiku-latest'),
           system: systemPrompt,
           prompt: message,
         })
         reply = result.text
-        console.log('✅ [Chat API] Claude 응답 성공')
+        console.log(`✅ [${requestId}] Claude 응답 성공 (${result.text.length}자)`)
       } else {
-        // GPT-4o-mini
         const result = await generateText({
           model: openai('gpt-4o-mini'),
           system: systemPrompt,
           prompt: message,
         })
         reply = result.text
-        console.log('✅ [Chat API] OpenAI 응답 성공')
+        console.log(`✅ [${requestId}] OpenAI 응답 성공 (${result.text.length}자)`)
       }
     } catch (aiError: unknown) {
-      console.error('❌ [Chat API] AI 호출 에러:', aiError)
+      console.error(`❌ [${requestId}] AI 호출 실패!`)
       
-      // 에러 상세 로깅
       if (aiError instanceof Error) {
-        console.error('   - 에러 메시지:', aiError.message)
-        console.error('   - 에러 이름:', aiError.name)
+        console.error(`   - 에러 타입: ${aiError.name}`)
+        console.error(`   - 에러 메시지: ${aiError.message}`)
         
-        // API 키 관련 에러 감지
-        if (aiError.message.includes('API key') || aiError.message.includes('authentication') || aiError.message.includes('401')) {
+        // API 키 관련 에러 상세 분석
+        if (aiError.message.includes('API key') || 
+            aiError.message.includes('authentication') || 
+            aiError.message.includes('401') ||
+            aiError.message.includes('Unauthorized')) {
+          console.error(`   ⚠️ API 키 문제 감지!`)
+          console.error(`   - 현재 사용 모델: ${actualModel}`)
+          console.error(`   - 키 형식 확인: ${actualModel === 'claude' ? apiKeys.claudeKeyPreview : apiKeys.openAIKeyPreview}`)
+          
           return NextResponse.json({ 
-            error: 'API 키가 올바르지 않습니다. 관리자에게 문의하세요.',
-            details: aiError.message
+            error: 'API 키가 유효하지 않습니다.',
+            details: `${actualModel === 'claude' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'}를 확인해주세요.`,
+            model: actualModel
           }, { status: 401 })
+        }
+        
+        // Rate limit 에러
+        if (aiError.message.includes('rate') || aiError.message.includes('429')) {
+          console.error(`   ⚠️ Rate limit 초과!`)
+          return NextResponse.json({ 
+            error: 'AI 서비스 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요.',
+            retryAfter: 60
+          }, { status: 429 })
+        }
+        
+        // 네트워크 에러
+        if (aiError.message.includes('network') || aiError.message.includes('timeout')) {
+          console.error(`   ⚠️ 네트워크 에러!`)
+          return NextResponse.json({ 
+            error: 'AI 서비스 연결에 실패했습니다. 잠시 후 다시 시도해주세요.'
+          }, { status: 503 })
         }
       }
       
-      // Fallback: 기본 응답
+      // Fallback 응답
       reply = `선생님, 죄송해요. 지금 시스템이 일시적으로 불안정해서 제가 제대로 답변을 드리기 어려워요. 😔
 
 잠시 후 다시 시도해 주시겠어요? 선생님의 건강 상담을 도와드리고 싶어요!`
@@ -323,7 +443,9 @@ export async function POST(req: Request) {
     // 사용량 증가
     incrementUsage(supabase, user.id).catch(() => {})
     
-    console.log('✅ [Chat API] 응답 생성 완료')
+    const elapsedTime = Date.now() - startTime
+    console.log(`✅ [${requestId}] 완료! (소요 시간: ${elapsedTime}ms)`)
+    console.log('🏥'.repeat(25) + '\n')
     
     return NextResponse.json({ 
       reply,
@@ -332,11 +454,17 @@ export async function POST(req: Request) {
         count: count + 1, 
         limit: DAILY_LIMIT, 
         remaining: DAILY_LIMIT - count - 1 
+      },
+      debug: {
+        requestId,
+        elapsedMs: elapsedTime,
+        hasProfile: !!profile,
+        bmi: profile ? calculateBMI(profile.height, profile.weight)?.value : null
       }
     })
     
   } catch (error) {
-    console.error('[Chat API] Error:', error)
+    console.error(`❌ [${requestId}] 예외 발생:`, error)
     return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   }
 }

@@ -1,5 +1,6 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { 
   RadarChart, 
   PolarGrid, 
@@ -34,7 +35,7 @@ function calculateHealthScores(profile: Profile): {
   activity: number
   overall: number
 } {
-  const { age, height, weight, conditions, medications } = profile
+  const { age, height, weight, conditions } = profile
   
   // 기본 점수 (모두 80점에서 시작)
   let cardiovascular = 80  // 심혈관
@@ -47,6 +48,14 @@ function calculateHealthScores(profile: Profile): {
   let bmi = 22 // 기본값
   if (height && weight && height > 0) {
     bmi = weight / Math.pow(height / 100, 2)
+  }
+  
+  // 디버깅 로그 (개발 환경에서만)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('📊 [HealthRadarChart] 건강 점수 계산 시작')
+    console.log(`   - BMI: ${bmi.toFixed(1)}`)
+    console.log(`   - 나이: ${age || '미입력'}`)
+    console.log(`   - 기저질환: ${conditions || '없음'}`)
   }
   
   // ========================
@@ -188,6 +197,13 @@ function getScoreEmoji(score: number): string {
 }
 
 export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
+  // 🔒 SSR 안전 장치: 클라이언트에서만 렌더링
+  const [isClient, setIsClient] = useState(false)
+  
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+  
   const scores = calculateHealthScores(profile)
   
   const data = [
@@ -200,6 +216,18 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
   
   const overallColor = getScoreColor(scores.overall)
   const overallEmoji = getScoreEmoji(scores.overall)
+
+  // SSR 중에는 로딩 표시
+  if (!isClient) {
+    return (
+      <div className="relative h-[280px] flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-pulse text-4xl mb-2">📊</div>
+          <div className="text-white/60 text-sm">차트 로딩 중...</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="relative">
@@ -266,6 +294,15 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
           </div>
         ))}
       </div>
+      
+      {/* 디버그 정보 (개발 환경에서만) */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="mt-4 p-2 bg-black/30 rounded text-[10px] text-white/40">
+          <div>BMI: {profile.height && profile.weight ? (profile.weight / Math.pow(profile.height / 100, 2)).toFixed(1) : 'N/A'}</div>
+          <div>프로필: {profile.height}cm / {profile.weight}kg / {profile.age}세</div>
+          <div>기저질환: {profile.conditions || '없음'}</div>
+        </div>
+      )}
     </div>
   )
 }
