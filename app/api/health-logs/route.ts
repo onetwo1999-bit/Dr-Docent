@@ -19,6 +19,15 @@ const categoryLabels: Record<CategoryType, string> = {
 // Supabase 클라이언트 생성
 async function createClient() {
   const cookieStore = await cookies()
+  
+  // 🔍 쿠키 확인 (디버깅용)
+  const allCookies = cookieStore.getAll()
+  const hasAuthCookie = allCookies.some(c => c.name.startsWith('sb-') || c.name.includes('auth'))
+  
+  if (!hasAuthCookie) {
+    console.warn('⚠️ [Health Logs] 인증 쿠키가 없습니다:', allCookies.map(c => c.name))
+  }
+  
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -30,7 +39,9 @@ async function createClient() {
             cookiesToSet.forEach(({ name, value, options }) => 
               cookieStore.set(name, value, options)
             )
-          } catch {}
+          } catch (err) {
+            console.error('❌ [Health Logs] 쿠키 설정 실패:', err)
+          }
         },
       },
     }
@@ -55,35 +66,100 @@ export async function POST(req: Request) {
 
     const supabase = await createClient()
     
-    // 인증 확인
+    // 🔐 인증 확인 - 반드시 먼저 실행
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    
+    if (authError) {
+      console.error('❌ [Health Logs] 인증 에러:', {
+        message: authError.message,
+        status: authError.status,
+        name: authError.name
+      })
       return NextResponse.json(
-        { success: false, error: '로그인이 필요합니다.' },
+        { 
+          success: false, 
+          error: '로그인이 필요합니다.',
+          details: authError.message || '인증 세션이 유효하지 않습니다.',
+          code: authError.status || 401,
+          hint: '페이지를 새로고침하거나 다시 로그인해주세요.'
+        },
         { status: 401 }
+      )
+    }
+
+    if (!user || !user.id) {
+      console.error('❌ [Health Logs] 유저 정보 없음:', { 
+        hasUser: !!user, 
+        userId: user?.id,
+        userEmail: user?.email,
+        authError 
+      })
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: '로그인이 필요합니다.',
+          details: '유저 세션이 만료되었거나 유효하지 않습니다.',
+          hint: '페이지를 새로고침하거나 다시 로그인해주세요.'
+        },
+        { status: 401 }
+      )
+    }
+
+    // 🔍 user.id 검증 (UUID 형식 - Supabase는 UUID v4 사용)
+    if (typeof user.id !== 'string' || user.id.length < 30) {
+      console.error('❌ [Health Logs] 유효하지 않은 user_id:', {
+        user_id: user.id,
+        type: typeof user.id,
+        length: user.id?.length
+      })
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: '유효하지 않은 사용자 정보입니다.',
+          details: 'user_id 형식이 올바르지 않습니다.',
+          hint: '다시 로그인해주세요.'
+        },
+        { status: 400 }
       )
     }
 
     console.log('📝 [Health Logs] 삽입 시도:', { 
       user_id: user.id, 
+      user_email: user.email,
       category, 
       note,
       logged_at: logged_at || new Date().toISOString()
     })
 
+    // 📦 INSERT 데이터 객체 생성 (user_id 필수 포함)
+    const insertData = {
+      user_id: user.id, // ⚠️ 반드시 포함!
+      category,
+      note: note || null,
+      logged_at: logged_at || new Date().toISOString(),
+      sub_type: sub_type || null,
+      quantity: quantity || null,
+      unit: unit || null,
+      schedule_id: schedule_id || null
+    }
+
+    // 🔍 INSERT 전 최종 검증
+    if (!insertData.user_id) {
+      console.error('❌ [Health Logs] user_id 누락:', insertData)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'user_id가 누락되었습니다.',
+          details: '시스템 오류입니다. 관리자에게 문의해주세요.'
+        },
+        { status: 500 }
+      )
+    }
+
     // 로그 삽입
     const { data, error } = await supabase
       .from('health_logs')
-      .insert({
-        user_id: user.id,
-        category,
-        note: note || null,
-        logged_at: logged_at || new Date().toISOString(),
-        sub_type: sub_type || null,
-        quantity: quantity || null,
-        unit: unit || null,
-        schedule_id: schedule_id || null
-      })
+      .insert(insertData)
       .select()
       .single()
 
@@ -94,14 +170,26 @@ export async function POST(req: Request) {
       console.error('   - 상세:', error.details)
       console.error('   - 힌트:', error.hint)
       
-      // RLS 정책 관련 에러
-      if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy')) {
+      // RLS 정책 관련 에러 (42501 = insufficient_privilege)
+      if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy') || error.message?.includes('permission')) {
+        console.error('🔒 [Health Logs] RLS 정책 위반:', {
+          error_code: error.code,
+          error_message: error.message,
+          user_id: user.id,
+          insert_data: insertData
+        })
+        
         return NextResponse.json({
           success: false,
-          error: 'RLS 정책 오류: Supabase에서 health_logs 테이블의 RLS 정책을 확인해주세요.',
+          error: 'RLS 정책 오류: 데이터 저장 권한이 없습니다.',
           details: error.message,
-          hint: 'supabase/schema-v2.sql 파일의 RLS 정책 SQL을 실행해주세요.',
-          code: error.code
+          hint: 'Supabase에서 health_logs 테이블의 RLS 정책을 확인해주세요. schema-v2.sql의 RLS 정책 SQL을 실행했는지 확인하세요.',
+          code: error.code,
+          debug: {
+            user_id: user.id,
+            has_user_id: !!insertData.user_id,
+            user_id_type: typeof insertData.user_id
+          }
         }, { status: 403 })
       }
       

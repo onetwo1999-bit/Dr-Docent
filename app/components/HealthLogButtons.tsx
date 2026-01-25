@@ -98,8 +98,14 @@ export default function HealthLogButtons() {
     try {
       const response = await fetch('/api/health-logs', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category })
+        headers: { 
+          'Content-Type': 'application/json'
+        },
+        credentials: 'include', // 쿠키 포함
+        body: JSON.stringify({ 
+          category,
+          // ⚠️ user_id는 서버에서 자동으로 추가됨 (클라이언트에서 보내지 않음)
+        })
       })
 
       const data = await response.json()
@@ -117,11 +123,23 @@ export default function HealthLogButtons() {
           setSuccessCategory(null)
         }, 3000)
       } else {
-        setError(data.error || '기록 저장에 실패했습니다.')
+        // 에러 메시지 개선
+        let errorMessage = data.error || '기록 저장에 실패했습니다.'
+        
+        if (data.code === '42501' || data.error?.includes('RLS') || data.error?.includes('정책')) {
+          errorMessage = '권한 오류: 로그인 상태를 확인해주세요. 문제가 계속되면 페이지를 새로고침하세요.'
+        } else if (response.status === 401) {
+          errorMessage = '로그인이 필요합니다. 다시 로그인해주세요.'
+        } else if (data.hint) {
+          errorMessage = `${errorMessage}\n\n💡 ${data.hint}`
+        }
+        
+        setError(errorMessage)
+        console.error('❌ [Health Logs] 저장 실패:', data)
       }
     } catch (err) {
       console.error('기록 저장 실패:', err)
-      setError('네트워크 오류가 발생했습니다.')
+      setError('네트워크 오류가 발생했습니다. 인터넷 연결을 확인해주세요.')
     } finally {
       setLoadingCategory(null)
     }
