@@ -75,13 +75,7 @@ export async function POST(req: Request) {
 
     const supabase = await createClient()
     
-    // 🔄 세션 갱신 (중요: RLS 정책이 auth.uid()를 인식하도록)
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-    if (sessionError) {
-      console.error('❌ [Health Logs] 세션 조회 실패:', sessionError)
-    }
-    
-    // 🔐 인증 확인 - 반드시 먼저 실행
+    // 🔐 인증 확인 - 반드시 먼저 실행 (getUser()가 자동으로 세션을 갱신함)
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
     if (authError) {
@@ -138,16 +132,9 @@ export async function POST(req: Request) {
       )
     }
 
-    // 🔍 세션 및 인증 상태 확인
-    const hasSession = !!session
-    const authUid = session?.user?.id || user?.id
-    
     console.log('📝 [Health Logs] 삽입 시도:', { 
       user_id: user.id, 
       user_email: user.email,
-      has_session: hasSession,
-      session_user_id: session?.user?.id,
-      auth_uid_match: authUid === user.id,
       category, 
       note,
       logged_at: logged_at || new Date().toISOString()
@@ -178,11 +165,6 @@ export async function POST(req: Request) {
       )
     }
 
-    // 🔍 auth.uid() 확인을 위한 추가 검증
-    if (!hasSession) {
-      console.warn('⚠️ [Health Logs] 세션이 없습니다. RLS 정책이 작동하지 않을 수 있습니다.')
-    }
-
     // 로그 삽입
     const { data, error } = await supabase
       .from('health_logs')
@@ -207,14 +189,9 @@ export async function POST(req: Request) {
           error_code: error.code,
           error_message: error.message,
           user_id: user.id,
-          has_session: hasSession,
-          session_user_id: session?.user?.id,
           insert_data: insertData,
           cookies: allCookies.map(c => c.name)
         })
-        
-        // auth.uid() 확인을 위한 디버깅 정보
-        const { data: { user: debugUser } } = await supabase.auth.getUser()
         
         return NextResponse.json({
           success: false,
@@ -226,10 +203,6 @@ export async function POST(req: Request) {
             user_id: user.id,
             has_user_id: !!insertData.user_id,
             user_id_type: typeof insertData.user_id,
-            has_session: hasSession,
-            session_user_id: session?.user?.id,
-            debug_user_id: debugUser?.id,
-            auth_uid_match: debugUser?.id === user.id,
             cookie_count: allCookies.length
           },
           solution: '1. Supabase SQL Editor 열기\n2. supabase/fix-rls-policies.sql 실행\n3. 페이지 새로고침 후 다시 시도'
@@ -265,10 +238,20 @@ export async function POST(req: Request) {
       data
     })
 
-  } catch (error) {
-    console.error('❌ [Health Logs] 서버 에러:', error)
+  } catch (error: any) {
+    console.error('❌ [Health Logs] POST 서버 에러:', error)
+    console.error('   - 타입:', typeof error)
+    console.error('   - 메시지:', error?.message)
+    console.error('   - 이름:', error?.name)
+    console.error('   - 스택:', error?.stack?.split('\n').slice(0, 5).join('\n'))
+    
     return NextResponse.json(
-      { success: false, error: '서버 오류가 발생했습니다.' },
+      { 
+        success: false, 
+        error: '서버 오류가 발생했습니다.',
+        details: error?.message || String(error),
+        hint: '콘솔 로그를 확인하거나 페이지를 새로고침해주세요.'
+      },
       { status: 500 }
     )
   }
