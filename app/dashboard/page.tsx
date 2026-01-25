@@ -12,6 +12,9 @@ import {
 import LogoutSection from '../components/LogoutSection'
 import DashboardClient from '../components/DashboardClient'
 import HealthRadarChart from '../components/HealthRadarChart'
+import HealthLogButtons from '../components/HealthLogButtons'
+import CycleCareCard from '../components/CycleCareCard'
+import { NotificationSettings } from '../components/PushNotificationProvider'
 
 // 🔒 HTTP → HTTPS 변환 함수
 function toSecureUrl(url: string | null | undefined): string | null {
@@ -439,6 +442,20 @@ export default async function DashboardPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* 📝 오늘의 건강 기록 버튼 */}
+          <HealthLogButtons />
+
+          {/* 🌸 그날 케어 & 🔔 알림 설정 (여성 사용자 또는 전체 표시) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* 그날 케어 (성별이 여성이거나 미설정인 경우에만 표시) */}
+            {(!profile?.gender || profile?.gender === 'female') && (
+              <CycleCareCard />
+            )}
+            
+            {/* 알림 설정 */}
+            <NotificationSettings />
           </div>
 
           {/* 🕸️ 건강 레이더 차트 (확장 섹션) */}

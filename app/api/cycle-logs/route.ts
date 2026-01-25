@@ -1,0 +1,337 @@
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+// ========================
+// 🌸 Cycle Logs API (그날 케어)
+// 여성 건강 주기 기록 및 예측
+// ========================
+
+async function createClient() {
+  const cookieStore = await cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => 
+              cookieStore.set(name, value, options)
+            )
+          } catch {}
+        },
+      },
+    }
+  )
+}
+
+// ========================
+// 📊 주기 예측 알고리즘
+// ========================
+function calculateCyclePrediction(cycles: { start_date: string; cycle_length: number | null }[]) {
+  // 최근 3개월(또는 최대 6개) 데이터 사용
+  const recentCycles = cycles
+    .filter(c => c.cycle_length && c.cycle_length > 0)
+    .slice(0, 6)
+
+  if (recentCycles.length === 0) {
+    // 데이터가 없으면 기본 28일 주기 사용
+    return {
+      averageCycleLength: 28,
+      predictedNextDate: null,
+      confidence: 'low',
+      dataPoints: 0
+    }
+  }
+
+  // 평균 주기 계산
+  const totalDays = recentCycles.reduce((sum, c) => sum + (c.cycle_length || 28), 0)
+  const averageCycleLength = Math.round(totalDays / recentCycles.length)
+
+  // 마지막 시작일로부터 예측
+  const lastStartDate = new Date(cycles[0].start_date)
+  const predictedNextDate = new Date(lastStartDate)
+  predictedNextDate.setDate(predictedNextDate.getDate() + averageCycleLength)
+
+  // 신뢰도 계산 (데이터 포인트가 많을수록 높음)
+  let confidence: 'low' | 'medium' | 'high' = 'low'
+  if (recentCycles.length >= 6) confidence = 'high'
+  else if (recentCycles.length >= 3) confidence = 'medium'
+
+  return {
+    averageCycleLength,
+    predictedNextDate: predictedNextDate.toISOString().split('T')[0],
+    confidence,
+    dataPoints: recentCycles.length
+  }
+}
+
+// ========================
+// 🚨 지연 알림 필요 여부 확인
+// ========================
+function checkIfLate(predictedDate: string | null, lastStartDate: string): {
+  isLate: boolean
+  daysLate: number
+} {
+  if (!predictedDate) {
+    return { isLate: false, daysLate: 0 }
+  }
+
+  const today = new Date()
+  const predicted = new Date(predictedDate)
+  const diffTime = today.getTime() - predicted.getTime()
+  const daysLate = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+
+  return {
+    isLate: daysLate >= 3,
+    daysLate: Math.max(0, daysLate)
+  }
+}
+
+// ========================
+// POST: 그날 기록 추가/수정
+// ========================
+export async function POST(req: Request) {
+  try {
+    const body = await req.json()
+    const { start_date, end_date, note, action } = body
+
+    // action: 'start' (그날 시작), 'end' (그날 종료), 'update' (수정)
+
+    const supabase = await createClient()
+    
+    // 인증 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: '로그인이 필요합니다.' },
+        { status: 401 }
+      )
+    }
+
+    if (action === 'start') {
+      // 그날 시작 기록
+      if (!start_date) {
+        return NextResponse.json(
+          { error: '시작일을 입력해주세요.' },
+          { status: 400 }
+        )
+      }
+
+      // 이전 주기 길이 계산 (이전 기록이 있는 경우)
+      const { data: previousCycle } = await supabase
+        .from('cycle_logs')
+        .select('start_date')
+        .eq('user_id', user.id)
+        .order('start_date', { ascending: false })
+        .limit(1)
+        .single()
+
+      let cycle_length = null
+      if (previousCycle) {
+        const prevDate = new Date(previousCycle.start_date)
+        const newDate = new Date(start_date)
+        cycle_length = Math.round((newDate.getTime() - prevDate.getTime()) / (1000 * 60 * 60 * 24))
+      }
+
+      const { data, error } = await supabase
+        .from('cycle_logs')
+        .insert({
+          user_id: user.id,
+          start_date,
+          cycle_length,
+          note: note || null
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error('❌ [Cycle Logs] 시작 기록 에러:', error)
+        return NextResponse.json(
+          { error: '기록 저장 중 오류가 발생했습니다.' },
+          { status: 500 }
+        )
+      }
+
+      console.log('✅ [Cycle Logs] 그날 시작 기록:', user.email)
+
+      return NextResponse.json({
+        success: true,
+        message: '그날 시작이 기록되었습니다.',
+        data
+      })
+
+    } else if (action === 'end') {
+      // 그날 종료 기록 (최근 기록에 종료일 추가)
+      if (!end_date) {
+        return NextResponse.json(
+          { error: '종료일을 입력해주세요.' },
+          { status: 400 }
+        )
+      }
+
+      const { data, error } = await supabase
+        .from('cycle_logs')
+        .update({
+          end_date,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user.id)
+        .is('end_date', null)
+        .order('start_date', { ascending: false })
+        .limit(1)
+        .select()
+        .single()
+
+      if (error) {
+        console.error('❌ [Cycle Logs] 종료 기록 에러:', error)
+        return NextResponse.json(
+          { error: '종료 기록 중 오류가 발생했습니다.' },
+          { status: 500 }
+        )
+      }
+
+      console.log('✅ [Cycle Logs] 그날 종료 기록:', user.email)
+
+      return NextResponse.json({
+        success: true,
+        message: '그날 종료가 기록되었습니다.',
+        data
+      })
+    }
+
+    return NextResponse.json(
+      { error: '유효하지 않은 요청입니다.' },
+      { status: 400 }
+    )
+
+  } catch (error) {
+    console.error('❌ [Cycle Logs] 서버 에러:', error)
+    return NextResponse.json(
+      { error: '서버 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}
+
+// ========================
+// GET: 주기 기록 및 예측 조회
+// ========================
+export async function GET(req: Request) {
+  try {
+    const supabase = await createClient()
+    
+    // 인증 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: '로그인이 필요합니다.' },
+        { status: 401 }
+      )
+    }
+
+    // 최근 12개월 기록 조회
+    const oneYearAgo = new Date()
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+
+    const { data: cycles, error } = await supabase
+      .from('cycle_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .gte('start_date', oneYearAgo.toISOString().split('T')[0])
+      .order('start_date', { ascending: false })
+
+    if (error) {
+      console.error('❌ [Cycle Logs] 조회 에러:', error)
+      return NextResponse.json(
+        { error: '기록 조회 중 오류가 발생했습니다.' },
+        { status: 500 }
+      )
+    }
+
+    // 예측 계산
+    const prediction = calculateCyclePrediction(cycles || [])
+
+    // 지연 확인
+    const lateStatus = cycles && cycles.length > 0
+      ? checkIfLate(prediction.predictedNextDate, cycles[0].start_date)
+      : { isLate: false, daysLate: 0 }
+
+    // 현재 진행 중인 주기 (종료일이 없는 경우)
+    const currentCycle = cycles?.find(c => !c.end_date) || null
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        cycles: cycles || [],
+        prediction,
+        lateStatus,
+        currentCycle,
+        totalRecords: cycles?.length || 0
+      }
+    })
+
+  } catch (error) {
+    console.error('❌ [Cycle Logs] 서버 에러:', error)
+    return NextResponse.json(
+      { error: '서버 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}
+
+// ========================
+// DELETE: 기록 삭제
+// ========================
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const logId = searchParams.get('id')
+
+    if (!logId) {
+      return NextResponse.json(
+        { error: '삭제할 기록 ID가 필요합니다.' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createClient()
+    
+    // 인증 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: '로그인이 필요합니다.' },
+        { status: 401 }
+      )
+    }
+
+    const { error } = await supabase
+      .from('cycle_logs')
+      .delete()
+      .eq('id', logId)
+      .eq('user_id', user.id)
+
+    if (error) {
+      console.error('❌ [Cycle Logs] 삭제 에러:', error)
+      return NextResponse.json(
+        { error: '기록 삭제 중 오류가 발생했습니다.' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: '기록이 삭제되었습니다.'
+    })
+
+  } catch (error) {
+    console.error('❌ [Cycle Logs] 서버 에러:', error)
+    return NextResponse.json(
+      { error: '서버 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}
