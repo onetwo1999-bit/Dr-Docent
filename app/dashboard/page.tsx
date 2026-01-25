@@ -39,14 +39,20 @@ export default async function DashboardPage() {
     user.identities?.[0]?.identity_data?.email ||
     null
 
-  // 👤 이름 추출
-  const displayName = 
+  // 👤 이름 추출 (실제 이름)
+  const realName = 
     user.user_metadata?.full_name ||
     user.user_metadata?.name ||
     user.user_metadata?.preferred_username ||
     user.identities?.[0]?.identity_data?.nickname ||
     email?.split('@')[0] ||
     '사용자'
+
+  // 🏥 차트 번호 생성 (user.id 해시 기반 6자리)
+  const chartNumber = user.id.replace(/-/g, '').slice(0, 6).toUpperCase()
+  
+  // 📋 대시보드용 호칭: "차트 #XXXXXX 회원님"
+  const displayName = `차트 #${chartNumber} 회원님`
 
   // 🖼️ 프로필 이미지
   const rawAvatarUrl = 
@@ -68,7 +74,7 @@ export default async function DashboardPage() {
   return (
     <DashboardClient 
       userId={user.id} 
-      userName={displayName} 
+      userName={realName} 
       profile={profile}
     >
       <div className="min-h-screen bg-[#008080] text-white flex flex-col items-center justify-center p-6">
@@ -91,7 +97,10 @@ export default async function DashboardPage() {
             환영합니다! 🎉
           </h1>
           <p className="text-xl text-[#40E0D0] font-semibold mb-2">
-            {displayName}님
+            {realName}님
+          </p>
+          <p className="text-sm text-white/50 mb-1">
+            {displayName}
           </p>
           <p className="text-white/70 mb-6">
             닥터 도슨 대시보드에 오신 것을 환영합니다.
@@ -99,7 +108,7 @@ export default async function DashboardPage() {
 
           {/* 건강 분석 리포트 (프로필이 있을 때만 표시) */}
           {hasProfile && profile && (
-            <HealthSummary profile={profile} userName={displayName} />
+            <HealthSummary profile={profile} userName={realName} />
           )}
 
           {/* 유저 정보 카드 */}
