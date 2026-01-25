@@ -133,7 +133,7 @@ export function showLocalNotification(
 // ========================
 // 🛠️ 유틸리티 함수
 // ========================
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
+function urlBase64ToUint8Array(base64String: string): ArrayBuffer {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding)
     .replace(/-/g, '+')
@@ -146,7 +146,8 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
     outputArray[i] = rawData.charCodeAt(i)
   }
 
-  return outputArray
+  // ArrayBuffer로 반환하여 타입 호환성 보장
+  return outputArray.buffer as ArrayBuffer
 }
 
 // ========================
