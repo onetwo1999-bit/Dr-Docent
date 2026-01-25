@@ -250,15 +250,29 @@ function validateApiKeys(): {
   hasOpenAIKey: boolean; 
   claudeKeyPreview: string;
   openAIKeyPreview: string;
+  claudeKeyRaw: string;
+  openAIKeyRaw: string;
 } {
   const claudeKey = process.env.ANTHROPIC_API_KEY || ''
   const openAIKey = process.env.OPENAI_API_KEY || ''
   
+  // OpenAI는 sk- 또는 sk-svcacct- (서비스 계정) 형식 지원
+  const isValidOpenAIKey = openAIKey.length > 10 && (
+    openAIKey.startsWith('sk-') || 
+    openAIKey.startsWith('sk-svcacct-') ||
+    openAIKey.startsWith('sk-proj-')
+  )
+  
+  // Anthropic은 sk-ant- 형식
+  const isValidClaudeKey = claudeKey.length > 10 && claudeKey.startsWith('sk-ant-')
+  
   return {
-    hasClaudeKey: claudeKey.length > 0 && claudeKey.startsWith('sk-ant-'),
-    hasOpenAIKey: openAIKey.length > 0 && openAIKey.startsWith('sk-'),
+    hasClaudeKey: isValidClaudeKey,
+    hasOpenAIKey: isValidOpenAIKey,
     claudeKeyPreview: claudeKey ? `${claudeKey.slice(0, 10)}...${claudeKey.slice(-4)}` : '(없음)',
-    openAIKeyPreview: openAIKey ? `${openAIKey.slice(0, 7)}...${openAIKey.slice(-4)}` : '(없음)',
+    openAIKeyPreview: openAIKey ? `${openAIKey.slice(0, 10)}...${openAIKey.slice(-4)}` : '(없음)',
+    claudeKeyRaw: claudeKey.length > 0 ? `길이=${claudeKey.length}` : '빈 문자열',
+    openAIKeyRaw: openAIKey.length > 0 ? `길이=${openAIKey.length}` : '빈 문자열',
   }
 }
 
@@ -343,8 +357,9 @@ export async function POST(req: Request) {
     // 🔑 API 키 검증 (상세)
     const apiKeys = validateApiKeys()
     console.log(`🔑 [${requestId}] API 키 상태:`)
-    console.log(`   - Claude: ${apiKeys.hasClaudeKey ? '✅ ' + apiKeys.claudeKeyPreview : '❌ 없음'}`)
-    console.log(`   - OpenAI: ${apiKeys.hasOpenAIKey ? '✅ ' + apiKeys.openAIKeyPreview : '❌ 없음'}`)
+    console.log(`   - ANTHROPIC_API_KEY: ${apiKeys.hasClaudeKey ? '✅ ' + apiKeys.claudeKeyPreview : '❌ 없음'} (${apiKeys.claudeKeyRaw})`)
+    console.log(`   - OPENAI_API_KEY: ${apiKeys.hasOpenAIKey ? '✅ ' + apiKeys.openAIKeyPreview : '❌ 없음'} (${apiKeys.openAIKeyRaw})`)
+    console.log(`   - 환경: ${process.env.NODE_ENV || 'unknown'}`)
 
     // AI 응답 생성
     let reply: string
@@ -360,13 +375,24 @@ export async function POST(req: Request) {
     } else if (!apiKeys.hasClaudeKey && !apiKeys.hasOpenAIKey) {
       console.error(`❌ [${requestId}] 치명적 오류: API 키가 설정되지 않았습니다!`)
       console.error(`   환경 변수 확인 필요:`)
-      console.error(`   - ANTHROPIC_API_KEY: ${process.env.ANTHROPIC_API_KEY ? '설정됨' : '없음'}`)
-      console.error(`   - OPENAI_API_KEY: ${process.env.OPENAI_API_KEY ? '설정됨' : '없음'}`)
+      console.error(`   - ANTHROPIC_API_KEY: ${apiKeys.claudeKeyRaw}`)
+      console.error(`   - OPENAI_API_KEY: ${apiKeys.openAIKeyRaw}`)
+      console.error(`   `)
+      console.error(`   ⚠️ Vercel 배포 시 환경 변수 설정 필요:`)
+      console.error(`   1. Vercel 대시보드 → 프로젝트 선택`)
+      console.error(`   2. Settings → Environment Variables`)
+      console.error(`   3. ANTHROPIC_API_KEY, OPENAI_API_KEY 추가`)
+      console.error(`   4. Redeploy 실행`)
       
       return NextResponse.json({ 
         error: 'AI 서비스 API 키가 설정되지 않았습니다.',
         details: 'Vercel 환경 변수에 ANTHROPIC_API_KEY 또는 OPENAI_API_KEY를 설정해주세요.',
-        hint: 'Vercel 대시보드 → Settings → Environment Variables'
+        hint: 'Vercel 대시보드 → Settings → Environment Variables → Add 후 Redeploy',
+        debug: {
+          claudeKey: apiKeys.claudeKeyRaw,
+          openAIKey: apiKeys.openAIKeyRaw,
+          env: process.env.NODE_ENV
+        }
       }, { status: 500 })
     }
 
