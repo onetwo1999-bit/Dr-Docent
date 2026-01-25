@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { generateText } from 'ai'
+import { anthropic } from '@ai-sdk/anthropic'
+import { openai } from '@ai-sdk/openai'
 
 // ========================
 // 🔧 설정 상수
@@ -21,169 +24,13 @@ interface UserProfile {
 }
 
 // ========================
-// 🔍 유연한 키워드 매칭 (부분 일치)
+// 🧮 BMI 계산
 // ========================
-function containsAny(text: string, keywords: string[]): boolean {
-  return keywords.some(keyword => text.includes(keyword))
-}
-
-function findMatching(text: string, keywords: string[]): string[] {
-  return keywords.filter(keyword => text.includes(keyword))
-}
-
-// ========================
-// 🔍 키워드 추출기 (확장)
-// ========================
-function extractKeywords(message: string): string[] {
-  const keywords: string[] = []
-  
-  // 치료/시술 관련 (확장)
-  const treatments = ['충격파', '침', '물리치료', '주사', '약', '수술', '도수치료', '운동치료', 
-    '스트레칭', '찜질', '파스', '진통제', '마사지', '정형외과', '한의원', '재활', '치료', '병원']
-  findMatching(message, treatments).forEach(t => keywords.push(t))
-  
-  // 증상 관련 (확장)
-  const symptoms = ['아프', '아파', '통증', '시큰', '쑤시', '저리', '붓', '뻣뻣', '찌릿', 
-    '욱신', '뜨끔', '결리', '당기', '무거', '피곤', '어지러', '두근', '쓰리', '시리', '아리']
-  findMatching(message, symptoms).forEach(s => keywords.push(s))
-  
-  // 상황/활동 관련 (확장)
-  const activities = ['계단', '앉', '일어', '걸', '뛰', '운동', '아르바이트', '알바', '일하', 
-    '오래 서', '오래 앉', '출퇴근', '잠', '아침', '저녁', '밤', '내려', '올라', '구부리', '펴']
-  findMatching(message, activities).forEach(a => keywords.push(a))
-  
-  // 신체 부위 (확장)
-  const bodyParts = ['무릎', '허리', '어깨', '목', '발목', '손목', '팔', '다리', '등', '골반', 
-    '엉덩이', '종아리', '허벅지', '발', '손', '관절']
-  findMatching(message, bodyParts).forEach(b => keywords.push(b))
-  
-  return [...new Set(keywords)]
-}
-
-// ========================
-// 🧠 대화 컨텍스트 분석기 (개선)
-// ========================
-function analyzeContext(message: string): {
-  isFollowUp: boolean
-  hasTreatmentHistory: boolean
-  hasNoImprovement: boolean
-  hasLifestyleFactor: boolean
-  hasPainPattern: boolean
-  mainTopic: string | null
-  keywords: string[]
-  bodyPart: string | null
-} {
-  const keywords = extractKeywords(message)
-  
-  // 치료 경험/후속 대화 감지 (확장)
-  const treatmentIndicators = ['받', '했는데', '해봤', '먹', '다녀', '갔', '치료', '병원', '의원']
-  const isFollowUp = containsAny(message, treatmentIndicators)
-  
-  // 호전 없음 감지 (확장 - 더 유연하게)
-  const noImprovementIndicators = ['낫지', '나아지', '호전', '똑같', '여전히', '계속', 
-    '효과', '소용', '안 낫', '안낫', '않아', '없어', '그대로', '변화가 없', '마찬가지']
-  const hasNoImprovement = containsAny(message, noImprovementIndicators) && 
-    (containsAny(message, ['않', '없', '안']) || message.includes('그대로'))
-  
-  // 생활 습관/직업 요인 감지
-  const lifestyleIndicators = ['아르바이트', '알바', '일하', '직장', '회사', '서서', '앉아서', 
-    '무거운', '반복', '오래', '매일', '항상']
-  const hasLifestyleFactor = containsAny(message, lifestyleIndicators)
-  
-  // 통증 패턴 감지 (계단, 특정 동작 등)
-  const painPatternIndicators = ['계단', '내려', '올라', '앉을', '일어', '구부', '펼', '돌리', 
-    '들', '잡', '~할 때', '하면']
-  const hasPainPattern = containsAny(message, painPatternIndicators)
-  
-  // 신체 부위 감지
-  let bodyPart: string | null = null
-  if (containsAny(message, ['무릎', '슬관절'])) bodyPart = '무릎'
-  else if (containsAny(message, ['허리', '요추', '척추'])) bodyPart = '허리'
-  else if (containsAny(message, ['어깨', '견관절'])) bodyPart = '어깨'
-  else if (containsAny(message, ['목', '경추'])) bodyPart = '목'
-  else if (containsAny(message, ['발목'])) bodyPart = '발목'
-  else if (containsAny(message, ['손목'])) bodyPart = '손목'
-  
-  // 계단 + 통증 = 무릎 추정
-  if (!bodyPart && containsAny(message, ['계단']) && containsAny(message, ['아프', '아파', '통증', '심해'])) {
-    bodyPart = '무릎'
-  }
-  
-  // 주요 토픽 결정
-  let mainTopic: string | null = null
-  if (bodyPart === '무릎' || containsAny(message, ['관절'])) mainTopic = '무릎/관절'
-  else if (bodyPart === '허리') mainTopic = '허리'
-  else if (bodyPart === '어깨' || bodyPart === '목') mainTopic = '어깨/목'
-  else if (containsAny(message, ['두통', '머리 아', '머리가 아'])) mainTopic = '두통'
-  else if (containsAny(message, ['소화', '위', '속 쓰림', '속쓰림', '체'])) mainTopic = '소화기'
-  else if (containsAny(message, ['피로', '피곤', '기운', '무기력', '지쳐'])) mainTopic = '피로'
-  else if (containsAny(message, ['통증', '아프', '아파']) && hasPainPattern) mainTopic = '통증'
-  
-  return {
-    isFollowUp,
-    hasTreatmentHistory: isFollowUp,
-    hasNoImprovement,
-    hasLifestyleFactor,
-    hasPainPattern,
-    mainTopic,
-    keywords,
-    bodyPart
-  }
-}
-
-// ========================
-// 💬 동적 심화 질문 생성기
-// ========================
-function generateFollowUpQuestion(context: ReturnType<typeof analyzeContext>): string {
-  const { mainTopic, bodyPart, hasPainPattern, hasNoImprovement } = context
-  
-  // 호전 없음인 경우
-  if (hasNoImprovement) {
-    const questions = [
-      '치료를 얼마나 오래 받으셨어요?',
-      '통증이 시작된 지는 얼마나 되셨어요?',
-      '일상에서 같은 동작을 반복하시는 일이 있으세요?',
-      '쉴 때는 통증이 좀 나아지시나요?'
-    ]
-    return questions[Math.floor(Math.random() * questions.length)]
-  }
-  
-  // 통증 패턴이 있는 경우
-  if (hasPainPattern && (bodyPart === '무릎' || mainTopic === '무릎/관절')) {
-    const questions = [
-      '올라갈 때와 내려갈 때 중 언제 더 아프세요?',
-      '앉았다 일어날 때도 불편하신가요?',
-      '아침에 일어났을 때 무릎이 뻣뻣한 느낌이 있으세요?',
-      '무릎에서 소리가 나기도 하나요?'
-    ]
-    return questions[Math.floor(Math.random() * questions.length)]
-  }
-  
-  // 부위별 질문
-  if (bodyPart === '무릎' || mainTopic === '무릎/관절') {
-    return '계단을 오르내리실 때 통증이 심해지시나요?'
-  }
-  if (bodyPart === '허리' || mainTopic === '허리') {
-    return '앉아 있다가 일어날 때 허리가 뻣뻣하신가요?'
-  }
-  if (bodyPart === '어깨' || bodyPart === '목' || mainTopic === '어깨/목') {
-    return '팔을 위로 올릴 때 통증이 있으세요?'
-  }
-  
-  return '증상이 시작된 게 언제쯤인지 기억나세요?'
-}
-
-// ========================
-// 🧮 BMI 분석
-// ========================
-function analyzeBMI(height: number | null, weight: number | null, age: number | null) {
+function calculateBMI(height: number | null, weight: number | null): { value: number; category: string } | null {
   if (!height || !weight || height <= 0) return null
-  
   const heightM = height / 100
   const bmi = weight / (heightM * heightM)
   const bmiRounded = Math.round(bmi * 10) / 10
-  const idealMax = Math.round(23 * heightM * heightM)
-  const excess = Math.max(0, weight - idealMax)
   
   let category = '정상'
   if (bmi < 18.5) category = '저체중'
@@ -192,277 +39,118 @@ function analyzeBMI(height: number | null, weight: number | null, age: number | 
   else if (bmi < 30) category = '비만 1단계'
   else category = '비만 2단계'
   
-  return { value: bmiRounded, category, excess, idealMax }
+  return { value: bmiRounded, category }
 }
 
 // ========================
-// 🏥 동적 대화형 AI 응답 생성 (개선)
+// 🔀 스마트 모델 라우터
 // ========================
-function generateDynamicResponse(
-  message: string, 
-  userName: string, 
-  profile: UserProfile | null
-): string {
-  const context = analyzeContext(message)
-  const bmi = profile ? analyzeBMI(profile.height, profile.weight, profile.age) : null
-  const honorific = '선생님'
+function selectModel(message: string): 'claude' | 'gpt' {
+  const medicalKeywords = [
+    '통증', '분석', '증상', '수치', 'bmi', 'BMI', '치료', '처방', '약', '병원',
+    '아프', '아파', '두통', '소화', '피로', '무릎', '허리', '어깨', '관절',
+    '질환', '질병', '진단', '검사', '혈압', '당뇨', '콜레스테롤', '건강',
+    '운동', '다이어트', '체중', '비만', '영양', '식단', '수면', '스트레스',
+    '호전', '악화', '만성', '급성', '염증', '감염', '알레르기'
+  ]
   
-  console.log('🔍 [AI] 컨텍스트 분석:', JSON.stringify(context, null, 2))
+  const lowerMessage = message.toLowerCase()
+  const isMedicalQuery = medicalKeywords.some(keyword => 
+    lowerMessage.includes(keyword.toLowerCase())
+  )
   
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 치료 후 호전 없음 (최우선 처리)
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  if (context.hasNoImprovement || (context.isFollowUp && containsAny(message, ['않', '없', '안']))) {
-    const bodyPartText = context.bodyPart || '해당 부위'
-    const mentionedKeywords = context.keywords.slice(0, 3)
+  return isMedicalQuery ? 'claude' : 'gpt'
+}
+
+// ========================
+// 🏥 시스템 프롬프트 생성
+// ========================
+function buildSystemPrompt(profile: UserProfile | null): string {
+  const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
+  
+  let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의입니다.
+
+## 핵심 지침
+
+### 페르소나
+- 따뜻하고 공감 능력이 뛰어난 의사
+- 부드러운 '해요체' 사용 (예: ~이에요, ~있어요, ~해보세요)
+- 유저를 반드시 **'선생님'**이라고 호칭
+
+### 답변 구조 (엄격히 준수)
+1. **[따뜻한 공감]**: 유저의 상황에 공감하며 시작 (예: "많이 불편하셨겠어요", "걱정되셨죠")
+2. **[데이터 기반 수치 분석]**: 프로필 데이터와 글로벌 의료 가이드라인 기반 분석
+3. **[생활 처방]**: 구체적이고 실천 가능한 조언 제시
+4. **[따뜻한 응원]**: 긍정적 메시지로 마무리
+
+### 금기사항
+- '존스홉킨스' 또는 특정 병원 이름 절대 언급 금지
+- 대신 **'글로벌 의료 가이드라인'**에 근거한다고 명시
+- 유저의 말을 그대로 반복하지 않기
+- 고정된 예시 질문 리스트 붙이지 않기
+
+### 대화 기법
+- 유저의 키워드를 **인용**하며 대화 연결
+- 상황에 맞는 **심화 질문** 하나로 마무리
+- 프로필 전체를 매번 나열하지 않고, 관련된 데이터만 언급
+
+`
+
+  // 유저 프로필 데이터 주입
+  if (profile) {
+    systemPrompt += `\n## 현재 상담 중인 선생님의 건강 프로필\n`
     
-    let response = `${honorific}, `
-    
-    // 키워드 인용
-    if (mentionedKeywords.length > 0) {
-      response += `**${mentionedKeywords.join(', ')}** 관련해서 `
+    if (profile.age) {
+      systemPrompt += `- 연령: ${profile.age}세\n`
     }
-    response += `치료를 받으셨는데도 나아지지 않으셨군요. 정말 답답하셨겠어요. 😔\n\n`
-    
-    // 통증 패턴 분석
-    if (context.hasPainPattern) {
-      const patterns = context.keywords.filter(k => ['계단', '내려', '올라', '앉', '일어'].includes(k))
-      if (patterns.length > 0) {
-        response += `**"${patterns.join(', ')}"** 동작에서 통증이 심해지신다고 하셨는데, `
+    if (profile.gender) {
+      systemPrompt += `- 성별: ${profile.gender === 'male' ? '남성' : '여성'}\n`
+    }
+    if (profile.height && profile.weight) {
+      systemPrompt += `- 신체: ${profile.height}cm / ${profile.weight}kg\n`
+      if (bmi) {
+        systemPrompt += `- BMI: ${bmi.value} (${bmi.category})\n`
         
-        if (containsAny(message, ['계단', '내려'])) {
-          response += `계단을 내려갈 때 더 아프시다면 **슬개대퇴 관절(무릎뼈-허벅지뼈 사이)** 문제일 가능성이 높아요.\n\n`
-        } else {
-          response += `이런 특정 동작에서 악화되는 패턴은 원인을 찾는 중요한 단서예요.\n\n`
+        if (bmi.value >= 25) {
+          const idealWeight = Math.round(23 * Math.pow(profile.height / 100, 2))
+          const excess = profile.weight - idealWeight
+          systemPrompt += `- 참고: 적정 체중보다 약 ${excess}kg 높음. 무릎 등 하체 관절에 추가 부하 ${excess * 4}kg 추정\n`
         }
       }
     }
-    
-    response += `### 🔬 글로벌 의료 가이드라인에 따른 새로운 분석\n\n`
-    
-    response += `치료에도 호전이 없다면 다음을 살펴봐야 해요:\n\n`
-    
-    response += `**1. 만성화 가능성**\n`
-    response += `통증이 3개월 이상 지속되면 **만성 통증**으로 분류돼요. `
-    response += `이 경우 단순 국소 치료만으로는 한계가 있고, **신경계 과민화** 치료가 필요할 수 있어요.\n\n`
-    
-    response += `**2. 근본 원인 미해결**\n`
-    response += `치료를 받아도 **통증을 유발하는 원인(자세, 동작, 체중 부하)**이 그대로라면 계속 재발할 수 있어요.\n`
-    
-    if (bmi && bmi.value >= 25 && (context.bodyPart === '무릎' || context.mainTopic?.includes('무릎'))) {
-      response += `• ${honorific}의 경우 체중 ${bmi.excess}kg만 줄이셔도 ${context.bodyPart || '관절'} 부담이 **${bmi.excess * 4}kg** 줄어들어요.\n`
+    if (profile.conditions) {
+      systemPrompt += `- 기저 질환: ${profile.conditions}\n`
+      systemPrompt += `  (⚠️ 이 정보를 반드시 고려하여 조언할 것)\n`
     }
-    
-    response += `\n**3. 진단 재평가 필요성**\n`
-    response += `처음 진단이 정확했는지, 다른 원인은 없는지 다시 확인이 필요할 수 있어요.\n\n`
-    
-    response += `### 💡 제안\n`
-    response += `• 통증 일지 작성 (언제, 어떤 동작 후 악화되는지)\n`
-    response += `• 현재 치료 의사에게 "호전이 없다"고 솔직히 말씀하세요\n`
-    response += `• 필요시 다른 전문의 의견(세컨드 오피니언)도 도움이 돼요\n\n`
-    
-    response += `---\n🤔 ${generateFollowUpQuestion(context)}`
-    
-    return response + DISCLAIMER
+    if (profile.medications) {
+      systemPrompt += `- 복용 약물: ${profile.medications}\n`
+      systemPrompt += `  (⚠️ 약물 상호작용 및 부작용 가능성 고려할 것)\n`
+    }
+  } else {
+    systemPrompt += `\n## 건강 프로필\n아직 등록된 건강 프로필이 없습니다. 맞춤 상담을 위해 프로필 등록을 권유하세요.\n`
   }
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 통증 + 동작 패턴 (계단, 앉기 등)
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  if (context.hasPainPattern && containsAny(message, ['아프', '아파', '통증', '심해'])) {
-    const bodyPartText = context.bodyPart || '해당 부위'
-    const patterns = context.keywords.filter(k => ['계단', '내려', '올라', '앉', '일어', '구부'].includes(k))
-    
-    let response = `${honorific}, `
-    
-    if (patterns.length > 0) {
-      response += `**${patterns.join(', ')}** 동작에서 통증이 심해지시는군요. 많이 불편하셨겠어요. 😔\n\n`
-    } else {
-      response += `통증이 있으시군요. 힘드셨겠어요. 😔\n\n`
-    }
-    
-    // 계단 + 통증 = 무릎 분석
-    if (containsAny(message, ['계단'])) {
-      response += `**계단에서 악화되는 통증**은 무릎 문제를 시사해요:\n\n`
-      response += `• **내려갈 때 더 아프면**: 슬개대퇴 관절(무릎뼈) 문제 가능성\n`
-      response += `• **올라갈 때 더 아프면**: 대퇴사두근(허벅지 앞쪽) 약화 가능성\n`
-      response += `• **양쪽 다 아프면**: 퇴행성 관절염 또는 연골 손상 가능성\n\n`
-    }
-    
-    // BMI 연관 (짧게)
-    if (bmi && bmi.value >= 25) {
-      response += `💡 참고: 현재 체중에서 ${bmi.excess}kg만 줄이셔도 무릎 부담이 **${bmi.excess * 4}kg** 감소해요.\n\n`
-    }
-    
-    // 치료 받고 있다면
-    if (context.isFollowUp) {
-      response += `치료를 받고 계신다고 하셨는데, 효과는 어떠세요?\n\n`
-    }
-    
-    response += `---\n🤔 ${generateFollowUpQuestion(context)}`
-    
-    return response + DISCLAIMER
-  }
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 치료 경험 언급 (일반 후속)
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  if (context.isFollowUp && context.keywords.length > 0) {
-    const treatments = context.keywords.filter(k => 
-      ['충격파', '침', '물리치료', '주사', '도수치료', '치료', '병원', '한의원', '정형외과'].includes(k)
-    )
-    
-    let response = `${honorific}, `
-    
-    if (treatments.length > 0) {
-      response += `**${treatments.join(', ')}**를 받고 계시는군요!\n\n`
-      
-      if (treatments.includes('충격파')) {
-        response += `충격파 치료는 힘줄/인대 회복을 촉진해요. 보통 3-5회 정도 받으시면 효과를 느끼실 수 있어요.\n\n`
-      }
-      if (treatments.includes('침') || treatments.includes('한의원')) {
-        response += `침 치료는 근육 이완과 혈액순환에 도움이 돼요.\n\n`
-      }
-      if (treatments.includes('물리치료')) {
-        response += `물리치료는 꾸준함이 중요해요. 집에서도 알려주신 운동을 해주시면 효과가 배가 돼요.\n\n`
-      }
-    } else {
-      response += `치료를 받고 계시는군요.\n\n`
-    }
-    
-    response += `효과는 어떠세요? 조금이라도 나아지고 계신가요?\n\n`
-    response += `---\n🤔 ${generateFollowUpQuestion(context)}`
-    
-    return response + DISCLAIMER
-  }
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 무릎/관절 (첫 상담)
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  if (context.mainTopic === '무릎/관절' || context.bodyPart === '무릎') {
-    let response = `${honorific}, 무릎이 불편하시군요. 많이 신경 쓰이셨겠어요. 😔\n\n`
-    
-    if (context.keywords.some(k => ['시큰', '쑤시', '욱신'].includes(k))) {
-      response += `**"${context.keywords.filter(k => ['시큰', '쑤시', '욱신'].includes(k)).join(', ')}"** 느낌은 관절 주변 염증이나 퇴행성 변화를 시사할 수 있어요.\n\n`
-    }
-    
-    if (bmi && bmi.value >= 25) {
-      response += `💡 ${honorific}의 경우 체중 ${bmi.excess}kg만 줄이셔도 무릎 부담이 **${bmi.excess * 4}kg** 줄어들어요.\n\n`
-    }
-    
-    if (profile?.age && profile.age >= 50) {
-      response += `${profile.age}세 연령대에서는 퇴행성 관절염이 흔하지만, 관리하시면 충분히 좋아질 수 있어요!\n\n`
-    }
-    
-    response += `---\n🤔 ${generateFollowUpQuestion(context)}`
-    
-    return response + DISCLAIMER
-  }
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 허리
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  if (context.mainTopic === '허리' || context.bodyPart === '허리') {
-    let response = `${honorific}, 허리가 불편하시군요. 일상이 힘드셨겠어요. 😔\n\n`
-    
-    if (containsAny(message, ['저리', '찌릿', '다리'])) {
-      response += `**다리로 저린 느낌**이 있으시다면 디스크 문제일 수 있어요. 신경이 눌리면서 생기는 증상이에요.\n\n`
-    }
-    
-    if (context.hasLifestyleFactor) {
-      const factors = context.keywords.filter(k => ['오래', '앉', '서', '일'].includes(k))
-      response += `말씀하신 **${factors.join(', ')}** 상황이 허리에 부담을 주고 있을 수 있어요.\n\n`
-    }
-    
-    response += `---\n🤔 ${generateFollowUpQuestion(context)}`
-    
-    return response + DISCLAIMER
-  }
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 두통
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  if (context.mainTopic === '두통') {
-    let response = `${honorific}, 머리가 아프시군요. 정말 힘드셨겠어요. 😔\n\n`
-    
-    if (profile?.conditions?.includes('고혈압')) {
-      response += `⚠️ ${honorific}은 고혈압 기왕력이 있으시니, 혈압을 한번 체크해 보시는 게 좋겠어요.\n\n`
-    }
-    
-    response += `---\n🤔 두통이 있을 때 빛이나 소리에 민감해지시나요?`
-    
-    return response + DISCLAIMER
-  }
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 피로
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  if (context.mainTopic === '피로') {
-    let response = `${honorific}, 요즘 많이 지치셨나 봐요. 몸이 보내는 신호일 수 있어요. 😔\n\n`
-    
-    if (profile?.age && profile.age >= 40) {
-      response += `${profile.age}세 이상에서는 갑상선 기능 검사를 한번 받아보시는 것도 좋아요.\n\n`
-    }
-    
-    response += `---\n🤔 아침에 일어났을 때도 피곤하신가요?`
-    
-    return response + DISCLAIMER
-  }
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 인사
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  if (containsAny(message.toLowerCase(), ['안녕', '하이', 'hello', '반가'])) {
-    let response = `${honorific}, 안녕하세요! 반가워요. 😊\n\n`
-    response += `저는 20년 경력의 가정의학과 전문의예요. `
-    response += `${honorific}의 건강 고민을 편하게 말씀해 주시면, 최선을 다해 도와드릴게요.\n\n`
-    
-    if (profile?.conditions) {
-      response += `📋 등록하신 기저 질환(${profile.conditions})을 고려해서 상담해 드릴게요.\n\n`
-    }
-    
-    response += `어디가 불편하시거나, 궁금한 점이 있으세요?`
-    
-    return response + DISCLAIMER
-  }
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 일반 통증 (부위 불명확)
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  if (containsAny(message, ['아프', '아파', '통증', '불편'])) {
-    let response = `${honorific}, 불편하신 곳이 있으시군요. 😔\n\n`
-    
-    if (context.keywords.length > 0) {
-      response += `**"${context.keywords.slice(0, 2).join(', ')}"**에 대해 말씀해 주셨네요.\n\n`
-    }
-    
-    response += `조금 더 자세히 여쭤볼게요:\n`
-    response += `• 어느 부위가 아프세요? (무릎, 허리, 어깨 등)\n`
-    response += `• 언제부터 아프셨어요?\n`
-    response += `• 특정 동작을 하면 더 아프신가요?\n\n`
-    
-    response += `알려주시면 맞춤 조언을 드릴 수 있어요!`
-    
-    return response + DISCLAIMER
-  }
-  
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // 🔹 기본 응답 (키워드 기반)
-  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  let response = `${honorific}, 말씀 감사해요. 😊\n\n`
-  
-  if (context.keywords.length > 0) {
-    response += `**"${context.keywords.slice(0, 2).join(', ')}"**에 대해 말씀해 주셨네요.\n\n`
-  }
-  
-  response += `조금 더 자세히 알려주시면 ${honorific}께 맞는 조언을 드릴 수 있어요.\n\n`
-  response += `• 어떤 증상이 있으신지\n`
-  response += `• 언제부터 시작됐는지\n`
-  response += `• 어떤 상황에서 더 심해지는지\n\n`
-  
-  response += `편하게 말씀해 주세요!`
-  
-  return response + DISCLAIMER
+
+  systemPrompt += `
+## 응답 예시
+
+선생님, 무릎이 많이 불편하시군요. 계단을 내려갈 때 특히 아프시다니 정말 힘드셨겠어요. 😔
+
+**[데이터 분석]**
+선생님의 BMI 27.3은 과체중 범위예요. 글로벌 의료 가이드라인에 따르면, 체중 1kg 증가 시 무릎에 가해지는 부하는 약 4kg 증가해요. 현재 무릎에 약 28kg의 추가 부담이 가고 있을 수 있어요.
+
+**[생활 처방]**
+1. 체중 관리가 가장 효과적인 치료예요. 5kg만 빼셔도 무릎 부담이 20kg 줄어들어요.
+2. 계단 대신 엘리베이터를 이용해 주세요.
+3. 수영이나 아쿠아로빅 같은 수중 운동이 관절에 부담 없이 좋아요.
+
+**[응원]**
+선생님, 지금처럼 건강에 관심을 가지시는 것만으로도 정말 잘하고 계신 거예요. 조금씩 실천하시면 분명 좋아지실 거예요! 💪
+
+---
+🤔 혹시 아침에 일어나실 때 무릎이 뻣뻣한 느낌이 있으세요?
+`
+
+  return systemPrompt
 }
 
 // ========================
@@ -487,13 +175,14 @@ async function checkDailyLimit(supabase: ReturnType<typeof createServerClient>, 
 async function incrementUsage(supabase: ReturnType<typeof createServerClient>, userId: string): Promise<void> {
   const today = new Date().toISOString().split('T')[0]
   try {
-    await supabase.rpc('increment_chat_usage', { p_user_id: userId })
+    const { data } = await supabase.from('chat_usage').select('count').eq('user_id', userId).eq('date', today).single()
+    if (data) {
+      await supabase.from('chat_usage').update({ count: data.count + 1 }).eq('user_id', userId).eq('date', today)
+    } else {
+      await supabase.from('chat_usage').insert({ user_id: userId, date: today, count: 1 })
+    }
   } catch {
-    try {
-      const { data } = await supabase.from('chat_usage').select('count').eq('user_id', userId).eq('date', today).single()
-      if (data) await supabase.from('chat_usage').update({ count: data.count + 1 }).eq('user_id', userId).eq('date', today)
-      else await supabase.from('chat_usage').insert({ user_id: userId, date: today, count: 1 })
-    } catch {}
+    // 테이블 없으면 무시
   }
 }
 
@@ -512,6 +201,7 @@ export async function POST(req: Request) {
 
     console.log('📩 [Chat API] 메시지:', message)
 
+    // Supabase 클라이언트 생성
     const cookieStore = await cookies()
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -526,26 +216,127 @@ export async function POST(req: Request) {
       }
     )
 
+    // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    if (authError || !user) {
+      return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
+    }
 
+    // 일일 사용량 체크
     const { allowed, count } = await checkDailyLimit(supabase, user.id)
-    if (!allowed) return NextResponse.json({ error: `일일 사용 제한(${DAILY_LIMIT}회) 초과`, dailyLimit: true, count }, { status: 429 })
+    if (!allowed) {
+      return NextResponse.json({ 
+        error: `일일 사용 제한(${DAILY_LIMIT}회)을 초과했습니다.`, 
+        dailyLimit: true, 
+        count 
+      }, { status: 429 })
+    }
 
+    // 프로필 로드
     const { data: profile } = await supabase
       .from('profiles')
       .select('age, gender, height, weight, conditions, medications')
       .eq('id', user.id)
       .single()
 
-    const userName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || '회원'
-    const reply = generateDynamicResponse(message, userName, profile)
+    // 스마트 모델 라우팅
+    const selectedModel = selectModel(message)
+    console.log(`🤖 [Chat API] 선택된 모델: ${selectedModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
+
+    // 시스템 프롬프트 생성
+    const systemPrompt = buildSystemPrompt(profile)
+
+    // AI 응답 생성
+    let reply: string
+    let actualModel = selectedModel
+
+    // API 키 확인
+    const hasClaudeKey = !!process.env.ANTHROPIC_API_KEY
+    const hasOpenAIKey = !!process.env.OPENAI_API_KEY
     
+    console.log(`🔑 [Chat API] API 키 상태 - Claude: ${hasClaudeKey ? '✅' : '❌'}, OpenAI: ${hasOpenAIKey ? '✅' : '❌'}`)
+
+    // Claude 키만 있으면 항상 Claude 사용
+    if (hasClaudeKey && !hasOpenAIKey) {
+      actualModel = 'claude'
+    }
+    // OpenAI 키만 있으면 항상 OpenAI 사용
+    else if (!hasClaudeKey && hasOpenAIKey) {
+      actualModel = 'gpt'
+    }
+    // 둘 다 없으면 에러
+    else if (!hasClaudeKey && !hasOpenAIKey) {
+      console.error('❌ [Chat API] API 키가 설정되지 않았습니다!')
+      return NextResponse.json({ 
+        error: 'AI 서비스 API 키가 설정되지 않았습니다. 관리자에게 문의하세요.' 
+      }, { status: 500 })
+    }
+
+    try {
+      console.log(`🤖 [Chat API] 실제 사용 모델: ${actualModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
+      
+      if (actualModel === 'claude') {
+        // Claude 3.5 Haiku
+        const result = await generateText({
+          model: anthropic('claude-3-5-haiku-latest'),
+          system: systemPrompt,
+          prompt: message,
+        })
+        reply = result.text
+        console.log('✅ [Chat API] Claude 응답 성공')
+      } else {
+        // GPT-4o-mini
+        const result = await generateText({
+          model: openai('gpt-4o-mini'),
+          system: systemPrompt,
+          prompt: message,
+        })
+        reply = result.text
+        console.log('✅ [Chat API] OpenAI 응답 성공')
+      }
+    } catch (aiError: unknown) {
+      console.error('❌ [Chat API] AI 호출 에러:', aiError)
+      
+      // 에러 상세 로깅
+      if (aiError instanceof Error) {
+        console.error('   - 에러 메시지:', aiError.message)
+        console.error('   - 에러 이름:', aiError.name)
+        
+        // API 키 관련 에러 감지
+        if (aiError.message.includes('API key') || aiError.message.includes('authentication') || aiError.message.includes('401')) {
+          return NextResponse.json({ 
+            error: 'API 키가 올바르지 않습니다. 관리자에게 문의하세요.',
+            details: aiError.message
+          }, { status: 401 })
+        }
+      }
+      
+      // Fallback: 기본 응답
+      reply = `선생님, 죄송해요. 지금 시스템이 일시적으로 불안정해서 제가 제대로 답변을 드리기 어려워요. 😔
+
+잠시 후 다시 시도해 주시겠어요? 선생님의 건강 상담을 도와드리고 싶어요!`
+    }
+
+    // 면책 조항 추가
+    reply += DISCLAIMER
+
+    // 사용량 증가
     incrementUsage(supabase, user.id).catch(() => {})
     
-    return NextResponse.json({ reply, usage: { count: count + 1, limit: DAILY_LIMIT, remaining: DAILY_LIMIT - count - 1 } })
+    console.log('✅ [Chat API] 응답 생성 완료')
+    
+    return NextResponse.json({ 
+      reply,
+      model: actualModel === 'claude' ? 'claude-3.5-haiku' : 'gpt-4o-mini',
+      usage: { 
+        count: count + 1, 
+        limit: DAILY_LIMIT, 
+        remaining: DAILY_LIMIT - count - 1 
+      }
+    })
+    
   } catch (error) {
     console.error('[Chat API] Error:', error)
-    return NextResponse.json({ error: '서버 오류' }, { status: 500 })
+    return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   }
 }
