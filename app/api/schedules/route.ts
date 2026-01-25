@@ -1,0 +1,269 @@
+import { NextResponse } from 'next/server'
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+// ========================
+// 📅 Schedules API
+// 반복 일정 관리
+// ========================
+
+type CategoryType = 'meal' | 'exercise' | 'medication' | 'cycle'
+type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'once'
+
+interface Schedule {
+  id?: string
+  category: CategoryType
+  sub_type?: string
+  title: string
+  description?: string
+  frequency: FrequencyType
+  scheduled_time: string
+  days_of_week: number[]
+  day_of_month?: number
+  is_active: boolean
+  notification_enabled: boolean
+}
+
+// Supabase 클라이언트 생성
+async function createClient() {
+  const cookieStore = await cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() { return cookieStore.getAll() },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => 
+              cookieStore.set(name, value, options)
+            )
+          } catch {}
+        },
+      },
+    }
+  )
+}
+
+// ========================
+// GET: 스케줄 조회
+// ========================
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const category = searchParams.get('category')
+
+    const supabase = await createClient()
+    
+    // 인증 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: '로그인이 필요합니다.' },
+        { status: 401 }
+      )
+    }
+
+    // 쿼리 빌더
+    let query = supabase
+      .from('schedules')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('scheduled_time', { ascending: true })
+
+    // 카테고리 필터
+    if (category && ['meal', 'exercise', 'medication', 'cycle'].includes(category)) {
+      query = query.eq('category', category)
+    }
+
+    const { data, error } = await query
+
+    if (error) {
+      console.error('❌ [Schedules] 조회 에러:', error)
+      
+      // 테이블 없음 에러
+      if (error.code === '42P01') {
+        return NextResponse.json({
+          success: false,
+          error: 'schedules 테이블이 존재하지 않습니다.',
+          hint: 'supabase/schema-v2.sql 파일을 실행해주세요.',
+          data: []
+        })
+      }
+      
+      return NextResponse.json(
+        { success: false, error: '스케줄 조회 중 오류가 발생했습니다.', data: [] },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      data: data || [],
+      total: data?.length || 0
+    })
+
+  } catch (error) {
+    console.error('❌ [Schedules] 서버 에러:', error)
+    return NextResponse.json(
+      { success: false, error: '서버 오류가 발생했습니다.', data: [] },
+      { status: 500 }
+    )
+  }
+}
+
+// ========================
+// POST: 스케줄 저장 (일괄 upsert)
+// ========================
+export async function POST(req: Request) {
+  try {
+    const body = await req.json()
+    const { schedules } = body as { schedules: Schedule[] }
+
+    if (!schedules || !Array.isArray(schedules)) {
+      return NextResponse.json(
+        { error: '유효하지 않은 데이터입니다.' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createClient()
+    
+    // 인증 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: '로그인이 필요합니다.' },
+        { status: 401 }
+      )
+    }
+
+    console.log('📅 [Schedules] 저장 시도:', schedules.length, '개')
+
+    // 기존 스케줄 삭제 (해당 카테고리만)
+    const categories = [...new Set(schedules.map(s => s.category))]
+    for (const category of categories) {
+      await supabase
+        .from('schedules')
+        .delete()
+        .eq('user_id', user.id)
+        .eq('category', category)
+    }
+
+    // 새 스케줄 삽입
+    const schedulesToInsert = schedules.map(s => ({
+      user_id: user.id,
+      category: s.category,
+      sub_type: s.sub_type || null,
+      title: s.title,
+      description: s.description || null,
+      frequency: s.frequency,
+      scheduled_time: s.scheduled_time,
+      days_of_week: s.days_of_week,
+      day_of_month: s.day_of_month || null,
+      is_active: s.is_active,
+      notification_enabled: s.notification_enabled
+    }))
+
+    const { data, error } = await supabase
+      .from('schedules')
+      .insert(schedulesToInsert)
+      .select()
+
+    if (error) {
+      console.error('❌ [Schedules] 저장 에러:', error)
+      
+      // 테이블 없음 에러
+      if (error.code === '42P01') {
+        return NextResponse.json({
+          success: false,
+          error: 'schedules 테이블이 존재하지 않습니다.',
+          hint: 'supabase/schema-v2.sql 파일을 실행해주세요.'
+        }, { status: 500 })
+      }
+      
+      // RLS 에러
+      if (error.code === '42501') {
+        return NextResponse.json({
+          success: false,
+          error: 'RLS 정책 오류가 발생했습니다.',
+          hint: 'Supabase에서 schedules 테이블의 RLS 정책을 확인해주세요.'
+        }, { status: 403 })
+      }
+      
+      return NextResponse.json(
+        { success: false, error: '스케줄 저장 중 오류가 발생했습니다.', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    console.log('✅ [Schedules] 저장 완료:', data?.length, '개')
+
+    return NextResponse.json({
+      success: true,
+      message: '스케줄이 저장되었습니다.',
+      data
+    })
+
+  } catch (error) {
+    console.error('❌ [Schedules] 서버 에러:', error)
+    return NextResponse.json(
+      { success: false, error: '서버 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}
+
+// ========================
+// DELETE: 스케줄 삭제
+// ========================
+export async function DELETE(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const scheduleId = searchParams.get('id')
+
+    if (!scheduleId) {
+      return NextResponse.json(
+        { error: '삭제할 스케줄 ID가 필요합니다.' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createClient()
+    
+    // 인증 확인
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json(
+        { error: '로그인이 필요합니다.' },
+        { status: 401 }
+      )
+    }
+
+    const { error } = await supabase
+      .from('schedules')
+      .delete()
+      .eq('id', scheduleId)
+      .eq('user_id', user.id)
+
+    if (error) {
+      console.error('❌ [Schedules] 삭제 에러:', error)
+      return NextResponse.json(
+        { success: false, error: '스케줄 삭제 중 오류가 발생했습니다.' },
+        { status: 500 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: '스케줄이 삭제되었습니다.'
+    })
+
+  } catch (error) {
+    console.error('❌ [Schedules] 서버 에러:', error)
+    return NextResponse.json(
+      { success: false, error: '서버 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}

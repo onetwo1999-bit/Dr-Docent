@@ -5,6 +5,12 @@ import { Utensils, Dumbbell, Pill, Check, Loader2 } from 'lucide-react'
 
 type CategoryType = 'meal' | 'exercise' | 'medication'
 
+const categoryLabels: Record<CategoryType, string> = {
+  meal: '식사',
+  exercise: '운동',
+  medication: '복약'
+}
+
 interface TodayStats {
   meal: number
   exercise: number
@@ -27,29 +33,29 @@ function LogButton({ category, icon, label, count, onLog, isLoading, isSuccess }
       onClick={onLog}
       disabled={isLoading}
       className={`
-        flex flex-col items-center justify-center p-4 rounded-2xl border transition-all duration-300
+        flex flex-col items-center justify-center p-5 rounded-xl border transition-all duration-200
         ${isSuccess 
-          ? 'bg-[#2DD4BF]/10 border-[#2DD4BF] scale-105' 
-          : 'bg-white border-gray-100 hover:border-[#2DD4BF] hover:shadow-md'
+          ? 'bg-[#2DD4BF]/5 border-[#2DD4BF] scale-[1.02]' 
+          : 'bg-white border-gray-200 hover:border-[#2DD4BF] hover:bg-[#2DD4BF]/5'
         }
-        ${isLoading ? 'opacity-70 cursor-wait' : 'cursor-pointer'}
+        ${isLoading ? 'opacity-60 cursor-wait' : 'cursor-pointer active:scale-[0.98]'}
       `}
     >
       <div className={`
-        w-12 h-12 rounded-xl flex items-center justify-center mb-2 transition-all
-        ${isSuccess ? 'bg-[#2DD4BF]' : 'bg-[#2DD4BF]/10'}
+        w-14 h-14 rounded-xl flex items-center justify-center mb-3 transition-all
+        ${isSuccess ? 'bg-[#2DD4BF] shadow-sm' : 'bg-[#2DD4BF]/10'}
       `}>
         {isLoading ? (
-          <Loader2 className="w-6 h-6 text-[#2DD4BF] animate-spin" />
+          <Loader2 className="w-7 h-7 text-[#2DD4BF] animate-spin" />
         ) : isSuccess ? (
-          <Check className="w-6 h-6 text-white" />
+          <Check className="w-7 h-7 text-white" />
         ) : (
           <span className="text-[#2DD4BF]">{icon}</span>
         )}
       </div>
-      <span className="text-sm font-medium text-gray-700">{label}</span>
-      <span className="text-xs text-gray-400 mt-1">
-        오늘 {count}회 {isSuccess && '✓'}
+      <span className="text-sm font-semibold text-gray-800 mb-1">{label}</span>
+      <span className="text-xs text-gray-500">
+        {count > 0 ? `오늘 ${count}회` : '기록하기'}
       </span>
     </button>
   )
@@ -122,23 +128,25 @@ export default function HealthLogButtons() {
   }
 
   return (
-    <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="font-semibold text-gray-900">오늘의 건강 기록</h3>
-        <span className="text-xs text-gray-400">
-          {new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
-        </span>
+    <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h3 className="font-bold text-gray-900 text-lg">오늘의 건강 기록</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
+          </p>
+        </div>
       </div>
 
       {/* 에러 메시지 */}
       {error && (
-        <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-xl">
-          {error}
+        <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg">
+          ⚠️ {error}
         </div>
       )}
 
       {/* 3개의 로그 버튼 */}
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-3 gap-4">
         <LogButton
           category="meal"
           icon={<Utensils className="w-6 h-6" />}
@@ -170,8 +178,8 @@ export default function HealthLogButtons() {
 
       {/* 성공 토스트 메시지 */}
       {successCategory && (
-        <div className="mt-4 p-3 bg-[#2DD4BF]/10 text-[#2DD4BF] text-sm rounded-xl text-center animate-pulse">
-          ✓ 기록이 저장되었습니다!
+        <div className="mt-4 p-3 bg-[#2DD4BF]/10 border border-[#2DD4BF]/20 text-[#2DD4BF] text-sm rounded-lg text-center font-medium">
+          ✓ {categoryLabels[successCategory]} 기록이 저장되었습니다!
         </div>
       )}
 

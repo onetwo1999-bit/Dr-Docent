@@ -43,12 +43,12 @@ async function createClient() {
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { category, note, logged_at } = body
+    const { category, note, logged_at, sub_type, quantity, unit, schedule_id } = body
 
     // 유효성 검사
     if (!category || !['meal', 'exercise', 'medication'].includes(category)) {
       return NextResponse.json(
-        { error: '유효하지 않은 카테고리입니다.' },
+        { success: false, error: '유효하지 않은 카테고리입니다.' },
         { status: 400 }
       )
     }
@@ -59,10 +59,17 @@ export async function POST(req: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json(
-        { error: '로그인이 필요합니다.' },
+        { success: false, error: '로그인이 필요합니다.' },
         { status: 401 }
       )
     }
+
+    console.log('📝 [Health Logs] 삽입 시도:', { 
+      user_id: user.id, 
+      category, 
+      note,
+      logged_at: logged_at || new Date().toISOString()
+    })
 
     // 로그 삽입
     const { data, error } = await supabase
@@ -71,20 +78,55 @@ export async function POST(req: Request) {
         user_id: user.id,
         category,
         note: note || null,
-        logged_at: logged_at || new Date().toISOString()
+        logged_at: logged_at || new Date().toISOString(),
+        sub_type: sub_type || null,
+        quantity: quantity || null,
+        unit: unit || null,
+        schedule_id: schedule_id || null
       })
       .select()
       .single()
 
     if (error) {
       console.error('❌ [Health Logs] 삽입 에러:', error)
+      console.error('   - 코드:', error.code)
+      console.error('   - 메시지:', error.message)
+      console.error('   - 상세:', error.details)
+      console.error('   - 힌트:', error.hint)
+      
+      // RLS 정책 관련 에러
+      if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy')) {
+        return NextResponse.json({
+          success: false,
+          error: 'RLS 정책 오류: Supabase에서 health_logs 테이블의 RLS 정책을 확인해주세요.',
+          details: error.message,
+          hint: 'supabase/schema-v2.sql 파일의 RLS 정책 SQL을 실행해주세요.',
+          code: error.code
+        }, { status: 403 })
+      }
+      
+      // 테이블 없음 에러
+      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+        return NextResponse.json({
+          success: false,
+          error: 'health_logs 테이블이 존재하지 않습니다.',
+          details: error.message,
+          hint: 'supabase/schema-v2.sql 파일의 CREATE TABLE SQL을 먼저 실행해주세요.',
+          code: error.code
+        }, { status: 500 })
+      }
+      
       return NextResponse.json(
-        { error: '기록 저장 중 오류가 발생했습니다.', details: error.message },
+        { success: false, error: '기록 저장 중 오류가 발생했습니다.', details: error.message, code: error.code },
         { status: 500 }
       )
     }
 
-    console.log(`✅ [Health Logs] ${categoryLabels[category as CategoryType]} 기록 완료:`, user.email)
+    console.log(`✅ [Health Logs] ${categoryLabels[category as CategoryType]} 기록 완료:`, {
+      id: data.id,
+      user_id: user.id,
+      logged_at: data.logged_at
+    })
 
     return NextResponse.json({
       success: true,
@@ -95,7 +137,7 @@ export async function POST(req: Request) {
   } catch (error) {
     console.error('❌ [Health Logs] 서버 에러:', error)
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.' },
+      { success: false, error: '서버 오류가 발생했습니다.' },
       { status: 500 }
     )
   }
@@ -117,7 +159,7 @@ export async function GET(req: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json(
-        { error: '로그인이 필요합니다.' },
+        { success: false, error: '로그인이 필요합니다.' },
         { status: 401 }
       )
     }
@@ -146,8 +188,20 @@ export async function GET(req: Request) {
 
     if (error) {
       console.error('❌ [Health Logs] 조회 에러:', error)
+      
+      // 테이블 없음 에러
+      if (error.code === '42P01') {
+        return NextResponse.json({
+          success: false,
+          error: 'health_logs 테이블이 존재하지 않습니다.',
+          hint: 'supabase/schema-v2.sql 파일을 실행해주세요.',
+          data: [],
+          todayStats: { meal: 0, exercise: 0, medication: 0 }
+        })
+      }
+      
       return NextResponse.json(
-        { error: '기록 조회 중 오류가 발생했습니다.' },
+        { success: false, error: '기록 조회 중 오류가 발생했습니다.', data: [], todayStats: { meal: 0, exercise: 0, medication: 0 } },
         { status: 500 }
       )
     }
@@ -174,7 +228,7 @@ export async function GET(req: Request) {
   } catch (error) {
     console.error('❌ [Health Logs] 서버 에러:', error)
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.' },
+      { success: false, error: '서버 오류가 발생했습니다.', data: [], todayStats: { meal: 0, exercise: 0, medication: 0 } },
       { status: 500 }
     )
   }
@@ -190,7 +244,7 @@ export async function DELETE(req: Request) {
 
     if (!logId) {
       return NextResponse.json(
-        { error: '삭제할 기록 ID가 필요합니다.' },
+        { success: false, error: '삭제할 기록 ID가 필요합니다.' },
         { status: 400 }
       )
     }
@@ -201,7 +255,7 @@ export async function DELETE(req: Request) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json(
-        { error: '로그인이 필요합니다.' },
+        { success: false, error: '로그인이 필요합니다.' },
         { status: 401 }
       )
     }
@@ -215,7 +269,7 @@ export async function DELETE(req: Request) {
     if (error) {
       console.error('❌ [Health Logs] 삭제 에러:', error)
       return NextResponse.json(
-        { error: '기록 삭제 중 오류가 발생했습니다.' },
+        { success: false, error: '기록 삭제 중 오류가 발생했습니다.' },
         { status: 500 }
       )
     }
@@ -228,7 +282,7 @@ export async function DELETE(req: Request) {
   } catch (error) {
     console.error('❌ [Health Logs] 서버 에러:', error)
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.' },
+      { success: false, error: '서버 오류가 발생했습니다.' },
       { status: 500 }
     )
   }

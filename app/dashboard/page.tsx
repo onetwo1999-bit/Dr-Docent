@@ -7,14 +7,15 @@ import {
   MessageSquare, 
   Activity, 
   ArrowUpRight,
-  Settings
+  Settings,
+  Calendar
 } from 'lucide-react'
 import LogoutSection from '../components/LogoutSection'
 import DashboardClient from '../components/DashboardClient'
 import HealthRadarChart from '../components/HealthRadarChart'
 import HealthLogButtons from '../components/HealthLogButtons'
 import CycleCareCard from '../components/CycleCareCard'
-import { NotificationSettings } from '../components/PushNotificationProvider'
+import NotificationSettingsCard from '../components/NotificationSettingsCard'
 
 // 🔒 HTTP → HTTPS 변환 함수
 function toSecureUrl(url: string | null | undefined): string | null {
@@ -455,7 +456,7 @@ export default async function DashboardPage() {
             )}
             
             {/* 알림 설정 */}
-            <NotificationSettings />
+            <NotificationSettingsCard />
           </div>
 
           {/* 🕸️ 건강 레이더 차트 (확장 섹션) */}
@@ -478,23 +479,32 @@ export default async function DashboardPage() {
           )}
 
           {/* 🎮 주요 액션 버튼 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {/* AI 상담 버튼 (메인) */}
             <Link 
               href="/chat"
               className="bg-[#2DD4BF] hover:bg-[#26b8a5] text-white py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all hover:scale-[1.02] shadow-md"
             >
               <MessageSquare className="w-6 h-6" />
-              <span className="text-lg">AI 건강 상담 시작</span>
+              <span className="text-lg">AI 상담</span>
             </Link>
 
-            {/* 프로필 설정 버튼 (보조) */}
+            {/* 캘린더 버튼 */}
             <Link 
-              href="/profile"
+              href="/calendar"
               className="bg-white hover:bg-gray-50 text-[#2DD4BF] py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all border-2 border-[#2DD4BF] hover:scale-[1.02]"
             >
-              <Settings className="w-6 h-6" />
-              <span className="text-lg">{hasProfile ? '프로필 수정' : '프로필 설정'}</span>
+              <Calendar className="w-6 h-6" />
+              <span className="text-lg">캘린더</span>
+            </Link>
+
+            {/* 프로필 설정 버튼 */}
+            <Link 
+              href="/profile"
+              className="bg-white hover:bg-gray-50 text-gray-600 py-4 rounded-2xl font-bold flex items-center justify-center gap-3 transition-all border border-gray-200 hover:scale-[1.02]"
+            >
+              <Settings className="w-6 h-6 text-[#2DD4BF]" />
+              <span className="text-lg">{hasProfile ? '프로필' : '설정'}</span>
             </Link>
           </div>
 
