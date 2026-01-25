@@ -349,7 +349,7 @@ export async function POST(req: Request) {
 
     // 스마트 모델 라우팅
     const selectedModel = selectModel(message)
-    console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
+    console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? 'Claude 3.5 Haiku (20241022)' : 'GPT-4o-mini'}`)
 
     // 시스템 프롬프트 생성
     const systemPrompt = buildSystemPrompt(profile)
@@ -400,8 +400,9 @@ export async function POST(req: Request) {
       console.log(`🚀 [${requestId}] AI 호출 시작: ${actualModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
       
       if (actualModel === 'claude') {
+        // Claude 3.5 Haiku - 정확한 모델 버전 사용
         const result = await generateText({
-          model: anthropic('claude-3-5-haiku-latest'),
+          model: anthropic('claude-3-5-haiku-20241022'),
           system: systemPrompt,
           prompt: message,
         })
@@ -418,10 +419,13 @@ export async function POST(req: Request) {
       }
     } catch (aiError: unknown) {
       console.error(`❌ [${requestId}] AI 호출 실패!`)
+      console.error(`   - 사용 모델: ${actualModel === 'claude' ? 'claude-3-5-haiku-20241022' : 'gpt-4o-mini'}`)
+      console.error(`   - 전체 에러:`, aiError)
       
       if (aiError instanceof Error) {
         console.error(`   - 에러 타입: ${aiError.name}`)
         console.error(`   - 에러 메시지: ${aiError.message}`)
+        console.error(`   - 스택 트레이스:`, aiError.stack)
         
         // API 키 관련 에러 상세 분석
         if (aiError.message.includes('API key') || 
@@ -457,10 +461,42 @@ export async function POST(req: Request) {
         }
       }
       
-      // Fallback 응답
-      reply = `선생님, 죄송해요. 지금 시스템이 일시적으로 불안정해서 제가 제대로 답변을 드리기 어려워요. 😔
-
-잠시 후 다시 시도해 주시겠어요? 선생님의 건강 상담을 도와드리고 싶어요!`
+      // Fallback 응답 - 에러 정보 포함
+      const errorMsg = aiError instanceof Error ? aiError.message : String(aiError)
+      console.error(`   ⚠️ Fallback 응답 사용`)
+      
+      // 모델 폴백 시도: Claude 실패 시 OpenAI로, 반대의 경우도 시도
+      if (actualModel === 'claude' && apiKeys.hasOpenAIKey) {
+        console.log(`   🔄 Claude 실패 → OpenAI 폴백 시도`)
+        try {
+          const fallbackResult = await generateText({
+            model: openai('gpt-4o-mini'),
+            system: systemPrompt,
+            prompt: message,
+          })
+          reply = fallbackResult.text
+          console.log(`   ✅ OpenAI 폴백 성공 (${fallbackResult.text.length}자)`)
+        } catch (fallbackError) {
+          console.error(`   ❌ OpenAI 폴백도 실패:`, fallbackError)
+          reply = `선생님, 죄송해요. 지금 AI 시스템이 일시적으로 불안정해서 답변을 드리기 어려워요. 😔\n\n잠시 후 다시 시도해 주시겠어요?`
+        }
+      } else if (actualModel === 'gpt' && apiKeys.hasClaudeKey) {
+        console.log(`   🔄 OpenAI 실패 → Claude 폴백 시도`)
+        try {
+          const fallbackResult = await generateText({
+            model: anthropic('claude-3-5-haiku-20241022'),
+            system: systemPrompt,
+            prompt: message,
+          })
+          reply = fallbackResult.text
+          console.log(`   ✅ Claude 폴백 성공 (${fallbackResult.text.length}자)`)
+        } catch (fallbackError) {
+          console.error(`   ❌ Claude 폴백도 실패:`, fallbackError)
+          reply = `선생님, 죄송해요. 지금 AI 시스템이 일시적으로 불안정해서 답변을 드리기 어려워요. 😔\n\n잠시 후 다시 시도해 주시겠어요?`
+        }
+      } else {
+        reply = `선생님, 죄송해요. 지금 AI 시스템이 일시적으로 불안정해서 답변을 드리기 어려워요. 😔\n\n잠시 후 다시 시도해 주시겠어요?`
+      }
     }
 
     // 면책 조항 추가
@@ -475,7 +511,7 @@ export async function POST(req: Request) {
     
     return NextResponse.json({ 
       reply,
-      model: actualModel === 'claude' ? 'claude-3.5-haiku' : 'gpt-4o-mini',
+      model: actualModel === 'claude' ? 'claude-3-5-haiku-20241022' : 'gpt-4o-mini',
       usage: { 
         count: count + 1, 
         limit: DAILY_LIMIT, 
