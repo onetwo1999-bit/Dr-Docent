@@ -40,12 +40,32 @@ interface CalendarViewProps {
   userId: string
 }
 
-// 카테고리별 아이콘 및 색상
-const categoryConfig: Record<CategoryType, { icon: React.ReactNode; color: string; bgColor: string; label: string }> = {
-  meal: { icon: <Utensils className="w-3 h-3" />, color: 'text-orange-500', bgColor: 'bg-orange-100', label: '식사' },
-  exercise: { icon: <Dumbbell className="w-3 h-3" />, color: 'text-blue-500', bgColor: 'bg-blue-100', label: '운동' },
-  medication: { icon: <Pill className="w-3 h-3" />, color: 'text-purple-500', bgColor: 'bg-purple-100', label: '복약' },
-  cycle: { icon: <Heart className="w-3 h-3" />, color: 'text-pink-500', bgColor: 'bg-pink-100', label: '그날' }
+// 카테고리별 아이콘 및 색상 (시그니처 컬러 #2DD4BF 사용)
+const categoryConfig: Record<CategoryType, { 
+  icon: (props?: { className?: string }) => React.ReactNode
+  color: string
+  label: string
+}> = {
+  meal: { 
+    icon: (props) => <Utensils className={props?.className || "w-3.5 h-3.5"} />, 
+    color: 'text-[#2DD4BF]', 
+    label: '식사' 
+  },
+  exercise: { 
+    icon: (props) => <Dumbbell className={props?.className || "w-3.5 h-3.5"} />, 
+    color: 'text-[#2DD4BF]', 
+    label: '운동' 
+  },
+  medication: { 
+    icon: (props) => <Pill className={props?.className || "w-3.5 h-3.5"} />, 
+    color: 'text-[#2DD4BF]', 
+    label: '복약' 
+  },
+  cycle: { 
+    icon: (props) => <Heart className={props?.className || "w-3.5 h-3.5"} />, 
+    color: 'text-[#FF6B9D]', // 그날은 따뜻한 핑크 톤으로 구분
+    label: '그날' 
+  }
 }
 
 // 시간 포맷팅
@@ -380,27 +400,30 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                     {dayData.date.getDate()}
                   </div>
                   
-                  {/* 카테고리별 도트 */}
-                  <div className="flex flex-wrap gap-1">
-                    {Object.entries(
-                      dayData.logs.reduce((acc, log) => {
-                        acc[log.category] = (acc[log.category] || 0) + 1
-                        return acc
-                      }, {} as Record<string, number>)
-                    ).map(([category, count]) => {
-                      const config = categoryConfig[category as CategoryType]
-                      return (
-                        <div
-                          key={category}
-                          className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] ${config?.bgColor} ${config?.color}`}
-                          title={`${config?.label} ${count}회`}
-                        >
-                          {config?.icon}
-                          <span>{count}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
+                  {/* 카테고리별 아이콘 마커 */}
+                  {dayData.logs.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {Object.entries(
+                        dayData.logs.reduce((acc, log) => {
+                          acc[log.category] = (acc[log.category] || 0) + 1
+                          return acc
+                        }, {} as Record<string, number>)
+                      ).map(([category, count]) => {
+                        const config = categoryConfig[category as CategoryType]
+                        if (!config) return null
+                        
+                        return (
+                          <div
+                            key={category}
+                            className={`flex items-center justify-center ${config.color} transition-opacity hover:opacity-80`}
+                            title={`${config.label} ${count}회`}
+                          >
+                            {config.icon({ className: "w-3.5 h-3.5" })}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -463,15 +486,14 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                     >
                       {dayLogs.map((log) => {
                         const config = categoryConfig[log.category as CategoryType]
+                        if (!config) return null
                         return (
                           <div
                             key={log.id}
-                            className={`text-xs p-1 rounded mb-1 ${config?.bgColor} ${config?.color}`}
+                            className={`text-xs p-1.5 rounded-lg mb-1 bg-white border border-gray-200 ${config.color} flex items-center gap-1.5`}
                           >
-                            <div className="flex items-center gap-1">
-                              {config?.icon}
-                              <span>{config?.label}</span>
-                            </div>
+                            {config.icon({ className: "w-3 h-3" })}
+                            <span className="text-gray-700 font-medium">{config.label}</span>
                           </div>
                         )
                       })}
@@ -516,15 +538,16 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                   <div className="flex-1 p-2 min-h-[80px]">
                     {hourLogs.map((log) => {
                       const config = categoryConfig[log.category as CategoryType]
+                      if (!config) return null
                       return (
                         <div
                           key={log.id}
-                          className={`p-3 rounded-xl mb-2 ${config?.bgColor}`}
+                          className="p-3 rounded-xl mb-2 bg-white border border-gray-200"
                         >
-                          <div className={`flex items-center gap-2 ${config?.color}`}>
-                            {config?.icon}
-                            <span className="font-medium">{config?.label}</span>
-                            <span className="text-xs opacity-70">{formatTime(log.logged_at)}</span>
+                          <div className={`flex items-center gap-2 ${config.color}`}>
+                            {config.icon({ className: "w-4 h-4" })}
+                            <span className="font-medium text-gray-700">{config.label}</span>
+                            <span className="text-xs text-gray-400">{formatTime(log.logged_at)}</span>
                           </div>
                           {log.note && (
                             <p className="text-sm text-gray-600 mt-1">{log.note}</p>
@@ -544,7 +567,9 @@ export default function CalendarView({ userId }: CalendarViewProps) {
       <div className="mt-4 flex items-center justify-center gap-6">
         {Object.entries(categoryConfig).map(([key, config]) => (
           <div key={key} className="flex items-center gap-2">
-            <div className={`w-3 h-3 rounded-full ${config.bgColor}`} />
+            <div className={config.color}>
+              {config.icon({ className: "w-4 h-4" })}
+            </div>
             <span className="text-sm text-gray-500">{config.label}</span>
           </div>
         ))}
@@ -581,11 +606,13 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                     ${addingCategory === key ? 'opacity-50' : ''}
                   `}
                 >
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${config.bgColor}`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-[#2DD4BF]/10`}>
                     {addingCategory === key ? (
                       <Loader2 className={`w-5 h-5 ${config.color} animate-spin`} />
                     ) : (
-                      <span className={config.color}>{config.icon}</span>
+                      <span className={config.color}>
+                        {config.icon({ className: "w-5 h-5" })}
+                      </span>
                     )}
                   </div>
                   <div className="text-left">
