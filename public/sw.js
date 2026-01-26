@@ -3,8 +3,8 @@
 // PWA 푸시 알림 및 백그라운드 동작 지원
 // =====================================================
 
-// 캐시 버전 업데이트 (강제 갱신)
-const CACHE_NAME = 'dr-docent-v2'
+// 캐시 버전 업데이트 (강제 갱신 - 리다이렉트 문제 해결)
+const CACHE_NAME = 'dr-docent-v3'
 const urlsToCache = [
   '/',
   '/dashboard',
@@ -54,7 +54,7 @@ function getAbsoluteUrl(path) {
 // 📦 설치 이벤트
 // ========================
 self.addEventListener('install', (event) => {
-  console.log('🔧 [Service Worker] 설치 중... (v2)')
+  console.log('🔧 [Service Worker] 설치 중... (v3 - 리다이렉트 문제 해결)')
   
   // 즉시 활성화하여 이전 버전 교체
   self.skipWaiting()
@@ -63,24 +63,30 @@ self.addEventListener('install', (event) => {
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('📦 [Service Worker] 캐시 저장 중')
-        // 리다이렉트를 허용하여 캐시 저장
-        return Promise.all(
+        // 리다이렉트를 허용하여 캐시 저장 (실패해도 계속 진행)
+        return Promise.allSettled(
           urlsToCache.map(url => {
             return fetch(url, { redirect: 'follow' })
               .then(response => {
-                if (response.ok || response.type === 'opaqueredirect') {
+                // 리다이렉트된 응답은 캐시하지 않음
+                if (response.redirected) {
+                  console.log(`ℹ️ [SW] 리다이렉트된 URL은 캐시하지 않음: ${url}`)
+                  return null
+                }
+                if (response.ok && response.status === 200) {
                   return cache.put(url, response)
                 }
+                return null
               })
               .catch(err => {
                 console.warn(`⚠️ [SW] 캐시 저장 실패: ${url}`, err)
-                // 실패해도 계속 진행
+                return null // 실패해도 계속 진행
               })
           })
         )
       })
       .then(() => {
-        console.log('✅ [Service Worker] 설치 완료 (v2)')
+        console.log('✅ [Service Worker] 설치 완료 (v3)')
       })
       .catch(err => {
         console.error('❌ [Service Worker] 설치 실패:', err)
@@ -93,7 +99,7 @@ self.addEventListener('install', (event) => {
 // 🔄 활성화 이벤트
 // ========================
 self.addEventListener('activate', (event) => {
-  console.log('🚀 [Service Worker] 활성화 중... (v2)')
+  console.log('🚀 [Service Worker] 활성화 중... (v3 - 리다이렉트 문제 해결)')
   
   event.waitUntil(
     Promise.all([
@@ -111,7 +117,13 @@ self.addEventListener('activate', (event) => {
       // 즉시 클라이언트 제어
       self.clients.claim()
     ]).then(() => {
-      console.log('✅ [Service Worker] 활성화 완료 (v2)')
+      console.log('✅ [Service Worker] 활성화 완료 (v3)')
+      // 모든 클라이언트에 새 버전 알림
+      return self.clients.matchAll().then(clients => {
+        clients.forEach(client => {
+          client.postMessage({ type: 'SW_UPDATED', version: 'v3' })
+        })
+      })
     })
   )
 })
@@ -196,119 +208,34 @@ self.addEventListener('notificationclick', (event) => {
 // 🌐 네트워크 요청 처리
 // ========================
 self.addEventListener('fetch', (event) => {
-  let requestUrl
+  // ⚠️ 네비게이션 요청은 Service Worker가 완전히 건너뛰고 브라우저가 직접 처리
+  // 이렇게 하면 리다이렉트 문제를 완전히 피할 수 있습니다
+  if (event.request.mode === 'navigate') {
+    return // 브라우저가 직접 처리하도록 함 (리다이렉트 문제 해결)
+  }
+  
+  // API 요청도 건너뛰기
   try {
-    requestUrl = new URL(event.request.url)
+    const url = new URL(event.request.url)
+    if (url.pathname.startsWith('/api/')) {
+      return
+    }
   } catch (e) {
-    console.warn('⚠️ [SW] 잘못된 URL:', event.request.url, e)
     return // 잘못된 URL은 건너뛰기
   }
   
-  // API 요청은 완전히 건너뛰기 (캐시하지 않음)
-  if (requestUrl.pathname.startsWith('/api/')) {
-    return
-  }
-  
-  // 외부 도메인 요청은 건너뛰기
-  const currentOrigin = self.location.origin.replace(/\/$/, '')
-  const requestOrigin = requestUrl.origin.replace(/\/$/, '')
-  
-  if (requestOrigin !== currentOrigin) {
-    return
-  }
-  
-  // GET 요청만 캐시 처리
-  if (event.request.method !== 'GET') {
-    return
-  }
-
-  // 요청 URL 정규화
-  const normalizedRequestUrl = normalizeUrl(event.request.url)
-  
+  // 나머지 요청(이미지, CSS, JS 등 정적 리소스)만 처리
+  // 하지만 리다이렉트 문제를 피하기 위해 최소한으로만 처리
   event.respondWith(
-    caches.match(normalizedRequestUrl)
-      .then((cachedResponse) => {
-        // 캐시에 있으면 캐시 반환
-        if (cachedResponse) {
-          return cachedResponse
-        }
-        
-        // 네트워크 요청 (리다이렉트 허용, URL 정규화)
-        const fetchRequest = new Request(normalizedRequestUrl, {
-          method: event.request.method,
-          headers: event.request.headers,
-          redirect: 'follow', // 리다이렉트 허용
-          credentials: 'same-origin',
-          cache: 'no-cache' // Service Worker가 캐시 관리
-        })
-        
-        return fetch(fetchRequest)
-          .then((response) => {
-            // 리다이렉트 응답 처리
-            if (response.type === 'opaqueredirect') {
-              console.log('🔄 [SW] 리다이렉트 응답 감지:', normalizedRequestUrl)
-              // 리다이렉트 응답은 캐시하지 않고 그대로 반환
-              return response
-            }
-            
-            // 성공적인 응답만 캐시
-            if (response && response.status === 200 && response.type === 'basic') {
-              // 응답을 복제하여 캐시에 저장 (원본은 반환)
-              const responseToCache = response.clone()
-              const cacheKey = new Request(normalizedRequestUrl)
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(cacheKey, responseToCache).catch(err => {
-                  console.warn('⚠️ [SW] 캐시 저장 실패:', normalizedRequestUrl, err)
-                })
-              })
-            }
-            return response
-          })
-          .catch((error) => {
-            // 리다이렉트 관련 에러는 무시하고 계속 진행
-            if (error.name === 'TypeError' && error.message.includes('redirect')) {
-              console.log('ℹ️ [SW] 리다이렉트 처리 중:', normalizedRequestUrl)
-              // 리다이렉트 에러는 정상적인 동작일 수 있으므로 무시
-              return new Response(null, { status: 307, statusText: 'Temporary Redirect' })
-            }
-            
-            console.warn('⚠️ [SW] 네트워크 요청 실패:', normalizedRequestUrl, error)
-            
-            // 네비게이션 요청이면 오프라인 페이지 반환
-            if (event.request.mode === 'navigate') {
-              return caches.match('/').then((offlinePage) => {
-                return offlinePage || new Response('오프라인입니다', {
-                  status: 503,
-                  statusText: 'Service Unavailable',
-                  headers: { 'Content-Type': 'text/html; charset=utf-8' }
-                })
-              })
-            }
-            
-            // 기타 요청은 에러 반환
-            throw error
-          })
+    fetch(event.request, {
+      redirect: 'follow',
+      credentials: 'same-origin'
+    }).catch(() => {
+      // 네트워크 실패 시 캐시 확인
+      return caches.match(event.request).then(cached => {
+        return cached || new Response('', { status: 408 })
       })
-      .catch((error) => {
-        console.error('❌ [SW] Fetch 처리 실패:', event.request.url, error)
-        
-        // 네비게이션 요청이면 기본 페이지 반환
-        if (event.request.mode === 'navigate') {
-          return caches.match('/').catch(() => {
-            return new Response('오프라인입니다', {
-              status: 503,
-              statusText: 'Service Unavailable',
-              headers: { 'Content-Type': 'text/html; charset=utf-8' }
-            })
-          })
-        }
-        
-        // 기타 요청은 네트워크 에러 반환
-        return new Response('Network error', {
-          status: 408,
-          statusText: 'Request Timeout'
-        })
-      })
+    })
   )
 })
 
