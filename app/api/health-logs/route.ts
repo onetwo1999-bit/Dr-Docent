@@ -16,7 +16,7 @@ const categoryLabels: Record<CategoryType, string> = {
   medication: '복약'
 }
 
-// Supabase 클라이언트 생성
+// Supabase 클라이언트 생성 (Route Handler용)
 async function createClient() {
   try {
     const cookieStore = await cookies()
@@ -44,7 +44,8 @@ async function createClient() {
       console.log('✅ [Health Logs] 인증 쿠키 발견:', authCookies.map(c => c.name))
     }
     
-    return createServerClient(
+    // createServerClient로 Route Handler 클라이언트 생성
+    const client = createServerClient(
       supabaseUrl,
       supabaseAnonKey,
       {
@@ -67,6 +68,16 @@ async function createClient() {
         },
       }
     )
+    
+    // 인증 컨텍스트 확인 (디버깅용)
+    const { data: { user }, error: testAuth } = await client.auth.getUser()
+    if (testAuth) {
+      console.warn('⚠️ [Health Logs] 클라이언트 생성 시 인증 확인 실패:', testAuth.message)
+    } else if (user) {
+      console.log('✅ [Health Logs] 클라이언트 생성 시 인증 확인 성공:', user.id)
+    }
+    
+    return client
   } catch (err: any) {
     console.error('❌ [Health Logs] 클라이언트 생성 실패:', err)
     throw new Error(`Supabase 클라이언트 생성 실패: ${err?.message || String(err)}`)
@@ -179,15 +190,28 @@ export async function POST(req: Request) {
     })
 
     // 📦 INSERT 데이터 객체 생성 (user_id 필수 포함)
-    const insertData = {
+    // ⚠️ 스키마 확인: health_logs 테이블에는 schedule_id 컬럼이 없음 (추가 필요 시 마이그레이션 필요)
+    const insertData: {
+      user_id: string
+      category: string
+      note: string | null
+      logged_at: string
+      sub_type?: string | null
+      quantity?: number | null
+      unit?: string | null
+    } = {
       user_id: user.id, // ⚠️ 반드시 포함!
       category,
       note: note || null,
       logged_at: logged_at || new Date().toISOString(),
-      sub_type: sub_type || null,
-      quantity: quantity || null,
-      unit: unit || null,
-      schedule_id: schedule_id || null
+      ...(sub_type && { sub_type }),
+      ...(quantity !== undefined && quantity !== null && { quantity }),
+      ...(unit && { unit })
+    }
+    
+    // schedule_id는 현재 스키마에 없으므로 제외
+    if (schedule_id) {
+      console.warn(`⚠️ [${requestId}] schedule_id는 현재 스키마에 없어 무시됩니다:`, schedule_id)
     }
 
     // 🔍 INSERT 전 최종 검증
@@ -212,12 +236,24 @@ export async function POST(req: Request) {
       .single()
 
     if (error) {
-      console.error(`❌ [${requestId}] 삽입 에러:`, error)
-      console.error(`   - 코드: ${error.code}`)
-      console.error(`   - 메시지: ${error.message}`)
-      console.error(`   - 상세: ${error.details}`)
-      console.error(`   - 힌트: ${error.hint}`)
-      console.error(`   - 삽입 데이터:`, JSON.stringify(insertData, null, 2))
+      // 🔍 에러 상세 정보 로깅
+      const errorDetails = {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        insertData: insertData
+      }
+      
+      console.error(`\n${'='.repeat(60)}`)
+      console.error(`❌ [${requestId}] 삽입 에러 발생`)
+      console.error(`${'='.repeat(60)}`)
+      console.error('에러 코드:', error.code)
+      console.error('에러 메시지:', error.message)
+      console.error('에러 상세:', error.details)
+      console.error('에러 힌트:', error.hint)
+      console.error('삽입 시도 데이터:', JSON.stringify(insertData, null, 2))
+      console.error(`${'='.repeat(60)}\n`)
       
       // RLS 정책 관련 에러 (42501 = insufficient_privilege)
       if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy') || error.message?.includes('permission') || error.message?.includes('row-level security')) {
@@ -250,20 +286,40 @@ export async function POST(req: Request) {
       }
       
       // 테이블 없음 에러
-      if (error.code === '42P01' || error.message?.includes('does not exist')) {
+      if (error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation')) {
         return NextResponse.json({
           success: false,
           error: 'health_logs 테이블이 존재하지 않습니다.',
           details: error.message,
           hint: 'supabase/schema-v2.sql 파일의 CREATE TABLE SQL을 먼저 실행해주세요.',
-          code: error.code
+          code: error.code,
+          requestId: requestId
         }, { status: 500 })
       }
       
-      return NextResponse.json(
-        { success: false, error: '기록 저장 중 오류가 발생했습니다.', details: error.message, code: error.code },
-        { status: 500 }
-      )
+      // 컬럼 없음 에러
+      if (error.message?.includes('column') && error.message?.includes('does not exist')) {
+        const columnMatch = error.message.match(/column "(\w+)"/)
+        return NextResponse.json({
+          success: false,
+          error: `존재하지 않는 컬럼: ${columnMatch?.[1] || '알 수 없음'}`,
+          details: error.message,
+          hint: `health_logs 테이블에 '${columnMatch?.[1]}' 컬럼이 없습니다. 스키마를 확인해주세요.`,
+          code: error.code,
+          requestId: requestId
+        }, { status: 400 })
+      }
+      
+      // 모든 에러에 상세 정보 포함
+      return NextResponse.json({
+        success: false,
+        error: '기록 저장 중 오류가 발생했습니다.',
+        details: error.message || '알 수 없는 오류',
+        code: error.code || 'UNKNOWN',
+        hint: error.hint || 'Supabase 로그를 확인하세요.',
+        requestId: requestId,
+        debug: errorDetails
+      }, { status: 500 })
     }
 
     console.log(`✅ [${requestId}] ${categoryLabels[category as CategoryType]} 기록 완료:`, {
