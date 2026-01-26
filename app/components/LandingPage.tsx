@@ -2,6 +2,7 @@
 
 import { createBrowserClient } from '@supabase/ssr'
 import { HeartPulse, ShieldCheck, Database, MessageSquare } from 'lucide-react'
+import { getAppUrl } from '@/app/lib/env-check'
 
 export default function LandingPage() {
   // Supabase 클라이언트 생성
@@ -13,12 +14,15 @@ export default function LandingPage() {
   // 카카오 로그인 핸들러
   const handleKakaoLogin = async () => {
     try {
+      // 환경 변수 기반 앱 URL 사용
+      const appUrl = getAppUrl()
+      
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'kakao',
         options: {
           // 심사 없이 허용되는 스코프만 요청
           scopes: 'profile_nickname profile_image',
-          redirectTo: `${window.location.origin}/auth/callback`,
+          redirectTo: `${appUrl}/auth/callback`,
           queryParams: {
             prompt: 'login consent',
           },

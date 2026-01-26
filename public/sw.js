@@ -14,6 +14,43 @@ const urlsToCache = [
 ]
 
 // ========================
+// 🔧 URL 정규화 헬퍼
+// ========================
+function normalizeUrl(url) {
+  try {
+    // URL 객체 생성 (자동으로 현재 origin 사용)
+    const urlObj = new URL(url, self.location.origin)
+    
+    // 마지막 슬래시 제거 (루트 경로 제외)
+    if (urlObj.pathname !== '/' && urlObj.pathname.endsWith('/')) {
+      urlObj.pathname = urlObj.pathname.slice(0, -1)
+    }
+    
+    return urlObj.toString()
+  } catch (e) {
+    console.warn('⚠️ [SW] URL 정규화 실패:', url, e)
+    // 실패 시 원본 반환
+    return url
+  }
+}
+
+// ========================
+// 🔧 절대 URL 생성 헬퍼
+// ========================
+function getAbsoluteUrl(path) {
+  // 경로가 이미 절대 URL이면 그대로 반환
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    return normalizeUrl(path)
+  }
+  
+  // 상대 경로를 절대 URL로 변환
+  const baseUrl = self.location.origin.replace(/\/$/, '') // 마지막 슬래시 제거
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`
+  
+  return `${baseUrl}${normalizedPath}`
+}
+
+// ========================
 // 📦 설치 이벤트
 // ========================
 self.addEventListener('install', (event) => {
@@ -159,15 +196,24 @@ self.addEventListener('notificationclick', (event) => {
 // 🌐 네트워크 요청 처리
 // ========================
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url)
+  let requestUrl
+  try {
+    requestUrl = new URL(event.request.url)
+  } catch (e) {
+    console.warn('⚠️ [SW] 잘못된 URL:', event.request.url, e)
+    return // 잘못된 URL은 건너뛰기
+  }
   
   // API 요청은 완전히 건너뛰기 (캐시하지 않음)
-  if (url.pathname.startsWith('/api/')) {
+  if (requestUrl.pathname.startsWith('/api/')) {
     return
   }
   
   // 외부 도메인 요청은 건너뛰기
-  if (url.origin !== self.location.origin) {
+  const currentOrigin = self.location.origin.replace(/\/$/, '')
+  const requestOrigin = requestUrl.origin.replace(/\/$/, '')
+  
+  if (requestOrigin !== currentOrigin) {
     return
   }
   
@@ -176,34 +222,57 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  // 요청 URL 정규화
+  const normalizedRequestUrl = normalizeUrl(event.request.url)
+  
   event.respondWith(
-    caches.match(event.request)
+    caches.match(normalizedRequestUrl)
       .then((cachedResponse) => {
         // 캐시에 있으면 캐시 반환
         if (cachedResponse) {
           return cachedResponse
         }
         
-        // 네트워크 요청 (리다이렉트 허용)
-        return fetch(event.request, {
-          redirect: 'follow',
-          credentials: 'same-origin'
+        // 네트워크 요청 (리다이렉트 허용, URL 정규화)
+        const fetchRequest = new Request(normalizedRequestUrl, {
+          method: event.request.method,
+          headers: event.request.headers,
+          redirect: 'follow', // 리다이렉트 허용
+          credentials: 'same-origin',
+          cache: 'no-cache' // Service Worker가 캐시 관리
         })
+        
+        return fetch(fetchRequest)
           .then((response) => {
+            // 리다이렉트 응답 처리
+            if (response.type === 'opaqueredirect') {
+              console.log('🔄 [SW] 리다이렉트 응답 감지:', normalizedRequestUrl)
+              // 리다이렉트 응답은 캐시하지 않고 그대로 반환
+              return response
+            }
+            
             // 성공적인 응답만 캐시
             if (response && response.status === 200 && response.type === 'basic') {
               // 응답을 복제하여 캐시에 저장 (원본은 반환)
               const responseToCache = response.clone()
+              const cacheKey = new Request(normalizedRequestUrl)
               caches.open(CACHE_NAME).then((cache) => {
-                cache.put(event.request, responseToCache).catch(err => {
-                  console.warn('⚠️ [SW] 캐시 저장 실패:', event.request.url, err)
+                cache.put(cacheKey, responseToCache).catch(err => {
+                  console.warn('⚠️ [SW] 캐시 저장 실패:', normalizedRequestUrl, err)
                 })
               })
             }
             return response
           })
           .catch((error) => {
-            console.warn('⚠️ [SW] 네트워크 요청 실패:', event.request.url, error)
+            // 리다이렉트 관련 에러는 무시하고 계속 진행
+            if (error.name === 'TypeError' && error.message.includes('redirect')) {
+              console.log('ℹ️ [SW] 리다이렉트 처리 중:', normalizedRequestUrl)
+              // 리다이렉트 에러는 정상적인 동작일 수 있으므로 무시
+              return new Response(null, { status: 307, statusText: 'Temporary Redirect' })
+            }
+            
+            console.warn('⚠️ [SW] 네트워크 요청 실패:', normalizedRequestUrl, error)
             
             // 네비게이션 요청이면 오프라인 페이지 반환
             if (event.request.mode === 'navigate') {

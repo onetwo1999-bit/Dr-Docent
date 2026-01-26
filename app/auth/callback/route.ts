@@ -1,19 +1,23 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
+import { getAppUrl } from '@/app/lib/env-check'
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
+  const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
   const next = searchParams.get('next') ?? '/dashboard'
+  
+  // 환경 변수에서 앱 URL 가져오기 (마지막 슬래시 제거됨)
+  const appUrl = getAppUrl()
 
   console.log('🔄 [Callback] 시작')
   console.log('   - code:', code ? '있음' : '없음')
-  console.log('   - origin:', origin)
+  console.log('   - appUrl:', appUrl)
 
   if (!code) {
     console.error('❌ [Callback] 인증 코드가 없습니다')
-    return NextResponse.redirect(`${origin}/?error=no_code`)
+    return NextResponse.redirect(`${appUrl}/?error=no_code`)
   }
 
   const cookieStore = await cookies()
@@ -22,8 +26,8 @@ export async function GET(request: Request) {
   const allCookies = cookieStore.getAll()
   console.log('📋 [Callback] 현재 쿠키:', allCookies.map(c => c.name).join(', '))
 
-  // 1️⃣ 리다이렉트 응답 객체 생성
-  const response = NextResponse.redirect(`${origin}${next}`)
+  // 1️⃣ 리다이렉트 응답 객체 생성 (환경 변수 기반)
+  const response = NextResponse.redirect(`${appUrl}${next}`)
 
   // 2️⃣ Supabase 클라이언트 생성 - 쿠키를 response에 직접 설정
   const supabase = createServerClient(
@@ -63,12 +67,12 @@ export async function GET(request: Request) {
     console.error('❌ [Callback] 세션 교환 실패!')
     console.error('   - 에러 메시지:', error.message)
     console.error('   - 에러 상태:', error.status)
-    return NextResponse.redirect(`${origin}/?error=exchange_failed&message=${encodeURIComponent(error.message)}`)
+    return NextResponse.redirect(`${appUrl}/?error=exchange_failed&message=${encodeURIComponent(error.message)}`)
   }
 
   if (!data.session) {
     console.error('❌ [Callback] 세션 데이터가 없습니다')
-    return NextResponse.redirect(`${origin}/?error=no_session`)
+    return NextResponse.redirect(`${appUrl}/?error=no_session`)
   }
 
   // 4️⃣ 세션 교환 성공!
@@ -113,6 +117,6 @@ export async function GET(request: Request) {
     response.cookies.getAll().map(c => c.name).join(', ')
   )
 
-  console.log('🎉 [Callback] 완료! 리다이렉트:', `${origin}${next}`)
+  console.log('🎉 [Callback] 완료! 리다이렉트:', `${appUrl}${next}`)
   return response
 }
