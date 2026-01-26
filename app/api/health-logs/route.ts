@@ -18,68 +18,107 @@ const categoryLabels: Record<CategoryType, string> = {
 
 // Supabase 클라이언트 생성
 async function createClient() {
-  const cookieStore = await cookies()
-  
-  // 🔍 쿠키 확인 (디버깅용)
-  const allCookies = cookieStore.getAll()
-  const hasAuthCookie = allCookies.some(c => c.name.startsWith('sb-') || c.name.includes('auth'))
-  const authCookies = allCookies.filter(c => c.name.startsWith('sb-'))
-  
-  if (!hasAuthCookie) {
-    console.warn('⚠️ [Health Logs] 인증 쿠키가 없습니다. 모든 쿠키:', allCookies.map(c => c.name))
-  } else {
-    console.log('✅ [Health Logs] 인증 쿠키 발견:', authCookies.map(c => c.name))
-  }
-  
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() { 
-          const cookies = cookieStore.getAll()
-          return cookies
-        },
-        setAll(cookiesToSet) {
-          // Route Handler에서는 쿠키 설정이 제한적이지만 시도
-          try {
-            cookiesToSet.forEach(({ name, value, options }) => {
-              // 쿠키는 Response 헤더를 통해 설정되므로 여기서는 로그만
-              console.log(`🍪 [Health Logs] 쿠키 설정 시도: ${name}`)
-            })
-          } catch (err) {
-            // Route Handler에서 쿠키 설정 실패는 정상 (Response 헤더로 설정됨)
-            console.debug('ℹ️ [Health Logs] 쿠키 설정 (Route Handler 제한):', err)
-          }
-        },
-      },
+  try {
+    const cookieStore = await cookies()
+    
+    // 환경 변수 확인
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error('❌ [Health Logs] 환경 변수 누락:', {
+        hasUrl: !!supabaseUrl,
+        hasKey: !!supabaseAnonKey
+      })
+      throw new Error('Supabase 환경 변수가 설정되지 않았습니다.')
     }
-  )
+    
+    // 🔍 쿠키 확인 (디버깅용)
+    const allCookies = cookieStore.getAll()
+    const hasAuthCookie = allCookies.some(c => c.name.startsWith('sb-') || c.name.includes('auth'))
+    const authCookies = allCookies.filter(c => c.name.startsWith('sb-'))
+    
+    if (!hasAuthCookie) {
+      console.warn('⚠️ [Health Logs] 인증 쿠키가 없습니다. 모든 쿠키:', allCookies.map(c => c.name))
+    } else {
+      console.log('✅ [Health Logs] 인증 쿠키 발견:', authCookies.map(c => c.name))
+    }
+    
+    return createServerClient(
+      supabaseUrl,
+      supabaseAnonKey,
+      {
+        cookies: {
+          getAll() { 
+            return cookieStore.getAll()
+          },
+          setAll(cookiesToSet) {
+            // Route Handler에서는 쿠키 설정이 제한적이지만 시도
+            try {
+              cookiesToSet.forEach(({ name, value, options }) => {
+                // 쿠키는 Response 헤더를 통해 설정되므로 여기서는 로그만
+                console.debug(`🍪 [Health Logs] 쿠키 설정 시도: ${name}`)
+              })
+            } catch (err) {
+              // Route Handler에서 쿠키 설정 실패는 정상 (Response 헤더로 설정됨)
+              console.debug('ℹ️ [Health Logs] 쿠키 설정 (Route Handler 제한):', err)
+            }
+          },
+        },
+      }
+    )
+  } catch (err: any) {
+    console.error('❌ [Health Logs] 클라이언트 생성 실패:', err)
+    throw new Error(`Supabase 클라이언트 생성 실패: ${err?.message || String(err)}`)
+  }
 }
 
 // ========================
 // POST: 건강 로그 추가
 // ========================
 export async function POST(req: Request) {
+  const requestId = Math.random().toString(36).slice(2, 8).toUpperCase()
+  console.log(`\n📝 [Health Logs] POST 요청 시작 (ID: ${requestId})`)
+  
   try {
-    const body = await req.json()
+    // JSON 파싱 (안전하게)
+    let body: any
+    try {
+      body = await req.json()
+      console.log(`📦 [${requestId}] 요청 본문:`, { category: body.category, hasNote: !!body.note })
+    } catch (parseError: any) {
+      console.error(`❌ [${requestId}] JSON 파싱 실패:`, parseError)
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: '요청 데이터 형식이 올바르지 않습니다.',
+          details: parseError?.message || 'JSON 파싱 실패'
+        },
+        { status: 400 }
+      )
+    }
+
     const { category, note, logged_at, sub_type, quantity, unit, schedule_id } = body
 
     // 유효성 검사
     if (!category || !['meal', 'exercise', 'medication'].includes(category)) {
+      console.error(`❌ [${requestId}] 유효하지 않은 카테고리:`, category)
       return NextResponse.json(
         { success: false, error: '유효하지 않은 카테고리입니다.' },
         { status: 400 }
       )
     }
 
+    console.log(`🔧 [${requestId}] Supabase 클라이언트 생성 중...`)
     const supabase = await createClient()
+    console.log(`✅ [${requestId}] 클라이언트 생성 완료`)
     
     // 🔐 인증 확인 - 반드시 먼저 실행 (getUser()가 자동으로 세션을 갱신함)
+    console.log(`🔐 [${requestId}] 인증 확인 중...`)
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     
     if (authError) {
-      console.error('❌ [Health Logs] 인증 에러:', {
+      console.error(`❌ [${requestId}] 인증 에러:`, {
         message: authError.message,
         status: authError.status,
         name: authError.name
@@ -97,11 +136,10 @@ export async function POST(req: Request) {
     }
 
     if (!user || !user.id) {
-      console.error('❌ [Health Logs] 유저 정보 없음:', { 
+      console.error(`❌ [${requestId}] 유저 정보 없음:`, { 
         hasUser: !!user, 
         userId: user?.id,
-        userEmail: user?.email,
-        authError 
+        userEmail: user?.email
       })
       return NextResponse.json(
         { 
@@ -116,7 +154,7 @@ export async function POST(req: Request) {
 
     // 🔍 user.id 검증 (UUID 형식 - Supabase는 UUID v4 사용)
     if (typeof user.id !== 'string' || user.id.length < 30) {
-      console.error('❌ [Health Logs] 유효하지 않은 user_id:', {
+      console.error(`❌ [${requestId}] 유효하지 않은 user_id:`, {
         user_id: user.id,
         type: typeof user.id,
         length: user.id?.length
@@ -132,7 +170,7 @@ export async function POST(req: Request) {
       )
     }
 
-    console.log('📝 [Health Logs] 삽입 시도:', { 
+    console.log(`📝 [${requestId}] 삽입 시도:`, { 
       user_id: user.id, 
       user_email: user.email,
       category, 
@@ -166,6 +204,7 @@ export async function POST(req: Request) {
     }
 
     // 로그 삽입
+    console.log(`💾 [${requestId}] 데이터베이스에 삽입 시도...`)
     const { data, error } = await supabase
       .from('health_logs')
       .insert(insertData)
@@ -173,11 +212,12 @@ export async function POST(req: Request) {
       .single()
 
     if (error) {
-      console.error('❌ [Health Logs] 삽입 에러:', error)
-      console.error('   - 코드:', error.code)
-      console.error('   - 메시지:', error.message)
-      console.error('   - 상세:', error.details)
-      console.error('   - 힌트:', error.hint)
+      console.error(`❌ [${requestId}] 삽입 에러:`, error)
+      console.error(`   - 코드: ${error.code}`)
+      console.error(`   - 메시지: ${error.message}`)
+      console.error(`   - 상세: ${error.details}`)
+      console.error(`   - 힌트: ${error.hint}`)
+      console.error(`   - 삽입 데이터:`, JSON.stringify(insertData, null, 2))
       
       // RLS 정책 관련 에러 (42501 = insufficient_privilege)
       if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy') || error.message?.includes('permission') || error.message?.includes('row-level security')) {
@@ -226,7 +266,7 @@ export async function POST(req: Request) {
       )
     }
 
-    console.log(`✅ [Health Logs] ${categoryLabels[category as CategoryType]} 기록 완료:`, {
+    console.log(`✅ [${requestId}] ${categoryLabels[category as CategoryType]} 기록 완료:`, {
       id: data.id,
       user_id: user.id,
       logged_at: data.logged_at
@@ -239,18 +279,32 @@ export async function POST(req: Request) {
     })
 
   } catch (error: any) {
-    console.error('❌ [Health Logs] POST 서버 에러:', error)
+    console.error(`\n${'='.repeat(50)}`)
+    console.error(`❌ [Health Logs] POST 서버 에러 (ID: ${requestId})`)
+    console.error(`${'='.repeat(50)}`)
     console.error('   - 타입:', typeof error)
-    console.error('   - 메시지:', error?.message)
     console.error('   - 이름:', error?.name)
-    console.error('   - 스택:', error?.stack?.split('\n').slice(0, 5).join('\n'))
+    console.error('   - 메시지:', error?.message)
+    console.error('   - 스택:', error?.stack?.split('\n').slice(0, 10).join('\n'))
+    
+    // 에러가 Error 객체인지 확인
+    if (error instanceof Error) {
+      console.error('   - Error 객체:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      })
+    } else {
+      console.error('   - 원본 에러:', error)
+    }
     
     return NextResponse.json(
       { 
         success: false, 
         error: '서버 오류가 발생했습니다.',
         details: error?.message || String(error),
-        hint: '콘솔 로그를 확인하거나 페이지를 새로고침해주세요.'
+        requestId: requestId,
+        hint: 'Vercel 로그에서 requestId로 검색하여 상세 에러를 확인하세요.'
       },
       { status: 500 }
     )
