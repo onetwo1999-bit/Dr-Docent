@@ -45,10 +45,21 @@ npm run build
 
 - `public/manifest.json` - 상대 경로만 사용 (✅ 확인됨)
 - `public/sw.js` - 하드코딩된 도메인 없음 (✅ 확인됨)
+- Service Worker 검증:
+  ```bash
+  npm run verify-sw
+  ```
 - 아이콘 파일 존재 확인:
   - `/public/icon-192x192.png`
   - `/public/icon-512x512.png`
   - `/public/badge-72x72.png` (선택적)
+
+#### Service Worker 주요 개선사항 (v2)
+- ✅ 리다이렉트 모드 충돌 해결 (`redirect: 'follow'`)
+- ✅ 캐시 버전 업데이트 (v1 → v2, 강제 갱신)
+- ✅ API 요청 완전 제외 처리
+- ✅ 에러 핸들링 강화
+- ✅ 오프라인 지원 개선
 
 ### 6. 배포 후 확인 사항
 

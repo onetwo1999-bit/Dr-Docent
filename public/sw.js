@@ -3,29 +3,51 @@
 // PWA 푸시 알림 및 백그라운드 동작 지원
 // =====================================================
 
-const CACHE_NAME = 'dr-docent-v1'
+// 캐시 버전 업데이트 (강제 갱신)
+const CACHE_NAME = 'dr-docent-v2'
 const urlsToCache = [
   '/',
   '/dashboard',
   '/chat',
-  '/profile'
+  '/profile',
+  '/calendar'
 ]
 
 // ========================
 // 📦 설치 이벤트
 // ========================
 self.addEventListener('install', (event) => {
-  console.log('🔧 [Service Worker] 설치 중...')
+  console.log('🔧 [Service Worker] 설치 중... (v2)')
+  
+  // 즉시 활성화하여 이전 버전 교체
+  self.skipWaiting()
   
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
         console.log('📦 [Service Worker] 캐시 저장 중')
-        return cache.addAll(urlsToCache)
+        // 리다이렉트를 허용하여 캐시 저장
+        return Promise.all(
+          urlsToCache.map(url => {
+            return fetch(url, { redirect: 'follow' })
+              .then(response => {
+                if (response.ok || response.type === 'opaqueredirect') {
+                  return cache.put(url, response)
+                }
+              })
+              .catch(err => {
+                console.warn(`⚠️ [SW] 캐시 저장 실패: ${url}`, err)
+                // 실패해도 계속 진행
+              })
+          })
+        )
       })
       .then(() => {
-        console.log('✅ [Service Worker] 설치 완료')
-        return self.skipWaiting()
+        console.log('✅ [Service Worker] 설치 완료 (v2)')
+      })
+      .catch(err => {
+        console.error('❌ [Service Worker] 설치 실패:', err)
+        // 설치 실패해도 활성화는 진행
       })
   )
 })
@@ -34,18 +56,25 @@ self.addEventListener('install', (event) => {
 // 🔄 활성화 이벤트
 // ========================
 self.addEventListener('activate', (event) => {
-  console.log('🚀 [Service Worker] 활성화 중...')
+  console.log('🚀 [Service Worker] 활성화 중... (v2)')
   
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
-      )
-    }).then(() => {
-      console.log('✅ [Service Worker] 활성화 완료')
-      return self.clients.claim()
+    Promise.all([
+      // 모든 이전 캐시 삭제
+      caches.keys().then((cacheNames) => {
+        return Promise.all(
+          cacheNames
+            .filter((name) => name !== CACHE_NAME)
+            .map((name) => {
+              console.log(`🗑️ [SW] 이전 캐시 삭제: ${name}`)
+              return caches.delete(name)
+            })
+        )
+      }),
+      // 즉시 클라이언트 제어
+      self.clients.claim()
+    ]).then(() => {
+      console.log('✅ [Service Worker] 활성화 완료 (v2)')
     })
   )
 })
@@ -130,22 +159,86 @@ self.addEventListener('notificationclick', (event) => {
 // 🌐 네트워크 요청 처리
 // ========================
 self.addEventListener('fetch', (event) => {
-  // API 요청은 캐시하지 않음
-  if (event.request.url.includes('/api/')) {
+  const url = new URL(event.request.url)
+  
+  // API 요청은 완전히 건너뛰기 (캐시하지 않음)
+  if (url.pathname.startsWith('/api/')) {
+    return
+  }
+  
+  // 외부 도메인 요청은 건너뛰기
+  if (url.origin !== self.location.origin) {
+    return
+  }
+  
+  // GET 요청만 캐시 처리
+  if (event.request.method !== 'GET') {
     return
   }
 
   event.respondWith(
     caches.match(event.request)
-      .then((response) => {
-        // 캐시에 있으면 캐시 반환, 없으면 네트워크 요청
-        return response || fetch(event.request)
-      })
-      .catch(() => {
-        // 오프라인일 때 기본 페이지 반환
-        if (event.request.mode === 'navigate') {
-          return caches.match('/')
+      .then((cachedResponse) => {
+        // 캐시에 있으면 캐시 반환
+        if (cachedResponse) {
+          return cachedResponse
         }
+        
+        // 네트워크 요청 (리다이렉트 허용)
+        return fetch(event.request, {
+          redirect: 'follow',
+          credentials: 'same-origin'
+        })
+          .then((response) => {
+            // 성공적인 응답만 캐시
+            if (response && response.status === 200 && response.type === 'basic') {
+              // 응답을 복제하여 캐시에 저장 (원본은 반환)
+              const responseToCache = response.clone()
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, responseToCache).catch(err => {
+                  console.warn('⚠️ [SW] 캐시 저장 실패:', event.request.url, err)
+                })
+              })
+            }
+            return response
+          })
+          .catch((error) => {
+            console.warn('⚠️ [SW] 네트워크 요청 실패:', event.request.url, error)
+            
+            // 네비게이션 요청이면 오프라인 페이지 반환
+            if (event.request.mode === 'navigate') {
+              return caches.match('/').then((offlinePage) => {
+                return offlinePage || new Response('오프라인입니다', {
+                  status: 503,
+                  statusText: 'Service Unavailable',
+                  headers: { 'Content-Type': 'text/html; charset=utf-8' }
+                })
+              })
+            }
+            
+            // 기타 요청은 에러 반환
+            throw error
+          })
+      })
+      .catch((error) => {
+        console.error('❌ [SW] Fetch 처리 실패:', event.request.url, error)
+        
+        // 네비게이션 요청이면 기본 페이지 반환
+        if (event.request.mode === 'navigate') {
+          return caches.match('/').catch(() => {
+            return new Response('오프라인입니다', {
+              status: 503,
+              statusText: 'Service Unavailable',
+              headers: { 'Content-Type': 'text/html; charset=utf-8' }
+            })
+          })
+        }
+        
+        // 기타 요청은 네트워크 에러 반환
+        return new Response('Network error', {
+          status: 408,
+          statusText: 'Request Timeout'
+        })
       })
   )
 })

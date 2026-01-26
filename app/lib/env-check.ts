@@ -28,11 +28,28 @@ export function checkRequiredEnvVars() {
 export function getAppUrl(): string {
   // 프로덕션 도메인
   if (typeof window !== 'undefined') {
-    return window.location.origin
+    // 마지막 슬래시 제거
+    return window.location.origin.replace(/\/$/, '')
   }
   
-  // 서버 사이드
-  return process.env.NEXT_PUBLIC_APP_URL || 'https://dr-docent.vercel.app'
+  // 서버 사이드 - 마지막 슬래시 제거
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://dr-docent.vercel.app'
+  return appUrl.replace(/\/$/, '')
+}
+
+export function normalizeUrl(url: string): string {
+  // URL 정규화: 마지막 슬래시 제거, 프로토콜 확인
+  let normalized = url.trim()
+  
+  // 마지막 슬래시 제거
+  normalized = normalized.replace(/\/$/, '')
+  
+  // 프로토콜이 없으면 https 추가
+  if (!normalized.startsWith('http://') && !normalized.startsWith('https://')) {
+    normalized = `https://${normalized}`
+  }
+  
+  return normalized
 }
 
 export function isProduction(): boolean {
