@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { FileText, TrendingUp, AlertTriangle, CheckCircle, Loader2, Heart, Activity } from 'lucide-react'
+import { FileText, TrendingUp, AlertTriangle, CheckCircle, Loader2, Heart, Activity, ArrowUpRight, X } from 'lucide-react'
 
 interface Profile {
   age: number | null
@@ -47,6 +47,7 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
   } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [healthLogs, setHealthLogs] = useState<HealthLog[]>([])
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   useEffect(() => {
     fetchReportData()
@@ -188,97 +189,199 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
   const bmi = calculateBMI(profile.height, profile.weight)
   const bmiCategory = bmi ? getBMICategory(bmi) : null
 
-  return (
-    <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+  // 컴팩트한 요약 카드 (기본 표시)
+  const SummaryCard = () => (
+    <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300 cursor-pointer group"
+         onClick={() => setIsModalOpen(true)}>
       {/* 헤더 */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-12 h-12 rounded-xl bg-[#2DD4BF]/10 flex items-center justify-center">
-          <FileText className="w-6 h-6 text-[#2DD4BF]" />
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-[#2DD4BF]/10 flex items-center justify-center">
+            <FileText className="w-5 h-5 text-[#2DD4BF]" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-gray-900">AI 건강 리포트</h3>
+            <p className="text-xs text-gray-400">단기 신체 리포트</p>
+          </div>
         </div>
-        <div>
-          <h3 className="font-bold text-lg text-gray-900">AI 건강 리포트</h3>
-          <p className="text-xs text-gray-400">단기 신체 리포트</p>
-        </div>
+        <ArrowUpRight className="w-5 h-5 text-gray-300 group-hover:text-[#2DD4BF] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
       </div>
 
-      {/* BMI 요약 */}
-      {bmi && (
-        <div className="mb-6 p-4 bg-gray-50 rounded-xl">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm text-gray-600">BMI 지수</span>
-            <span className="text-lg font-bold text-gray-900">{bmi.toFixed(1)}</span>
+      {/* 요약 정보 */}
+      {report && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-gray-500 text-sm">현재 상태</span>
+            <span className="text-sm font-medium text-gray-900 line-clamp-1">{report.status}</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-400">분류</span>
-            <span className={`text-sm font-medium ${
-              bmiCategory === '정상' ? 'text-green-600' :
-              bmiCategory === '과체중' ? 'text-yellow-600' :
-              bmiCategory === '저체중' ? 'text-blue-600' : 'text-red-600'
-            }`}>
-              {bmiCategory}
-            </span>
+            <span className="text-gray-500 text-sm">주의사항</span>
+            <span className="text-sm font-medium text-amber-600 line-clamp-1">{report.caution}</span>
           </div>
+          {bmi && (
+            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+              <span className="text-gray-500 text-sm">BMI</span>
+              <span className={`text-sm font-bold ${
+                bmiCategory === '정상' ? 'text-green-600' :
+                bmiCategory === '과체중' ? 'text-yellow-600' :
+                bmiCategory === '저체중' ? 'text-blue-600' : 'text-red-600'
+              }`}>
+                {bmi.toFixed(1)} ({bmiCategory})
+              </span>
+            </div>
+          )}
         </div>
       )}
-
-      {/* 상태 */}
-      {report && (
-        <div className="space-y-4">
-          <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
-            <div className="flex items-start gap-3">
-              <Activity className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <h4 className="font-semibold text-blue-900 mb-1">현재 상태</h4>
-                <p className="text-sm text-blue-700 leading-relaxed">{report.status}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* 주의사항 */}
-          <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <h4 className="font-semibold text-amber-900 mb-1">주의사항</h4>
-                <p className="text-sm text-amber-700 leading-relaxed">{report.caution}</p>
-              </div>
-            </div>
-          </div>
-
-          {/* 피드백 */}
-          <div className="p-4 bg-[#2DD4BF]/10 rounded-xl border border-[#2DD4BF]/20">
-            <div className="flex items-start gap-3">
-              <CheckCircle className="w-5 h-5 text-[#2DD4BF] mt-0.5 flex-shrink-0" />
-              <div className="flex-1">
-                <h4 className="font-semibold text-[#2DD4BF] mb-1">긍정 피드백</h4>
-                <p className="text-sm text-gray-700 leading-relaxed">{report.feedback}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 기저질환 및 복용약물 요약 */}
-      <div className="mt-6 grid grid-cols-2 gap-3">
-        {profile.conditions && (
-          <div className="p-3 bg-orange-50 rounded-lg">
-            <p className="text-xs text-orange-600 mb-1">기저 질환</p>
-            <p className="text-sm font-medium text-gray-900">{profile.conditions}</p>
-          </div>
-        )}
-        {profile.medications && (
-          <div className="p-3 bg-purple-50 rounded-lg">
-            <p className="text-xs text-purple-600 mb-1">복용 약물</p>
-            <p className="text-sm font-medium text-gray-900">{profile.medications}</p>
-          </div>
-        )}
-      </div>
-
-      {/* 면책조항 */}
-      <p className="mt-6 text-xs text-gray-400 text-center leading-relaxed">
-        본 리포트는 입력된 정보와 기록을 기반으로 생성된 참고 자료이며,<br/>
-        정확한 진단은 전문의와 상담하세요.
-      </p>
     </div>
+  )
+
+  // 상세 모달
+  const DetailModal = () => {
+    if (!isModalOpen) return null
+
+    return (
+      <>
+        {/* 배경 오버레이 (흐릿하게) */}
+        <div 
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 transition-opacity duration-300"
+          onClick={() => setIsModalOpen(false)}
+        />
+        
+        {/* 모달 컨텐츠 */}
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div 
+            className="bg-white rounded-2xl p-6 border border-gray-200 shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto transform transition-all duration-300 scale-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 모달 헤더 */}
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-[#2DD4BF]/10 flex items-center justify-center">
+                  <FileText className="w-6 h-6 text-[#2DD4BF]" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg text-gray-900">AI 건강 리포트</h3>
+                  <p className="text-xs text-gray-400">단기 신체 리포트</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+
+            {/* BMI 요약 */}
+            {bmi && (
+              <div className="mb-6 p-4 bg-gray-50 rounded-xl">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm text-gray-600">BMI 지수</span>
+                  <span className="text-lg font-bold text-gray-900">{bmi.toFixed(1)}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-400">분류</span>
+                  <span className={`text-sm font-medium ${
+                    bmiCategory === '정상' ? 'text-green-600' :
+                    bmiCategory === '과체중' ? 'text-yellow-600' :
+                    bmiCategory === '저체중' ? 'text-blue-600' : 'text-red-600'
+                  }`}>
+                    {bmiCategory}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* 상태 */}
+            {report && (
+              <div className="space-y-4">
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-100">
+                  <div className="flex items-start gap-3">
+                    <Activity className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-blue-900 mb-1">현재 상태</h4>
+                      <p className="text-sm text-blue-700 leading-relaxed">{report.status}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 주의사항 */}
+                <div className="p-4 bg-amber-50 rounded-xl border border-amber-100">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-amber-900 mb-1">주의사항</h4>
+                      <p className="text-sm text-amber-700 leading-relaxed">{report.caution}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 피드백 */}
+                <div className="p-4 bg-[#2DD4BF]/10 rounded-xl border border-[#2DD4BF]/20">
+                  <div className="flex items-start gap-3">
+                    <CheckCircle className="w-5 h-5 text-[#2DD4BF] mt-0.5 flex-shrink-0" />
+                    <div className="flex-1">
+                      <h4 className="font-semibold text-[#2DD4BF] mb-1">긍정 피드백</h4>
+                      <p className="text-sm text-gray-700 leading-relaxed">{report.feedback}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 기저질환 및 복용약물 요약 */}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              {profile.conditions && (
+                <div className="p-3 bg-orange-50 rounded-lg">
+                  <p className="text-xs text-orange-600 mb-1">기저 질환</p>
+                  <p className="text-sm font-medium text-gray-900">{profile.conditions}</p>
+                </div>
+              )}
+              {profile.medications && (
+                <div className="p-3 bg-purple-50 rounded-lg">
+                  <p className="text-xs text-purple-600 mb-1">복용 약물</p>
+                  <p className="text-sm font-medium text-gray-900">{profile.medications}</p>
+                </div>
+              )}
+            </div>
+
+            {/* 면책조항 */}
+            <p className="mt-6 text-xs text-gray-400 text-center leading-relaxed">
+              본 리포트는 입력된 정보와 기록을 기반으로 생성된 참고 자료이며,<br/>
+              정확한 진단은 전문의와 상담하세요.
+            </p>
+          </div>
+        </div>
+      </>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 text-[#2DD4BF] animate-spin" />
+        </div>
+      </div>
+    )
+  }
+
+  if (!profile || !profile.height || !profile.weight) {
+    return (
+      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+        <div className="text-center py-8">
+          <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+          <p className="text-gray-400 text-sm">프로필 정보를 입력하면</p>
+          <p className="text-gray-400 text-sm">맞춤형 건강 리포트를 확인할 수 있어요</p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <SummaryCard />
+      <DetailModal />
+    </>
   )
 }
