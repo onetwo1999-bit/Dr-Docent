@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import OnboardingModal from './OnboardingModal'
 
 interface Profile {
@@ -10,6 +11,8 @@ interface Profile {
   weight: number | null
   conditions: string | null
   medications: string | null
+  chronic_diseases?: string | null
+  bmi?: number | null
 }
 
 interface DashboardClientProps {
@@ -20,12 +23,20 @@ interface DashboardClientProps {
 }
 
 export default function DashboardClient({ userId, userName, profile, children }: DashboardClientProps) {
+  const router = useRouter()
+  // profile prop이 변경될 때마다 showOnboarding 상태 업데이트
   const [showOnboarding, setShowOnboarding] = useState(!profile?.height || !profile?.weight)
-  const [currentProfile, setCurrentProfile] = useState<Profile | null>(profile)
+
+  // profile prop이 변경되면 온보딩 표시 여부 업데이트
+  useEffect(() => {
+    const hasCompleteProfile = profile?.height && profile?.weight
+    setShowOnboarding(!hasCompleteProfile)
+  }, [profile])
 
   const handleOnboardingComplete = () => {
-    // 페이지 새로고침으로 최신 데이터 반영
-    window.location.reload()
+    // 서버 컴포넌트 데이터 새로고침
+    // useEffect가 profile prop 변경을 감지하여 showOnboarding 상태를 자동 업데이트
+    router.refresh()
   }
 
   return (

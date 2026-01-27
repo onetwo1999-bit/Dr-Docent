@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { User, Ruler, Pill, HeartPulse } from 'lucide-react'
 
 interface OnboardingModalProps {
@@ -19,6 +20,7 @@ interface ProfileData {
 }
 
 export default function OnboardingModal({ userId, userName, onComplete }: OnboardingModalProps) {
+  const router = useRouter()
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [data, setData] = useState<ProfileData>({
@@ -43,6 +45,7 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
       const response = await fetch('/api/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           user_id: userId,
           age: parseInt(data.age) || null,
@@ -50,6 +53,7 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
           height: parseFloat(data.height) || null,
           weight: parseFloat(data.weight) || null,
           conditions: data.conditions || null,
+          chronic_diseases: data.conditions || null, // conditions를 chronic_diseases에도 매핑
           medications: data.medications || null
         })
       })
@@ -57,17 +61,24 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
       const result = await response.json()
       console.log('📥 서버 응답:', result)
 
-      if (response.ok) {
+      if (response.ok && result.success) {
         console.log('✅ 프로필 저장 성공!')
+        // 경고 메시지가 있으면 표시 (스키마 업데이트 필요 시)
+        if (result.warning) {
+          console.warn('⚠️', result.warning)
+        }
+        // 완료 콜백 호출 (DashboardClient에서 router.refresh() 처리)
         onComplete()
       } else {
         console.error('❌ 프로필 저장 실패:', result)
         
-        // 에러 메시지 상세히 표시
-        if (result.error?.includes('RLS') || result.error?.includes('policy')) {
+        // SCHEMA_MISMATCH 에러에 대한 명확한 안내
+        if (result.code === 'SCHEMA_MISMATCH') {
+          alert(`프로필 저장 실패: ${result.error}\n\n${result.details || ''}\n\n해결 방법:\n1. Supabase 대시보드 접속\n2. SQL Editor 열기\n3. supabase/profiles-schema-update.sql 파일 내용 복사 후 실행`)
+        } else if (result.error?.includes('RLS') || result.error?.includes('policy')) {
           alert('권한 오류: Supabase에서 profiles 테이블의 RLS 정책을 확인해주세요.\n\n' + result.error)
         } else {
-          alert(`프로필 저장 실패: ${result.error || '알 수 없는 오류'}`)
+          alert(`프로필 저장 실패: ${result.error || result.details || '알 수 없는 오류'}`)
         }
       }
     } catch (error) {
