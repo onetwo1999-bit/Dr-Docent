@@ -25,7 +25,7 @@ interface HealthLog {
   category: string
   sub_type?: string
   logged_at: string
-  note?: string
+  note?: string | null
   image_url?: string
 }
 
@@ -258,7 +258,7 @@ export default function CalendarView({ userId }: CalendarViewProps) {
       id: cycle.id,
       category: 'cycle',
       logged_at: cycle.start_date,
-      note: null
+      note: null as string | null | undefined
     } as HealthLog))
     
     return [...healthLogsForDate, ...cycleLogsForDate]
