@@ -210,22 +210,14 @@ export default async function DashboardPage() {
           {/* 🎯 VIP 인사말 헤더 */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
             <div className="flex items-center gap-4">
-              {avatarUrl ? (
-                <img 
-                  src={avatarUrl} 
-                  alt="프로필" 
-                  className="w-16 h-16 rounded-full border-2 border-[#2DD4BF] object-cover"
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <div className="w-16 h-16 rounded-full bg-[#2DD4BF]/10 flex items-center justify-center">
-                  <User className="w-8 h-8 text-[#2DD4BF]" />
-                </div>
-              )}
+              {/* 이모티콘으로 단순화 */}
+              <div className="w-16 h-16 rounded-full bg-[#2DD4BF]/10 flex items-center justify-center text-3xl">
+                😊
+              </div>
               <div className="flex-1">
                 <p className="text-[#2DD4BF] text-sm font-semibold">차트 #{chartNumber} 선생님</p>
                 <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-                  {realName}님, {greeting}! 👋
+                  {realName}님, {greeting}!
                 </h1>
                 <p className="text-gray-500 text-sm mt-1">
                   오늘 컨디션은 어떠세요?

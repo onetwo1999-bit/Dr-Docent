@@ -144,7 +144,7 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
                   type="number"
                   value={data.age}
                   onChange={(e) => handleChange('age', e.target.value)}
-                  placeholder="예: 30"
+                  placeholder="만 나이를 입력해주세요. 정확한 건강 분석을 위해 필요합니다 (예: 30)"
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
                 />
               </div>
@@ -193,7 +193,7 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
                   type="number"
                   value={data.height}
                   onChange={(e) => handleChange('height', e.target.value)}
-                  placeholder="예: 170"
+                  placeholder="정확한 BMI 계산을 위해 센티미터 단위로 입력해주세요 (예: 170cm)"
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
                 />
               </div>
@@ -204,7 +204,7 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
                   type="number"
                   value={data.weight}
                   onChange={(e) => handleChange('weight', e.target.value)}
-                  placeholder="예: 65"
+                  placeholder="현재 몸무게를 킬로그램 단위로 입력해주세요. 건강 점수 계산에 사용됩니다 (예: 65kg)"
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
                 />
               </div>
@@ -224,8 +224,8 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
                 <textarea
                   value={data.conditions}
                   onChange={(e) => handleChange('conditions', e.target.value)}
-                  placeholder="예: 고혈압, 당뇨 (없으면 비워두세요)"
-                  rows={2}
+                  placeholder="현재 관리 중인 질환이 있다면 입력해주세요. AI가 맞춤형 건강 조언을 제공하는 데 활용됩니다 (예: 고혈압, 당뇨, 없으면 비워두세요)"
+                  rows={3}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent resize-none"
                 />
               </div>
@@ -235,8 +235,8 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
                 <textarea
                   value={data.medications}
                   onChange={(e) => handleChange('medications', e.target.value)}
-                  placeholder="예: 혈압약, 비타민 (없으면 비워두세요)"
-                  rows={2}
+                  placeholder="정기적으로 복용하는 약물이나 보조제를 입력해주세요. 약물 간 상호작용 체크와 영양 분석에 사용됩니다 (예: 혈압약, 오메가3, 비타민D, 없으면 비워두세요)"
+                  rows={3}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent resize-none"
                 />
               </div>

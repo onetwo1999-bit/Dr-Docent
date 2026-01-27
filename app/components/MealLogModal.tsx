@@ -1,0 +1,244 @@
+'use client'
+
+import { useState, useRef } from 'react'
+import { X, Camera, Upload, Loader2, Calendar, Clock } from 'lucide-react'
+import { useToast } from './Toast'
+
+interface MealLogModalProps {
+  isOpen: boolean
+  onClose: () => void
+  onSuccess: () => void
+}
+
+export default function MealLogModal({ isOpen, onClose, onSuccess }: MealLogModalProps) {
+  const { showToast, ToastComponent } = useToast()
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [description, setDescription] = useState('')
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedTime, setSelectedTime] = useState(new Date().toTimeString().slice(0, 5))
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  if (!isOpen) return null
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB 제한
+        showToast('이미지 크기는 5MB 이하여야 합니다.', 'error')
+        return
+      }
+      setImageFile(file)
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setImagePreview(reader.result as string)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  const handleRemoveImage = () => {
+    setImageFile(null)
+    setImagePreview(null)
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleSubmit = async () => {
+    if (!description.trim() && !imageFile) {
+      showToast('식사 내용이나 사진 중 하나는 입력해주세요.', 'warning')
+      return
+    }
+
+    setIsSubmitting(true)
+
+    try {
+      // 날짜와 시간을 결합하여 ISO 형식으로 변환
+      const loggedAt = new Date(`${selectedDate}T${selectedTime}`).toISOString()
+
+      // 1단계: 이미지가 있으면 먼저 업로드
+      let imageUrl: string | null = null
+      if (imageFile) {
+        const formData = new FormData()
+        formData.append('file', imageFile)
+        formData.append('category', 'meal')
+
+        const uploadResponse = await fetch('/api/upload', {
+          method: 'POST',
+          credentials: 'include',
+          body: formData
+        })
+
+        if (!uploadResponse.ok) {
+          const error = await uploadResponse.json()
+          throw new Error(error.error || '이미지 업로드 실패')
+        }
+
+        const uploadData = await uploadResponse.json()
+        imageUrl = uploadData.url
+      }
+
+      // 2단계: 건강 로그 저장
+      const response = await fetch('/api/health-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          category: 'meal',
+          meal_description: description.trim() || null,
+          image_url: imageUrl,
+          notes: description.trim() || null,
+          logged_at: loggedAt
+        })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        showToast('식사 기록이 저장되었습니다!', 'success')
+        // 폼 초기화
+        setDescription('')
+        setImageFile(null)
+        setImagePreview(null)
+        setSelectedDate(new Date().toISOString().split('T')[0])
+        setSelectedTime(new Date().toTimeString().slice(0, 5))
+        onSuccess()
+        setTimeout(() => onClose(), 500)
+      } else {
+        showToast(result.error || '식사 기록 저장에 실패했습니다.', 'error')
+      }
+    } catch (error: any) {
+      console.error('식사 기록 저장 실패:', error)
+      showToast(error.message || '식사 기록 저장 중 오류가 발생했습니다.', 'error')
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      {ToastComponent}
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl w-full max-w-md border border-gray-100 shadow-xl overflow-hidden max-h-[90vh] overflow-y-auto">
+          {/* 헤더 */}
+          <div className="bg-[#2DD4BF] p-4 text-white">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-lg">🥗 식사 기록</h2>
+              <button
+                onClick={onClose}
+                className="text-white/80 hover:text-white transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+          </div>
+
+          {/* 본문 */}
+          <div className="p-6 space-y-4">
+            {/* 날짜 및 시간 선택 */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-sm text-gray-500 mb-2 flex items-center gap-1">
+                  <Calendar className="w-4 h-4" />
+                  날짜
+                </label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  max={new Date().toISOString().split('T')[0]}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-500 mb-2 flex items-center gap-1">
+                  <Clock className="w-4 h-4" />
+                  시간
+                </label>
+                <input
+                  type="time"
+                  value={selectedTime}
+                  onChange={(e) => setSelectedTime(e.target.value)}
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF]"
+                />
+              </div>
+            </div>
+
+            {/* 이미지 업로드 */}
+            <div>
+              <label className="block text-sm text-gray-500 mb-2">식단 사진</label>
+              {imagePreview ? (
+                <div className="relative">
+                  <img
+                    src={imagePreview}
+                    alt="식단 미리보기"
+                    className="w-full h-48 object-cover rounded-xl border border-gray-200"
+                  />
+                  <button
+                    onClick={handleRemoveImage}
+                    className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="w-full h-32 border-2 border-dashed border-gray-300 rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-[#2DD4BF] hover:text-[#2DD4BF] transition-colors"
+                >
+                  <Camera className="w-8 h-8" />
+                  <span className="text-sm">사진 추가하기</span>
+                </button>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleImageSelect}
+                className="hidden"
+              />
+            </div>
+
+            {/* 식사 설명 */}
+            <div>
+              <label className="block text-sm text-gray-500 mb-2">식사 내용</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="어떤 음식을 드셨나요? 사진과 함께 상세히 적어주시면 AI가 영양 성분을 분석해 드립니다."
+                rows={4}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent resize-none"
+              />
+            </div>
+          </div>
+
+          {/* 푸터 */}
+          <div className="p-6 pt-0 flex gap-3">
+            <button
+              onClick={onClose}
+              className="flex-1 bg-white hover:bg-gray-50 text-gray-600 py-3 rounded-xl font-semibold transition-colors border border-gray-200"
+            >
+              취소
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting || (!description.trim() && !imageFile)}
+              className="flex-1 bg-[#2DD4BF] hover:bg-[#26b8a5] disabled:bg-gray-200 disabled:cursor-not-allowed text-white py-3 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                  저장 중...
+                </>
+              ) : (
+                '저장하기'
+              )}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}

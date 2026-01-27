@@ -109,7 +109,28 @@ export async function POST(req: Request) {
       )
     }
 
-    const { category, note, logged_at, sub_type, quantity, unit, schedule_id } = body
+    const { 
+      category, 
+      note, 
+      notes,
+      logged_at, 
+      sub_type, 
+      quantity, 
+      unit, 
+      schedule_id,
+      // 식사 관련
+      meal_description,
+      image_url,
+      // 운동 관련
+      exercise_type,
+      duration_minutes,
+      heart_rate,
+      intensity_metrics,
+      // 복약 관련
+      medication_name,
+      medication_dosage,
+      medication_ingredients
+    } = body
 
     // 유효성 검사
     if (!category || !['meal', 'exercise', 'medication'].includes(category)) {
@@ -190,23 +211,27 @@ export async function POST(req: Request) {
     })
 
     // 📦 INSERT 데이터 객체 생성 (user_id 필수 포함)
-    // ⚠️ 스키마 확인: health_logs 테이블에는 schedule_id 컬럼이 없음 (추가 필요 시 마이그레이션 필요)
-    const insertData: {
-      user_id: string
-      category: string
-      note: string | null
-      logged_at: string
-      sub_type?: string | null
-      quantity?: number | null
-      unit?: string | null
-    } = {
+    const insertData: any = {
       user_id: user.id, // ⚠️ 반드시 포함!
       category,
-      note: note || null,
+      note: note || notes || null,
+      notes: notes || note || null,
       logged_at: logged_at || new Date().toISOString(),
       ...(sub_type && { sub_type }),
       ...(quantity !== undefined && quantity !== null && { quantity }),
-      ...(unit && { unit })
+      ...(unit && { unit }),
+      // 식사 관련 필드
+      ...(meal_description && { meal_description }),
+      ...(image_url && { image_url }),
+      // 운동 관련 필드
+      ...(exercise_type && { exercise_type }),
+      ...(duration_minutes !== undefined && duration_minutes !== null && { duration_minutes }),
+      ...(heart_rate !== undefined && heart_rate !== null && { heart_rate }),
+      ...(intensity_metrics && { intensity_metrics }),
+      // 복약 관련 필드
+      ...(medication_name && { medication_name }),
+      ...(medication_dosage && { medication_dosage }),
+      ...(medication_ingredients && { medication_ingredients })
     }
     
     // schedule_id는 현재 스키마에 없으므로 제외
