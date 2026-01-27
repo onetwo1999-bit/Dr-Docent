@@ -250,16 +250,18 @@ export default function CalendarView({ userId }: CalendarViewProps) {
     const dateStr = date.toISOString().split('T')[0]
     const healthLogsForDate = logs.filter(log => log.logged_at.startsWith(dateStr))
     
-    // cycle_logs에서 해당 날짜에 시작일이 있는지 확인
-    const cycleLogsForDate = cycleLogs.filter(cycle => {
-      const cycleStart = cycle.start_date.split('T')[0]
-      return cycleStart === dateStr
-    }).map(cycle => ({
-      id: cycle.id,
-      category: 'cycle',
-      logged_at: cycle.start_date,
-      note: null as string | null | undefined
-    } as HealthLog))
+    // cycle_logs에서 해당 날짜에 시작일이 있는지 확인 (status가 'ongoing'이거나 'completed'인 경우)
+    const cycleLogsForDate = cycleLogs
+      .filter(cycle => {
+        const cycleStart = cycle.start_date.split('T')[0]
+        return cycleStart === dateStr
+      })
+      .map(cycle => ({
+        id: cycle.id,
+        category: 'cycle',
+        logged_at: cycle.start_date,
+        note: null as string | null | undefined
+      } as HealthLog))
     
     return [...healthLogsForDate, ...cycleLogsForDate]
   }

@@ -169,9 +169,10 @@ export async function POST(req: Request) {
         .from('cycle_logs')
         .insert({
           user_id: user.id,
-          start_date,
+          start_date: new Date(start_date).toISOString(),
           cycle_length,
-          note: note || null
+          note: note || null,
+          status: 'ongoing'
         })
         .select()
         .single()
@@ -229,27 +230,45 @@ export async function POST(req: Request) {
         const prediction = calculateCyclePrediction(allCycles)
         
         if (prediction.predictedNextDate && prediction.dataPoints >= 1) {
-          // schedules 테이블에 예측 알림 등록
+          // 예정일 3일 전 알림 날짜 계산
+          const predictedDate = new Date(prediction.predictedNextDate)
+          const reminderDate = new Date(predictedDate)
+          reminderDate.setDate(reminderDate.getDate() - 3)
+          
+          // schedules 테이블에 예측 알림 등록 (3일 전 알림)
+          // 기존 알림이 있으면 삭제 후 새로 생성
+          await supabase
+            .from('schedules')
+            .delete()
+            .eq('user_id', user.id)
+            .eq('category', 'cycle')
+            .eq('sub_type', 'reminder')
+
           const { error: scheduleError } = await supabase
             .from('schedules')
-            .upsert({
+            .insert({
               user_id: user.id,
               category: 'cycle',
               sub_type: 'reminder',
               title: '그날 예정일 알림',
+              description: '선생님, 곧 소식이 있을 예정이에요. 미리 준비하시면 좋겠어요.',
               frequency: 'monthly',
               scheduled_time: '09:00',
-              day_of_month: new Date(prediction.predictedNextDate).getDate(),
+              day_of_month: reminderDate.getDate(),
               is_active: true,
-              notification_enabled: true
-            }, {
-              onConflict: 'user_id,category,sub_type'
+              notification_enabled: true,
+              notification_minutes_before: 0
             })
 
           if (scheduleError) {
             console.warn('⚠️ [Cycle Logs] 예측 알림 등록 실패:', scheduleError)
           } else {
-            console.log('✅ [Cycle Logs] 예측 알림 등록 완료:', prediction.predictedNextDate)
+            console.log('✅ [Cycle Logs] 예측 알림 등록 완료:', {
+              예정일: prediction.predictedNextDate,
+              알림일: reminderDate.toISOString().split('T')[0],
+              평균주기: prediction.averageCycleLength,
+              신뢰도: prediction.confidence
+            })
           }
         }
       }
@@ -273,12 +292,12 @@ export async function POST(req: Request) {
         )
       }
 
-      // 먼저 종료일이 null인 최근 레코드를 찾기 (maybeSingle 사용 - 레코드가 없어도 에러 발생 안 함)
+      // 먼저 진행 중인 최근 레코드를 찾기 (status가 'ongoing'이거나 end_date가 null)
       const { data: currentCycle, error: findError } = await supabase
         .from('cycle_logs')
-        .select('id')
+        .select('id, status')
         .eq('user_id', user.id)
-        .is('end_date', null)
+        .or('status.eq.ongoing,end_date.is.null')
         .order('start_date', { ascending: false })
         .limit(1)
         .maybeSingle()
@@ -318,7 +337,8 @@ export async function POST(req: Request) {
       const { data, error } = await supabase
         .from('cycle_logs')
         .update({
-          end_date,
+          end_date: new Date(end_date).toISOString(),
+          status: 'completed',
           updated_at: new Date().toISOString()
         })
         .eq('id', currentCycle.id)
@@ -476,8 +496,10 @@ export async function GET(req: Request) {
       ? checkIfLate(prediction.predictedNextDate, cycles[0].start_date)
       : { isLate: false, daysLate: 0 }
 
-    // 현재 진행 중인 주기 (종료일이 없는 경우)
-    const currentCycle = cycles?.find(c => !c.end_date) || null
+    // 현재 진행 중인 주기 (status가 'ongoing'이거나 end_date가 없는 경우)
+    const currentCycle = cycles?.find(c => 
+      c.status === 'ongoing' || !c.end_date
+    ) || null
 
     return NextResponse.json({
       success: true,

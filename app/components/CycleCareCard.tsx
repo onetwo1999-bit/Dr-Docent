@@ -9,6 +9,7 @@ interface CycleData {
   end_date: string | null
   cycle_length: number | null
   note: string | null
+  status?: 'ongoing' | 'completed'
 }
 
 interface Prediction {
