@@ -29,6 +29,13 @@ interface HealthLog {
   image_url?: string
 }
 
+interface CycleLog {
+  id: string
+  start_date: string
+  end_date: string | null
+  cycle_length: number | null
+}
+
 interface DayData {
   date: Date
   logs: HealthLog[]
@@ -83,6 +90,7 @@ export default function CalendarView({ userId }: CalendarViewProps) {
   const [viewType, setViewType] = useState<ViewType>('month')
   const [currentDate, setCurrentDate] = useState(new Date())
   const [logs, setLogs] = useState<HealthLog[]>([])
+  const [cycleLogs, setCycleLogs] = useState<CycleLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
@@ -93,16 +101,38 @@ export default function CalendarView({ userId }: CalendarViewProps) {
     fetchLogs()
   }, [currentDate, viewType])
 
+  // 실시간 동기화: cycle 및 health-log 업데이트 이벤트 리스너
+  useEffect(() => {
+    const handleUpdate = () => {
+      fetchLogs()
+    }
+    window.addEventListener('cycle-updated', handleUpdate)
+    window.addEventListener('health-log-updated', handleUpdate)
+    return () => {
+      window.removeEventListener('cycle-updated', handleUpdate)
+      window.removeEventListener('health-log-updated', handleUpdate)
+    }
+  }, [])
+
   const fetchLogs = async () => {
     setIsLoading(true)
     try {
       const { startDate, endDate } = getDateRange()
-      const response = await fetch(
+      
+      // health_logs 조회
+      const healthResponse = await fetch(
         `/api/health-logs?start_date=${startDate}&end_date=${endDate}`
       )
-      const data = await response.json()
-      if (data.success) {
-        setLogs(data.data || [])
+      const healthData = await healthResponse.json()
+      if (healthData.success) {
+        setLogs(healthData.data || [])
+      }
+
+      // cycle_logs 조회
+      const cycleResponse = await fetch('/api/cycle-logs')
+      const cycleData = await cycleResponse.json()
+      if (cycleData.success && cycleData.data?.cycles) {
+        setCycleLogs(cycleData.data.cycles || [])
       }
     } catch (error) {
       console.error('로그 조회 실패:', error)
@@ -215,10 +245,23 @@ export default function CalendarView({ userId }: CalendarViewProps) {
     return grid
   }
 
-  // 특정 날짜의 로그 가져오기
+  // 특정 날짜의 로그 가져오기 (health_logs + cycle_logs 통합)
   const getLogsForDate = (date: Date): HealthLog[] => {
     const dateStr = date.toISOString().split('T')[0]
-    return logs.filter(log => log.logged_at.startsWith(dateStr))
+    const healthLogsForDate = logs.filter(log => log.logged_at.startsWith(dateStr))
+    
+    // cycle_logs에서 해당 날짜에 시작일이 있는지 확인
+    const cycleLogsForDate = cycleLogs.filter(cycle => {
+      const cycleStart = cycle.start_date.split('T')[0]
+      return cycleStart === dateStr
+    }).map(cycle => ({
+      id: cycle.id,
+      category: 'cycle',
+      logged_at: cycle.start_date,
+      note: null
+    } as HealthLog))
+    
+    return [...healthLogsForDate, ...cycleLogsForDate]
   }
 
   // 시간별 그리드 (일간/주간 뷰용)

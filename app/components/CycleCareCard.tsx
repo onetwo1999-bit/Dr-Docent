@@ -78,6 +78,8 @@ export default function CycleCareCard() {
       if (result.success) {
         setMessage('그날 시작이 기록되었어요 💕')
         fetchCycleData()
+        // 캘린더 새로고침을 위한 이벤트 발생 (부모 컴포넌트에서 처리)
+        window.dispatchEvent(new CustomEvent('cycle-updated'))
       } else {
         setMessage(result.error || '기록 중 오류가 발생했습니다.')
       }
@@ -110,6 +112,8 @@ export default function CycleCareCard() {
       if (result.success) {
         setMessage('그날 종료가 기록되었어요 ✨')
         fetchCycleData()
+        // 캘린더 새로고침을 위한 이벤트 발생
+        window.dispatchEvent(new CustomEvent('cycle-updated'))
       } else {
         setMessage(result.error || '기록 중 오류가 발생했습니다.')
       }

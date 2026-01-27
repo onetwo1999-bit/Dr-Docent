@@ -21,6 +21,7 @@ import {
   showLocalNotification
 } from '../lib/pushNotification'
 import ScheduleSettingsModal from './ScheduleSettingsModal'
+import FastingTracker from './FastingTracker'
 
 type CategoryType = 'meal' | 'exercise' | 'medication' | 'cycle'
 
@@ -31,13 +32,27 @@ const categoryConfig: Record<CategoryType, { icon: React.ReactNode; color: strin
   cycle: { icon: <Heart className="w-4 h-4" />, color: 'text-pink-500', bgColor: 'bg-pink-100', label: '그날' },
 }
 
-export default function NotificationSettingsCard() {
+interface NotificationSettingsCardProps {
+  userId?: string
+}
+
+export default function NotificationSettingsCard({ userId }: NotificationSettingsCardProps = {}) {
   const [isSupported, setIsSupported] = useState(false)
   const [permission, setPermission] = useState<NotificationPermission>('default')
   const [isSubscribed, setIsSubscribed] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<CategoryType | null>(null)
+  const [showCategoryMenu, setShowCategoryMenu] = useState(false)
+  const [enabledCategories, setEnabledCategories] = useState<{
+    meal: boolean
+    exercise: boolean
+    medication: boolean
+  }>({
+    meal: true,
+    exercise: true,
+    medication: true
+  })
 
   useEffect(() => {
     checkNotificationStatus()
@@ -200,28 +215,78 @@ export default function NotificationSettingsCard() {
           </div>
         )}
 
-        {/* 카테고리별 설정 버튼 */}
+        {/* 카테고리별 토글 메뉴 */}
         {isSubscribed && (
-          <div className="space-y-2">
-            <p className="text-xs text-gray-400 mb-2">카테고리별 상세 설정</p>
-            {(Object.entries(categoryConfig) as [CategoryType, typeof categoryConfig.meal][]).map(([key, config]) => (
-              <button
-                key={key}
-                onClick={() => setSelectedCategory(key)}
-                className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-100 hover:border-[#2DD4BF] hover:bg-[#2DD4BF]/5 transition-all"
-              >
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${config.bgColor}`}>
-                    <span className={config.color}>{config.icon}</span>
+          <div className="space-y-3">
+            <button
+              onClick={() => setShowCategoryMenu(!showCategoryMenu)}
+              className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-200 hover:border-[#2DD4BF] transition-all"
+            >
+              <span className="text-sm font-medium text-gray-700">알림 카테고리 선택</span>
+              <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${showCategoryMenu ? 'rotate-90' : ''}`} />
+            </button>
+
+            {showCategoryMenu && (
+              <div className="space-y-2 p-3 bg-gray-50 rounded-xl">
+                {(['meal', 'exercise', 'medication'] as CategoryType[]).map((key) => {
+                  const config = categoryConfig[key]
+                  return (
+                    <label
+                      key={key}
+                      className="flex items-center justify-between p-2 cursor-pointer hover:bg-white rounded-lg transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center ${config.bgColor}`}>
+                          <span className={config.color}>{config.icon}</span>
+                        </div>
+                        <span className="text-sm text-gray-700">{config.label} 루틴</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={enabledCategories[key as 'meal' | 'exercise' | 'medication']}
+                        onChange={(e) => {
+                          setEnabledCategories(prev => ({
+                            ...prev,
+                            [key]: e.target.checked
+                          }))
+                        }}
+                        className="w-5 h-5 text-[#2DD4BF] rounded focus:ring-[#2DD4BF]"
+                      />
+                    </label>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* 상세 설정 버튼 */}
+            <div className="space-y-2">
+              <p className="text-xs text-gray-400 mb-2">카테고리별 상세 설정</p>
+              {(Object.entries(categoryConfig) as [CategoryType, typeof categoryConfig.meal][]).map(([key, config]) => (
+                <button
+                  key={key}
+                  onClick={() => setSelectedCategory(key)}
+                  className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-100 hover:border-[#2DD4BF] hover:bg-[#2DD4BF]/5 transition-all"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${config.bgColor}`}>
+                      <span className={config.color}>{config.icon}</span>
+                    </div>
+                    <span className="text-sm font-medium text-gray-700">{config.label} 알림</span>
                   </div>
-                  <span className="text-sm font-medium text-gray-700">{config.label} 알림</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Settings className="w-4 h-4 text-gray-300" />
-                  <ChevronRight className="w-4 h-4 text-gray-300" />
-                </div>
-              </button>
-            ))}
+                  <div className="flex items-center gap-2">
+                    <Settings className="w-4 h-4 text-gray-300" />
+                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 공복 트래커 */}
+        {isSubscribed && userId && (
+          <div className="mt-4">
+            <FastingTracker userId={userId} />
           </div>
         )}
       </div>

@@ -118,6 +118,11 @@ export default function HealthLogButtons() {
           [category]: prev[category] + 1
         }))
 
+        // 캘린더 실시간 동기화를 위한 이벤트 발생
+        window.dispatchEvent(new CustomEvent('health-log-updated', { 
+          detail: { category } 
+        }))
+
         // 3초 후 성공 상태 초기화
         setTimeout(() => {
           setSuccessCategory(null)

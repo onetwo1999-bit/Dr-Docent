@@ -7,20 +7,26 @@ import { cookies } from 'next/headers'
 // 여성 건강 주기 기록 및 예측
 // ========================
 
+// Route Handler용 클라이언트 생성 (profile API와 동일한 방식)
 async function createClient() {
   const cookieStore = await cookies()
+  
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() { return cookieStore.getAll() },
+        getAll() {
+          return cookieStore.getAll()
+        },
         setAll(cookiesToSet) {
           try {
-            cookiesToSet.forEach(({ name, value, options }) => 
+            cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
             )
-          } catch {}
+          } catch {
+            // Route Handler에서 쿠키 설정 실패 시 무시
+          }
         },
       },
     }
@@ -149,19 +155,69 @@ export async function POST(req: Request) {
 
       if (error) {
         console.error('❌ [Cycle Logs] 시작 기록 에러:', error)
+        console.error('   - 코드:', error.code)
+        console.error('   - 메시지:', error.message)
+        
+        // RLS 정책 에러
+        if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy')) {
+          return NextResponse.json({
+            success: false,
+            error: 'RLS 정책 오류: 데이터 저장 권한이 없습니다.',
+            details: error.message,
+            hint: 'Supabase SQL Editor에서 cycle_logs 테이블의 RLS 정책을 확인해주세요.'
+          }, { status: 403 })
+        }
+        
         return NextResponse.json(
-          { error: '기록 저장 중 오류가 발생했습니다.' },
+          { success: false, error: '기록 저장 중 오류가 발생했습니다.', details: error.message },
           { status: 500 }
         )
       }
 
       console.log('✅ [Cycle Logs] 그날 시작 기록:', user.email)
 
+      // 예측 알림 자동 등록 (1~2회 데이터 기반)
+      const { data: allCycles } = await supabase
+        .from('cycle_logs')
+        .select('start_date, cycle_length')
+        .eq('user_id', user.id)
+        .order('start_date', { ascending: false })
+        .limit(6)
+
+      if (allCycles && allCycles.length >= 1) {
+        const prediction = calculateCyclePrediction(allCycles)
+        
+        if (prediction.predictedNextDate && prediction.dataPoints >= 1) {
+          // schedules 테이블에 예측 알림 등록
+          const { error: scheduleError } = await supabase
+            .from('schedules')
+            .upsert({
+              user_id: user.id,
+              category: 'cycle',
+              sub_type: 'reminder',
+              title: '그날 예정일 알림',
+              frequency: 'monthly',
+              scheduled_time: '09:00',
+              day_of_month: new Date(prediction.predictedNextDate).getDate(),
+              is_active: true,
+              notification_enabled: true
+            }, {
+              onConflict: 'user_id,category,sub_type'
+            })
+
+          if (scheduleError) {
+            console.warn('⚠️ [Cycle Logs] 예측 알림 등록 실패:', scheduleError)
+          } else {
+            console.log('✅ [Cycle Logs] 예측 알림 등록 완료:', prediction.predictedNextDate)
+          }
+        }
+      }
+
       return NextResponse.json({
         success: true,
         message: '그날 시작이 기록되었습니다.',
         data
-      })
+      }, { status: 200 })
 
     } else if (action === 'end') {
       // 그날 종료 기록 (최근 기록에 종료일 추가)
@@ -187,8 +243,21 @@ export async function POST(req: Request) {
 
       if (error) {
         console.error('❌ [Cycle Logs] 종료 기록 에러:', error)
+        console.error('   - 코드:', error.code)
+        console.error('   - 메시지:', error.message)
+        
+        // RLS 정책 에러
+        if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy')) {
+          return NextResponse.json({
+            success: false,
+            error: 'RLS 정책 오류: 데이터 저장 권한이 없습니다.',
+            details: error.message,
+            hint: 'Supabase SQL Editor에서 cycle_logs 테이블의 RLS 정책을 확인해주세요.'
+          }, { status: 403 })
+        }
+        
         return NextResponse.json(
-          { error: '종료 기록 중 오류가 발생했습니다.' },
+          { success: false, error: '종료 기록 중 오류가 발생했습니다.', details: error.message },
           { status: 500 }
         )
       }
@@ -199,7 +268,7 @@ export async function POST(req: Request) {
         success: true,
         message: '그날 종료가 기록되었습니다.',
         data
-      })
+      }, { status: 200 })
     }
 
     return NextResponse.json(
@@ -223,11 +292,28 @@ export async function GET(req: Request) {
   try {
     const supabase = await createClient()
     
-    // 인증 확인
+    // 인증 확인 (상세 로깅)
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    
+    if (authError) {
+      console.error('❌ [Cycle Logs] GET 인증 에러:', authError)
       return NextResponse.json(
-        { error: '로그인이 필요합니다.' },
+        { 
+          success: false,
+          error: '로그인이 필요합니다.',
+          details: authError.message || '인증 세션이 유효하지 않습니다.'
+        },
+        { status: 401 }
+      )
+    }
+    
+    if (!user || !user.id) {
+      return NextResponse.json(
+        { 
+          success: false,
+          error: '로그인이 필요합니다.',
+          details: '유저 세션이 만료되었거나 유효하지 않습니다.'
+        },
         { status: 401 }
       )
     }

@@ -16,6 +16,7 @@ import HealthRadarChart from '../components/HealthRadarChart'
 import HealthLogButtons from '../components/HealthLogButtons'
 import CycleCareCard from '../components/CycleCareCard'
 import NotificationSettingsCard from '../components/NotificationSettingsCard'
+import HealthReport from '../components/HealthReport'
 
 // 🔒 HTTP → HTTPS 변환 함수
 function toSecureUrl(url: string | null | undefined): string | null {
@@ -254,63 +255,8 @@ export default async function DashboardPage() {
               )}
             </Link>
 
-            {/* 카드 2: 건강 주의사항 */}
-            <Link 
-              href="/profile"
-              className="group bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300 cursor-pointer"
-            >
-              <div className="flex items-start justify-between mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#2DD4BF]/10 flex items-center justify-center">
-                    <HeartPulse className="w-5 h-5 text-[#2DD4BF]" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900">건강 주의사항</h3>
-                    <p className="text-xs text-gray-400">Health Alerts</p>
-                  </div>
-                </div>
-                <ArrowUpRight className="w-5 h-5 text-gray-300 group-hover:text-[#2DD4BF] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-              </div>
-              
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-gray-500 text-sm">고혈압</span>
-                  <span className={`font-medium ${hypertension ? 'text-rose-500' : 'text-green-500'}`}>
-                    {hypertension ? '⚠️ 주의' : '✓ 정상'}
-                  </span>
-                </div>
-                
-                <div className="pt-2 border-t border-gray-100">
-                  <span className="text-gray-500 text-sm block mb-2">기저질환</span>
-                  {profile?.conditions ? (
-                    <div className="flex flex-wrap gap-1">
-                      {profile.conditions.split(',').slice(0, 3).map((condition: string, idx: number) => (
-                        <span 
-                          key={idx}
-                          className="px-2 py-1 bg-rose-50 text-rose-600 text-xs rounded-full"
-                        >
-                          {condition.trim()}
-                        </span>
-                      ))}
-                      {profile.conditions.split(',').length > 3 && (
-                        <span className="px-2 py-1 bg-gray-100 text-gray-500 text-xs rounded-full">
-                          +{profile.conditions.split(',').length - 3}
-                        </span>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-green-500 text-sm">✓ 등록된 질환 없음</p>
-                  )}
-                </div>
-                
-                {profile?.medications && (
-                  <div className="pt-2 border-t border-gray-100">
-                    <span className="text-gray-500 text-sm block mb-1">복용 약물</span>
-                    <p className="text-purple-600 text-sm truncate">{profile.medications}</p>
-                  </div>
-                )}
-              </div>
-            </Link>
+            {/* 카드 2: AI 건강 리포트 */}
+            <HealthReport profile={profile} userId={user.id} />
 
             {/* 카드 3: AI 분석 요약 */}
             <Link 
@@ -456,7 +402,7 @@ export default async function DashboardPage() {
             )}
             
             {/* 알림 설정 */}
-            <NotificationSettingsCard />
+            <NotificationSettingsCard userId={user.id} />
           </div>
 
           {/* 🕸️ 건강 레이더 차트 (확장 섹션) */}
