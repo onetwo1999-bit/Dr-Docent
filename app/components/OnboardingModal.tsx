@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, Ruler, Pill, HeartPulse } from 'lucide-react'
+import Toast, { useToast } from './Toast'
 
 interface OnboardingModalProps {
   userId: string
@@ -21,6 +22,7 @@ interface ProfileData {
 
 export default function OnboardingModal({ userId, userName, onComplete }: OnboardingModalProps) {
   const router = useRouter()
+  const { showToast, ToastComponent } = useToast()
   const [step, setStep] = useState(1)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [data, setData] = useState<ProfileData>({
@@ -61,14 +63,26 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
       const result = await response.json()
       console.log('📥 서버 응답:', result)
 
+      // ✅ 핵심 수정: response.ok && result.success이면 warning이 있어도 성공으로 처리
       if (response.ok && result.success) {
         console.log('✅ 프로필 저장 성공!')
-        // 경고 메시지가 있으면 표시 (스키마 업데이트 필요 시)
+        console.log('📥 서버 응답:', result)
+        
+        // 성공 Toast 표시
+        showToast(result.message || '프로필이 성공적으로 저장되었습니다!', 'success')
+        
+        // 경고 메시지가 있으면 콘솔에만 표시 (모달 닫기를 막지 않음)
         if (result.warning) {
           console.warn('⚠️', result.warning)
+          // 경고도 Toast로 표시 (info 타입)
+          showToast(result.warning, 'info')
         }
-        // 완료 콜백 호출 (DashboardClient에서 router.refresh() 처리)
-        onComplete()
+        
+        // 약간의 지연 후 모달 닫기 및 리다이렉트 (Toast 표시 시간 확보)
+        setTimeout(() => {
+          // 완료 콜백 호출 (DashboardClient에서 모달 닫기 및 리다이렉트 처리)
+          onComplete()
+        }, 800) // Toast 표시 시간을 위해 800ms로 증가
       } else {
         console.error('❌ 프로필 저장 실패:', result)
         
@@ -96,8 +110,10 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl w-full max-w-md border border-gray-100 shadow-xl overflow-hidden">
+    <>
+      {ToastComponent}
+      <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-2xl w-full max-w-md border border-gray-100 shadow-xl overflow-hidden">
         {/* 헤더 */}
         <div className="bg-[#2DD4BF] p-4 text-white">
           <div className="flex items-center justify-between">
@@ -269,5 +285,6 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
         </div>
       </div>
     </div>
+    </>
   )
 }

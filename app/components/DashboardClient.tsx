@@ -34,9 +34,12 @@ export default function DashboardClient({ userId, userName, profile, children }:
   }, [profile])
 
   const handleOnboardingComplete = () => {
-    // 서버 컴포넌트 데이터 새로고침
-    // useEffect가 profile prop 변경을 감지하여 showOnboarding 상태를 자동 업데이트
+    // 모달을 즉시 닫기 (명시적 상태 업데이트)
+    setShowOnboarding(false)
+    // 서버 컴포넌트 데이터 새로고침 (프로필 정보 업데이트)
     router.refresh()
+    // 대시보드로 명시적 리다이렉트 (현재 페이지가 이미 /dashboard인 경우에도 새로고침 보장)
+    router.push('/dashboard')
   }
 
   return (
