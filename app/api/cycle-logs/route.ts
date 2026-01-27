@@ -108,11 +108,30 @@ export async function POST(req: Request) {
 
     const supabase = await createClient()
     
-    // 인증 확인
+    // 인증 확인 (상세 로깅)
     const { data: { user }, error: authError } = await supabase.auth.getUser()
-    if (authError || !user) {
+    
+    if (authError) {
+      console.error('❌ [Cycle Logs] POST 인증 에러:', authError)
       return NextResponse.json(
-        { error: '로그인이 필요합니다.' },
+        { 
+          success: false,
+          error: '로그인이 필요합니다.',
+          details: authError.message || '인증 세션이 유효하지 않습니다.',
+          hint: '페이지를 새로고침하거나 다시 로그인해주세요.'
+        },
+        { status: 401 }
+      )
+    }
+    
+    if (!user || !user.id) {
+      console.error('❌ [Cycle Logs] POST 유저 정보 없음')
+      return NextResponse.json(
+        { 
+          success: false,
+          error: '로그인이 필요합니다.',
+          details: '유저 세션이 만료되었거나 유효하지 않습니다.'
+        },
         { status: 401 }
       )
     }
@@ -228,16 +247,36 @@ export async function POST(req: Request) {
         )
       }
 
+      // 먼저 종료일이 null인 최근 레코드를 찾기
+      const { data: currentCycle, error: findError } = await supabase
+        .from('cycle_logs')
+        .select('id')
+        .eq('user_id', user.id)
+        .is('end_date', null)
+        .order('start_date', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (findError || !currentCycle) {
+        console.error('❌ [Cycle Logs] 종료할 레코드를 찾지 못함:', findError)
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: '종료할 진행 중인 기록을 찾을 수 없습니다.',
+            details: findError?.message || '진행 중인 그날 기록이 없습니다.'
+          },
+          { status: 404 }
+        )
+      }
+
+      // 찾은 레코드의 ID로 업데이트
       const { data, error } = await supabase
         .from('cycle_logs')
         .update({
           end_date,
           updated_at: new Date().toISOString()
         })
-        .eq('user_id', user.id)
-        .is('end_date', null)
-        .order('start_date', { ascending: false })
-        .limit(1)
+        .eq('id', currentCycle.id)
         .select()
         .single()
 
