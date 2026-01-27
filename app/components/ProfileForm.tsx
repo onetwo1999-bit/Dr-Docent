@@ -62,12 +62,21 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
       if (response.ok && result.success) {
         // 성공 메시지 표시
         console.log('✅ 프로필 저장 성공:', result)
+        // 경고 메시지가 있으면 표시
+        if (result.warning) {
+          console.warn('⚠️', result.warning)
+        }
         // 대시보드로 이동 및 새로고침
         router.push('/dashboard')
         router.refresh()
       } else {
         console.error('❌ 프로필 저장 실패:', result)
-        alert(result.error || result.details || '프로필 저장 중 오류가 발생했습니다.')
+        // SCHEMA_MISMATCH 에러에 대한 명확한 안내
+        if (result.code === 'SCHEMA_MISMATCH') {
+          alert(`프로필 저장 실패: ${result.error}\n\n${result.details || ''}\n\n해결 방법:\n1. Supabase 대시보드 접속\n2. SQL Editor 열기\n3. supabase/profiles-schema-update.sql 파일 내용 복사 후 실행`)
+        } else {
+          alert(result.error || result.details || '프로필 저장 중 오류가 발생했습니다.')
+        }
       }
     } catch (error) {
       console.error('프로필 저장 에러:', error)

@@ -286,14 +286,67 @@ export async function POST(req: Request) {
     console.log(`💾 [${requestId}] 변환된 데이터:`, JSON.stringify(profileData, null, 2))
 
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-    // 4️⃣ Supabase Upsert 실행
+    // 4️⃣ Supabase Upsert 실행 (스키마 호환성 고려)
     // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     console.log(`🔄 [${requestId}] Supabase upsert 시작...`)
     
-    const { data, error } = await supabase
+    // 첫 번째 시도: 모든 필드 포함
+    let upsertData: Record<string, unknown> = {
+      id: profileData.id,
+      age: profileData.age,
+      gender: profileData.gender,
+      height: profileData.height,
+      weight: profileData.weight,
+      conditions: profileData.conditions,
+      medications: profileData.medications,
+      chronic_diseases: profileData.chronic_diseases,
+      bmi: profileData.bmi
+    }
+    
+    let { data, error } = await supabase
       .from('profiles')
-      .upsert(profileData, { onConflict: 'id' })
+      .upsert(upsertData, { onConflict: 'id' })
       .select()
+
+    // PGRST204 또는 스키마 캐시 에러 발생 시, 새 컬럼 제외하고 재시도
+    if (error && (error.code === 'PGRST204' || 
+                  error.message.includes('schema cache') ||
+                  (error.message.includes('column') && error.message.includes('does not exist')))) {
+      console.warn(`⚠️ [${requestId}] 스키마 불일치 감지, 필수 컬럼만으로 재시도...`)
+      
+      // 필수 컬럼만 포함 (기존 스키마 호환)
+      const fallbackData: Record<string, unknown> = {
+        id: profileData.id,
+        age: profileData.age,
+        gender: profileData.gender,
+        height: profileData.height,
+        weight: profileData.weight,
+        conditions: profileData.conditions || profileData.chronic_diseases,
+        medications: profileData.medications
+      }
+      
+      const retryResult = await supabase
+        .from('profiles')
+        .upsert(fallbackData, { onConflict: 'id' })
+        .select()
+      
+      if (retryResult.error) {
+        error = retryResult.error
+        data = null
+      } else {
+        // 재시도 성공
+        console.log(`✅ [${requestId}] 필수 컬럼만으로 저장 성공 (스키마 업데이트 필요)`)
+        data = retryResult.data
+        
+        // 사용자에게 스키마 업데이트 안내 포함
+        return NextResponse.json({ 
+          success: true, 
+          data,
+          message: '프로필이 저장되었습니다. (참고: BMI 등 일부 데이터는 스키마 업데이트 후 저장됩니다)',
+          warning: 'profiles 테이블에 bmi, chronic_diseases 컬럼을 추가하려면 Supabase SQL Editor에서 profiles-schema-update.sql을 실행하세요.'
+        })
+      }
+    }
 
     if (error) {
       console.error(`❌ [${requestId}] Supabase 에러:`, {
@@ -321,15 +374,19 @@ export async function POST(req: Request) {
         }
       }
       
-      // 컬럼 없음 에러
-      if (error.message.includes('column') && error.message.includes('does not exist')) {
+      // 컬럼 없음 에러 (PGRST204 포함)
+      if (error.code === 'PGRST204' || 
+          (error.message.includes('column') && error.message.includes('does not exist')) ||
+          error.message.includes('schema cache')) {
         statusCode = 400
-        const columnMatch = error.message.match(/column "(\w+)"/)
+        const columnMatch = error.message.match(/column ['"]?(\w+)['"]?/i) || 
+                           error.message.match(/['"](\w+)['"]/i)
+        const missingColumn = columnMatch?.[1] || 'bmi'
         errorResponse = {
-          error: `DB 스키마 불일치: ${columnMatch?.[1] || '알 수 없는'} 컬럼이 존재하지 않습니다.`,
+          error: `데이터베이스 스키마가 업데이트되지 않았습니다.`,
           code: 'SCHEMA_MISMATCH',
-          details: error.message,
-          field: columnMatch?.[1]
+          details: `'${missingColumn}' 컬럼이 profiles 테이블에 없습니다. Supabase SQL Editor에서 profiles-schema-update.sql 스크립트를 실행해주세요.`,
+          field: missingColumn
         }
       }
       
