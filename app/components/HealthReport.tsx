@@ -8,8 +8,10 @@ interface Profile {
   gender: string | null
   height: number | null
   weight: number | null
-  conditions: string | null
+  conditions?: string | null
+  chronic_diseases?: string | null
   medications: string | null
+  bmi?: number | null
 }
 
 interface HealthLog {
@@ -117,9 +119,10 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
       }
     }
 
-    // 상태 메시지 생성
+    // 상태 메시지 생성 (chronic_diseases 우선, 없으면 conditions 사용)
+    const diseases = profile.chronic_diseases || profile.conditions
     let status = ''
-    if (profile.conditions?.includes('고혈압') || profile.conditions?.includes('혈압')) {
+    if (diseases?.includes('고혈압') || diseases?.includes('혈압')) {
       status = '현재 혈압 관리가 필요한 상태이며, '
     } else if (bmiCategory === '과체중' || bmiCategory === '비만') {
       status = '체중 관리가 필요한 상태이며, '
@@ -135,9 +138,10 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
       status += '식단 기록을 더 꾸준히 하시면 좋을 것 같아요.'
     }
 
-    // 주의사항 생성
+    // 주의사항 생성 (chronic_diseases 우선)
+    const diseases = profile.chronic_diseases || profile.conditions
     let caution = ''
-    if (profile.conditions?.includes('고혈압') || profile.conditions?.includes('혈압')) {
+    if (diseases?.includes('고혈압') || diseases?.includes('혈압')) {
       caution = '염분 섭취를 조절하고, 급격한 유산소 운동은 피하세요.'
     } else if (bmiCategory === '과체중' || bmiCategory === '비만') {
       caution = '규칙적인 운동과 균형 잡힌 식단을 권장드립니다.'
@@ -329,21 +333,23 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
               </div>
             )}
 
-            {/* 기저질환 및 복용약물 요약 */}
-            <div className="mt-6 grid grid-cols-2 gap-3">
-              {profile.conditions && (
-                <div className="p-3 bg-orange-50 rounded-lg">
-                  <p className="text-xs text-orange-600 mb-1">기저 질환</p>
-                  <p className="text-sm font-medium text-gray-900">{profile.conditions}</p>
-                </div>
-              )}
-              {profile.medications && (
-                <div className="p-3 bg-purple-50 rounded-lg">
-                  <p className="text-xs text-purple-600 mb-1">복용 약물</p>
-                  <p className="text-sm font-medium text-gray-900">{profile.medications}</p>
-                </div>
-              )}
-            </div>
+      {/* 기저질환 및 복용약물 요약 */}
+      <div className="mt-6 grid grid-cols-2 gap-3">
+        {(profile.chronic_diseases || profile.conditions) && (
+          <div className="p-3 bg-orange-50 rounded-lg">
+            <p className="text-xs text-orange-600 mb-1">기저 질환</p>
+            <p className="text-sm font-medium text-gray-900">
+              {profile.chronic_diseases || profile.conditions}
+            </p>
+          </div>
+        )}
+        {profile.medications && (
+          <div className="p-3 bg-purple-50 rounded-lg">
+            <p className="text-xs text-purple-600 mb-1">복용 약물</p>
+            <p className="text-sm font-medium text-gray-900">{profile.medications}</p>
+          </div>
+        )}
+      </div>
 
             {/* 면책조항 */}
             <p className="mt-6 text-xs text-gray-400 text-center leading-relaxed">

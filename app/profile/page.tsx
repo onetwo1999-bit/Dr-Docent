@@ -13,7 +13,7 @@ export default async function ProfilePage() {
   // 현재 프로필 조회
   const { data: profile } = await supabase
     .from('profiles')
-    .select('age, gender, height, weight, conditions, medications')
+    .select('age, gender, height, weight, conditions, medications, chronic_diseases, bmi')
     .eq('id', user.id)
     .single()
 

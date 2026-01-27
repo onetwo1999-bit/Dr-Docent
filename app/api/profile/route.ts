@@ -13,6 +13,7 @@ interface ProfileInput {
   weight?: string | number | null
   conditions?: string | null
   medications?: string | null
+  chronic_diseases?: string | null
   // 프론트엔드에서 다른 이름으로 보낼 수 있는 필드들
   diseases?: string | null  // conditions와 동일
 }
@@ -25,6 +26,15 @@ interface ProfileData {
   weight: number | null
   conditions: string | null
   medications: string | null
+  chronic_diseases: string | null
+  bmi: number | null
+}
+
+// BMI 계산 함수
+function calculateBMI(height: number | null, weight: number | null): number | null {
+  if (!height || !weight || height <= 0) return null
+  const heightInMeters = height / 100
+  return Number((weight / (heightInMeters * heightInMeters)).toFixed(2))
 }
 
 interface ApiError {
@@ -106,6 +116,10 @@ function validateAndTransform(input: ProfileInput, authenticatedUserId: string):
   // conditions와 diseases 모두 지원 (스키마 매칭)
   const conditions = toString(input.conditions) || toString(input.diseases)
   const medications = toString(input.medications)
+  const chronic_diseases = toString(input.chronic_diseases) || conditions
+  
+  // BMI 자동 계산
+  const bmi = calculateBMI(height, weight)
   
   // 4. 범위 검증
   if (age !== null && (age < 0 || age > 150)) {
@@ -167,7 +181,9 @@ function validateAndTransform(input: ProfileInput, authenticatedUserId: string):
       height,
       weight,
       conditions,
-      medications
+      medications,
+      chronic_diseases,
+      bmi
     }
   }
 }

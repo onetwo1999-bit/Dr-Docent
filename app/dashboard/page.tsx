@@ -48,52 +48,86 @@ function calculateHealthScore(profile: {
   age: number | null
   height: number | null
   weight: number | null
-  conditions: string | null
+  conditions?: string | null
+  chronic_diseases?: string | null
+  bmi?: number | null
 }): number {
-  let totalScore = 0
-  let factors = 0
+  let totalScore = 100 // 기본 점수 100점에서 감점 방식
+  let deductionCount = 0
   
-  // BMI 점수 (40점 만점)
-  if (profile.height && profile.weight) {
-    const bmi = profile.weight / Math.pow(profile.height / 100, 2)
-    if (bmi >= 18.5 && bmi < 23) totalScore += 40
-    else if (bmi >= 23 && bmi < 25) totalScore += 30
-    else if (bmi < 18.5 || (bmi >= 25 && bmi < 30)) totalScore += 20
-    else totalScore += 10
-    factors++
+  // BMI 점수 감점 (최대 -30점)
+  let bmiValue = profile.bmi
+  if (!bmiValue && profile.height && profile.weight) {
+    bmiValue = profile.weight / Math.pow(profile.height / 100, 2)
   }
   
-  // 나이 점수 (20점 만점)
+  if (bmiValue) {
+    if (bmiValue >= 25 && bmiValue < 30) {
+      totalScore -= 15 // 과체중
+      deductionCount++
+    } else if (bmiValue >= 30) {
+      totalScore -= 25 // 비만
+      deductionCount++
+    } else if (bmiValue < 18.5) {
+      totalScore -= 10 // 저체중
+      deductionCount++
+    }
+  }
+  
+  // 기저질환 감점 (최대 -40점)
+  const diseases = profile.chronic_diseases || profile.conditions
+  if (diseases) {
+    const diseaseList = diseases.split(',').map(d => d.trim().toLowerCase())
+    
+    // 고혈압 감점
+    if (diseaseList.some(d => d.includes('고혈압') || d.includes('혈압') || d.includes('hypertension'))) {
+      totalScore -= 20
+      deductionCount++
+    }
+    
+    // 당뇨 감점
+    if (diseaseList.some(d => d.includes('당뇨') || d.includes('diabetes'))) {
+      totalScore -= 20
+      deductionCount++
+    }
+    
+    // 기타 질환 (질환당 -10점)
+    const otherDiseases = diseaseList.filter(d => 
+      !d.includes('고혈압') && !d.includes('혈압') && !d.includes('hypertension') &&
+      !d.includes('당뇨') && !d.includes('diabetes')
+    )
+    totalScore -= Math.min(otherDiseases.length * 10, 20) // 최대 -20점
+    if (otherDiseases.length > 0) deductionCount++
+  }
+  
+  // 나이 감점 (최대 -20점)
   if (profile.age) {
-    if (profile.age < 40) totalScore += 20
-    else if (profile.age < 50) totalScore += 17
-    else if (profile.age < 60) totalScore += 14
-    else if (profile.age < 70) totalScore += 11
-    else totalScore += 8
-    factors++
+    if (profile.age >= 70) {
+      totalScore -= 20
+      deductionCount++
+    } else if (profile.age >= 60) {
+      totalScore -= 15
+      deductionCount++
+    } else if (profile.age >= 50) {
+      totalScore -= 10
+      deductionCount++
+    } else if (profile.age >= 40) {
+      totalScore -= 5
+      deductionCount++
+    }
   }
   
-  // 기저질환 점수 (40점 만점)
-  if (profile.conditions) {
-    const conditionCount = profile.conditions.split(',').length
-    if (conditionCount === 0) totalScore += 40
-    else if (conditionCount === 1) totalScore += 30
-    else if (conditionCount === 2) totalScore += 20
-    else totalScore += 10
-  } else {
-    totalScore += 40
-  }
-  factors++
-  
-  return factors > 0 ? Math.round(totalScore / factors * 2.5) : 0
+  // 최소 점수 0점 보장
+  return Math.max(0, Math.round(totalScore))
 }
 
 // 🏥 고혈압 여부 확인
-function hasHypertension(conditions: string | null): boolean {
-  if (!conditions) return false
-  return conditions.toLowerCase().includes('고혈압') || 
-         conditions.toLowerCase().includes('혈압') ||
-         conditions.toLowerCase().includes('hypertension')
+function hasHypertension(conditions: string | null, chronic_diseases?: string | null): boolean {
+  const diseases = chronic_diseases || conditions
+  if (!diseases) return false
+  return diseases.toLowerCase().includes('고혈압') || 
+         diseases.toLowerCase().includes('혈압') ||
+         diseases.toLowerCase().includes('hypertension')
 }
 
 export default async function DashboardPage() {
@@ -107,7 +141,7 @@ export default async function DashboardPage() {
   // 📊 profiles 테이블에서 사용자 데이터 조회
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('age, gender, height, weight, conditions, medications')
+    .select('age, gender, height, weight, conditions, medications, chronic_diseases, bmi')
     .eq('id', user.id)
     .single()
 
@@ -147,7 +181,7 @@ export default async function DashboardPage() {
   const hasProfile = profile?.height && profile?.weight
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
   const healthScore = profile ? calculateHealthScore(profile) : 0
-  const hypertension = hasHypertension(profile?.conditions)
+  const hypertension = hasHypertension(profile?.conditions, profile?.chronic_diseases)
 
   // 시간대별 인사말
   const hour = new Date().getHours()

@@ -44,6 +44,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
       const response = await fetch('/api/profile', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           user_id: userId,
           age: parseInt(data.age) || null,
@@ -51,15 +52,22 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
           height: parseFloat(data.height) || null,
           weight: parseFloat(data.weight) || null,
           conditions: data.conditions || null,
+          chronic_diseases: data.conditions || null, // conditions를 chronic_diseases에도 저장
           medications: data.medications || null
         })
       })
 
-      if (response.ok) {
+      const result = await response.json()
+
+      if (response.ok && result.success) {
+        // 성공 메시지 표시
+        console.log('✅ 프로필 저장 성공:', result)
+        // 대시보드로 이동 및 새로고침
         router.push('/dashboard')
         router.refresh()
       } else {
-        alert('프로필 저장 중 오류가 발생했습니다.')
+        console.error('❌ 프로필 저장 실패:', result)
+        alert(result.error || result.details || '프로필 저장 중 오류가 발생했습니다.')
       }
     } catch (error) {
       console.error('프로필 저장 에러:', error)
