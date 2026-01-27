@@ -156,7 +156,7 @@ export async function POST(req: Request) {
         .eq('user_id', user.id)
         .order('start_date', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
 
       let cycle_length = null
       if (previousCycle) {
@@ -177,9 +177,22 @@ export async function POST(req: Request) {
         .single()
 
       if (error) {
-        console.error('❌ [Cycle Logs] 시작 기록 에러:', error)
-        console.error('   - 코드:', error.code)
-        console.error('   - 메시지:', error.message)
+        console.error('❌ [Cycle Logs] 시작 기록 에러:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        })
+        
+        // 테이블이 없는 경우
+        if (error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation')) {
+          return NextResponse.json({
+            success: false,
+            error: '데이터베이스 테이블을 찾을 수 없습니다.',
+            details: error.message || 'cycle_logs 테이블이 존재하지 않습니다.',
+            hint: 'Supabase SQL Editor에서 schema-v2.sql을 실행하여 테이블을 생성해주세요.'
+          }, { status: 500 })
+        }
         
         // RLS 정책 에러
         if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy')) {
@@ -192,7 +205,12 @@ export async function POST(req: Request) {
         }
         
         return NextResponse.json(
-          { success: false, error: '기록 저장 중 오류가 발생했습니다.', details: error.message },
+          { 
+            success: false, 
+            error: '기록 저장 중 오류가 발생했습니다.', 
+            details: error.message,
+            hint: error.hint || '데이터베이스 연결을 확인해주세요.'
+          },
           { status: 500 }
         )
       }
@@ -255,7 +273,7 @@ export async function POST(req: Request) {
         )
       }
 
-      // 먼저 종료일이 null인 최근 레코드를 찾기
+      // 먼저 종료일이 null인 최근 레코드를 찾기 (maybeSingle 사용 - 레코드가 없어도 에러 발생 안 함)
       const { data: currentCycle, error: findError } = await supabase
         .from('cycle_logs')
         .select('id')
@@ -263,15 +281,34 @@ export async function POST(req: Request) {
         .is('end_date', null)
         .order('start_date', { ascending: false })
         .limit(1)
-        .single()
+        .maybeSingle()
 
-      if (findError || !currentCycle) {
-        console.error('❌ [Cycle Logs] 종료할 레코드를 찾지 못함:', findError)
+      // PGRST205 에러는 레코드가 없다는 의미이므로 정상 처리
+      if (findError && findError.code !== 'PGRST116') {
+        console.error('❌ [Cycle Logs] 종료할 레코드 조회 중 에러:', {
+          code: findError.code,
+          message: findError.message,
+          details: findError.details,
+          hint: findError.hint
+        })
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: '레코드 조회 중 오류가 발생했습니다.',
+            details: findError.message || '데이터베이스 조회 실패',
+            hint: findError.hint || '테이블이 존재하는지 확인해주세요.'
+          },
+          { status: 500 }
+        )
+      }
+
+      if (!currentCycle || !currentCycle.id) {
+        console.log('ℹ️ [Cycle Logs] 종료할 진행 중인 기록이 없음')
         return NextResponse.json(
           { 
             success: false, 
             error: '종료할 진행 중인 기록을 찾을 수 없습니다.',
-            details: findError?.message || '진행 중인 그날 기록이 없습니다.'
+            details: '진행 중인 그날 기록이 없습니다. 먼저 "그날 시작" 버튼을 눌러주세요.'
           },
           { status: 404 }
         )
@@ -289,9 +326,22 @@ export async function POST(req: Request) {
         .single()
 
       if (error) {
-        console.error('❌ [Cycle Logs] 종료 기록 에러:', error)
-        console.error('   - 코드:', error.code)
-        console.error('   - 메시지:', error.message)
+        console.error('❌ [Cycle Logs] 종료 기록 에러:', {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+          hint: error.hint
+        })
+        
+        // 테이블이 없는 경우
+        if (error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation')) {
+          return NextResponse.json({
+            success: false,
+            error: '데이터베이스 테이블을 찾을 수 없습니다.',
+            details: error.message || 'cycle_logs 테이블이 존재하지 않습니다.',
+            hint: 'Supabase SQL Editor에서 schema-v2.sql을 실행하여 테이블을 생성해주세요.'
+          }, { status: 500 })
+        }
         
         // RLS 정책 에러
         if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy')) {
@@ -304,7 +354,12 @@ export async function POST(req: Request) {
         }
         
         return NextResponse.json(
-          { success: false, error: '종료 기록 중 오류가 발생했습니다.', details: error.message },
+          { 
+            success: false, 
+            error: '종료 기록 중 오류가 발생했습니다.', 
+            details: error.message,
+            hint: error.hint || '데이터베이스 연결을 확인해주세요.'
+          },
           { status: 500 }
         )
       }
@@ -385,9 +440,30 @@ export async function GET(req: Request) {
       .order('start_date', { ascending: false })
 
     if (error) {
-      console.error('❌ [Cycle Logs] 조회 에러:', error)
+      console.error('❌ [Cycle Logs] 조회 에러:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      })
+      
+      // 테이블이 없는 경우
+      if (error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation')) {
+        return NextResponse.json({
+          success: false,
+          error: '데이터베이스 테이블을 찾을 수 없습니다.',
+          details: error.message || 'cycle_logs 테이블이 존재하지 않습니다.',
+          hint: 'Supabase SQL Editor에서 schema-v2.sql을 실행하여 테이블을 생성해주세요.'
+        }, { status: 500 })
+      }
+      
       return NextResponse.json(
-        { error: '기록 조회 중 오류가 발생했습니다.' },
+        { 
+          success: false,
+          error: '기록 조회 중 오류가 발생했습니다.',
+          details: error.message,
+          hint: error.hint || '데이터베이스 연결을 확인해주세요.'
+        },
         { status: 500 }
       )
     }
