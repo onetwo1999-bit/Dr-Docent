@@ -138,8 +138,7 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
       status += '식단 기록을 더 꾸준히 하시면 좋을 것 같아요.'
     }
 
-    // 주의사항 생성 (chronic_diseases 우선)
-    const diseases = profile.chronic_diseases || profile.conditions
+    // 주의사항 생성 (chronic_diseases 우선, 이미 선언된 diseases 변수 재사용)
     let caution = ''
     if (diseases?.includes('고혈압') || diseases?.includes('혈압')) {
       caution = '염분 섭취를 조절하고, 급격한 유산소 운동은 피하세요.'
