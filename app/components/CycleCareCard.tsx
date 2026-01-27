@@ -44,14 +44,35 @@ export default function CycleCareCard() {
 
   const fetchCycleData = async () => {
     try {
-      const response = await fetch('/api/cycle-logs')
+      console.log('🔄 [Cycle Data] 데이터 조회 시작')
+      const response = await fetch('/api/cycle-logs', {
+        credentials: 'include'
+      })
+      
+      console.log('📡 [Cycle Data] 응답 상태:', response.status)
+      
+      if (!response.ok) {
+        let errorData
+        try {
+          errorData = await response.json()
+        } catch {
+          errorData = { error: `서버 오류 (${response.status})` }
+        }
+        console.error('❌ [Cycle Data] 조회 실패:', response.status, errorData)
+        return
+      }
+      
       const result = await response.json()
+      console.log('✅ [Cycle Data] 조회 성공:', result)
       
       if (result.success) {
         setData(result.data)
+        console.log('📊 [Cycle Data] 현재 진행 중인 기록:', result.data?.currentCycle)
+      } else {
+        console.error('❌ [Cycle Data] 데이터 조회 실패:', result.error)
       }
-    } catch (error) {
-      console.error('주기 데이터 조회 실패:', error)
+    } catch (error: any) {
+      console.error('❌ [Cycle Data] 네트워크 에러:', error)
     } finally {
       setIsLoading(false)
     }
@@ -63,29 +84,48 @@ export default function CycleCareCard() {
 
     try {
       const today = new Date().toISOString().split('T')[0]
+      console.log('🔄 [Cycle Start] 요청 시작:', { action: 'start', start_date: today })
       
       const response = await fetch('/api/cycle-logs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           action: 'start',
           start_date: today
         })
       })
 
+      console.log('📡 [Cycle Start] 응답 상태:', response.status, response.statusText)
+
+      // 응답 상태 확인
+      if (!response.ok) {
+        let errorData
+        try {
+          errorData = await response.json()
+        } catch {
+          errorData = { error: `서버 오류 (${response.status})` }
+        }
+        console.error('❌ [Cycle Start] API 에러:', response.status, errorData)
+        setMessage(errorData.error || errorData.details || `서버 오류 (${response.status})`)
+        return
+      }
+
       const result = await response.json()
+      console.log('✅ [Cycle Start] 응답 데이터:', result)
 
       if (result.success) {
         setMessage('그날 시작이 기록되었어요 💕')
-        fetchCycleData()
-        // 캘린더 새로고침을 위한 이벤트 발생 (부모 컴포넌트에서 처리)
+        // 데이터 새로고침
+        await fetchCycleData()
+        // 캘린더 새로고침을 위한 이벤트 발생
         window.dispatchEvent(new CustomEvent('cycle-updated'))
       } else {
-        setMessage(result.error || '기록 중 오류가 발생했습니다.')
+        setMessage(result.error || result.details || '기록 중 오류가 발생했습니다.')
       }
-    } catch (error) {
-      console.error('기록 실패:', error)
-      setMessage('네트워크 오류가 발생했습니다.')
+    } catch (error: any) {
+      console.error('❌ [Cycle Start] 네트워크 에러:', error)
+      setMessage(`네트워크 오류: ${error?.message || '인터넷 연결을 확인해주세요.'}`)
     } finally {
       setIsSubmitting(false)
     }
@@ -101,25 +141,35 @@ export default function CycleCareCard() {
       const response = await fetch('/api/cycle-logs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({
           action: 'end',
           end_date: today
         })
       })
 
+      // 응답 상태 확인
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: '서버 오류가 발생했습니다.' }))
+        console.error('❌ [Cycle End] API 에러:', response.status, errorData)
+        setMessage(errorData.error || errorData.details || `서버 오류 (${response.status})`)
+        return
+      }
+
       const result = await response.json()
 
       if (result.success) {
         setMessage('그날 종료가 기록되었어요 ✨')
-        fetchCycleData()
+        // 데이터 새로고침
+        await fetchCycleData()
         // 캘린더 새로고침을 위한 이벤트 발생
         window.dispatchEvent(new CustomEvent('cycle-updated'))
       } else {
-        setMessage(result.error || '기록 중 오류가 발생했습니다.')
+        setMessage(result.error || result.details || '기록 중 오류가 발생했습니다.')
       }
     } catch (error) {
-      console.error('기록 실패:', error)
-      setMessage('네트워크 오류가 발생했습니다.')
+      console.error('❌ [Cycle End] 네트워크 에러:', error)
+      setMessage('네트워크 오류가 발생했습니다. 인터넷 연결을 확인해주세요.')
     } finally {
       setIsSubmitting(false)
     }

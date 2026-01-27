@@ -140,7 +140,11 @@ export async function POST(req: Request) {
       // 그날 시작 기록
       if (!start_date) {
         return NextResponse.json(
-          { error: '시작일을 입력해주세요.' },
+          { 
+            success: false,
+            error: '시작일을 입력해주세요.',
+            details: 'start_date 파라미터가 필요합니다.'
+          },
           { status: 400 }
         )
       }
@@ -242,7 +246,11 @@ export async function POST(req: Request) {
       // 그날 종료 기록 (최근 기록에 종료일 추가)
       if (!end_date) {
         return NextResponse.json(
-          { error: '종료일을 입력해주세요.' },
+          { 
+            success: false,
+            error: '종료일을 입력해주세요.',
+            details: 'end_date 파라미터가 필요합니다.'
+          },
           { status: 400 }
         )
       }
@@ -311,14 +319,22 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json(
-      { error: '유효하지 않은 요청입니다.' },
+      { 
+        success: false,
+        error: '유효하지 않은 요청입니다.',
+        details: 'action 파라미터가 올바르지 않습니다.'
+      },
       { status: 400 }
     )
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ [Cycle Logs] 서버 에러:', error)
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.' },
+      { 
+        success: false,
+        error: '서버 오류가 발생했습니다.',
+        details: error?.message || '알 수 없는 오류가 발생했습니다.'
+      },
       { status: 500 }
     )
   }
