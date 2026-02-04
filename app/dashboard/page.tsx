@@ -217,7 +217,7 @@ export default async function DashboardPage() {
               <div className="flex-1">
                 <p className="text-[#2DD4BF] text-sm font-semibold">차트 #{chartNumber} 선생님</p>
                 <h1 className="text-xl md:text-2xl font-bold text-gray-900">
-                  {realName}님, {greeting}!
+                  {realName}님, {greeting}! ✨ 
                 </h1>
                 <p className="text-gray-500 text-sm mt-1">
                   오늘 컨디션은 어떠세요?
