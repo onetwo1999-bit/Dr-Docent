@@ -499,36 +499,53 @@ export async function POST(req: Request) {
       
       // PGRST204 에러: PostgREST 스키마 캐시 문제 (컬럼이 실제로는 있지만 캐시에 없음)
       if (error.code === 'PGRST204' || error.message?.includes('schema cache') || error.message?.includes('Could not find')) {
-        const columnMatch = error.message.match(/column ['"](\w+)['"]/)
+        // 여러 패턴으로 컬럼명 추출 시도
+        // 패턴 1: "Could not find the 'column_name' column"
+        // 패턴 2: "column 'column_name'"
+        // 패턴 3: "column \"column_name\""
+        let columnMatch = error.message.match(/the ['"](\w+(?:_\w+)*)['"] column/i)
+        if (!columnMatch) {
+          columnMatch = error.message.match(/column ['"](\w+(?:_\w+)*)['"]/i)
+        }
+        if (!columnMatch) {
+          columnMatch = error.message.match(/['"](\w+(?:_\w+)*)['"]/i)
+        }
+        
         const missingColumn = columnMatch?.[1] || '알 수 없음'
         
         console.error(`🔄 [${requestId}] PostgREST 스키마 캐시 문제 감지:`, {
           column: missingColumn,
           error_code: error.code,
-          error_message: error.message
+          error_message: error.message,
+          matched_pattern: columnMatch ? '매칭됨' : '매칭 실패'
         })
         
         // exercise_type, weight_kg, reps, sets 등 운동 관련 컬럼
-        const exerciseColumns = ['exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate']
+        const exerciseColumns = ['exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate', 'intensity_metrics', 'notes']
         
-        if (exerciseColumns.includes(missingColumn)) {
+        // 컬럼명이 추출되었거나, 운동 관련 컬럼일 가능성이 높은 경우
+        if (missingColumn !== '알 수 없음' || exerciseColumns.some(col => error.message?.includes(col))) {
+          const detectedColumn = missingColumn !== '알 수 없음' 
+            ? missingColumn 
+            : exerciseColumns.find(col => error.message?.includes(col)) || '알 수 없음'
+          
           return NextResponse.json({
             success: false,
-            error: `스키마 캐시 문제: '${missingColumn}' 컬럼을 찾을 수 없습니다.`,
+            error: `스키마 캐시 문제: '${detectedColumn}' 컬럼을 찾을 수 없습니다.`,
             details: error.message,
             hint: `PostgREST 스키마 캐시가 업데이트되지 않았습니다. 다음 단계를 따라주세요:`,
             code: error.code,
             requestId: requestId,
-            solution: `1. Supabase 대시보드 → SQL Editor 열기\n2. supabase/health-logs-alter-add-columns.sql 파일 내용 복사하여 실행\n3. Supabase 대시보드에서 "Reload schema" 또는 API 재시작\n4. 1-2분 대기 후 페이지 새로고침하여 다시 시도`,
-            troubleshooting: `컬럼이 이미 추가되어 있다면:\n- Supabase 대시보드 → Settings → API → "Reload schema" 클릭\n- 또는 Supabase 프로젝트를 재시작하면 자동으로 스키마 캐시가 갱신됩니다.`
+            solution: `1. Supabase 대시보드 → SQL Editor 열기\n2. supabase/health-logs-alter-add-columns.sql 파일 내용 복사하여 실행\n3. Supabase 대시보드 → Settings → API → "Reload schema" 클릭 (또는 프로젝트 재시작)\n4. 1-2분 대기 후 페이지 새로고침하여 다시 시도`,
+            troubleshooting: `컬럼이 이미 추가되어 있다면:\n- Supabase 대시보드 → Settings → API → "Reload schema" 버튼 클릭\n- 또는 Supabase 프로젝트를 재시작하면 자동으로 스키마 캐시가 갱신됩니다.\n- 스키마 캐시 갱신에는 보통 1-2분이 소요됩니다.`
           }, { status: 500 })
         }
         
         return NextResponse.json({
           success: false,
-          error: `스키마 캐시 문제: '${missingColumn}' 컬럼을 찾을 수 없습니다.`,
+          error: `스키마 캐시 문제: 컬럼을 찾을 수 없습니다.`,
           details: error.message,
-          hint: 'PostgREST 스키마 캐시가 업데이트되지 않았습니다. Supabase 대시보드에서 스키마를 다시 로드해주세요.',
+          hint: 'PostgREST 스키마 캐시가 업데이트되지 않았습니다. Supabase 대시보드 → Settings → API → "Reload schema"를 클릭하거나 프로젝트를 재시작해주세요.',
           code: error.code,
           requestId: requestId
         }, { status: 500 })
