@@ -28,6 +28,9 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
   const [exerciseType, setExerciseType] = useState('')
   const [duration, setDuration] = useState('')
   const [heartRate, setHeartRate] = useState('')
+  const [weight, setWeight] = useState('')
+  const [reps, setReps] = useState('')
+  const [sets, setSets] = useState('')
   const [notes, setNotes] = useState('')
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [selectedTime, setSelectedTime] = useState(new Date().toTimeString().slice(0, 5))
@@ -52,6 +55,28 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
       const durationMinutes = parseInt(duration)
       const heartRateValue = heartRate ? parseInt(heartRate) : null
 
+      // 무게, 횟수, 세트 정보를 notes에 예쁘게 포맷팅
+      const exerciseDetails: string[] = []
+      
+      if (weight && weight.trim()) {
+        exerciseDetails.push(`무게: ${weight.trim()}kg`)
+      }
+      if (reps && reps.trim()) {
+        exerciseDetails.push(`횟수: ${reps.trim()}회`)
+      }
+      if (sets && sets.trim()) {
+        exerciseDetails.push(`세트: ${sets.trim()}세트`)
+      }
+      
+      // 기존 메모와 운동 상세 정보를 합침
+      let finalNotes = notes.trim()
+      if (exerciseDetails.length > 0) {
+        const detailsText = exerciseDetails.join(' | ')
+        finalNotes = finalNotes 
+          ? `${detailsText}\n${finalNotes}`
+          : detailsText
+      }
+
       // intensity_metrics: 운동 시간(분)·평균 심박수가 JSONB에 정확히 담기도록
       const intensityMetrics: Record<string, unknown> = {
         duration_minutes: durationMinutes,
@@ -65,6 +90,17 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
         else if (heartRateValue >= 120) intensityMetrics.intensity_level = 'moderate'
         else intensityMetrics.intensity_level = 'low'
       }
+      
+      // 무게, 횟수, 세트 정보를 intensity_metrics에도 포함
+      if (weight && weight.trim()) {
+        intensityMetrics.weight_kg = parseFloat(weight.trim())
+      }
+      if (reps && reps.trim()) {
+        intensityMetrics.reps = parseInt(reps.trim())
+      }
+      if (sets && sets.trim()) {
+        intensityMetrics.sets = parseInt(sets.trim())
+      }
 
       const response = await fetch('/api/health-logs', {
         method: 'POST',
@@ -76,7 +112,7 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
           duration_minutes: durationMinutes,
           heart_rate: heartRateValue,
           intensity_metrics: intensityMetrics,
-          notes: notes.trim() || null,
+          notes: finalNotes || null,
           logged_at: loggedAt
         })
       })
@@ -89,6 +125,9 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
         setExerciseType('')
         setDuration('')
         setHeartRate('')
+        setWeight('')
+        setReps('')
+        setSets('')
         setNotes('')
         setSelectedDate(new Date().toISOString().split('T')[0])
         setSelectedTime(new Date().toTimeString().slice(0, 5))
@@ -199,6 +238,44 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
                   placeholder="예: 150"
                   min="40"
                   max="220"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF]"
+                />
+              </div>
+            </div>
+
+            {/* 무게, 횟수, 세트 */}
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <label className="block text-sm text-gray-500 mb-2">무게 (kg)</label>
+                <input
+                  type="number"
+                  value={weight}
+                  onChange={(e) => setWeight(e.target.value)}
+                  placeholder="예: 50"
+                  min="0"
+                  step="0.5"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-500 mb-2">횟수 (회)</label>
+                <input
+                  type="number"
+                  value={reps}
+                  onChange={(e) => setReps(e.target.value)}
+                  placeholder="예: 10"
+                  min="1"
+                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-500 mb-2">세트</label>
+                <input
+                  type="number"
+                  value={sets}
+                  onChange={(e) => setSets(e.target.value)}
+                  placeholder="예: 3"
+                  min="1"
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF]"
                 />
               </div>

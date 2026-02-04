@@ -96,7 +96,7 @@ export async function POST(req: Request) {
     let body: any
     try {
       body = await req.json()
-      console.log(`📦 [${requestId}] 요청 본문:`, { category: body.category, hasNote: !!body.note })
+      console.log(`📦 [${requestId}] 요청 본문:`, { category: body.category, hasNotes: !!body.notes, hasNote: !!body.note, hasIntensityMetrics: !!body.intensity_metrics })
     } catch (parseError: any) {
       console.error(`❌ [${requestId}] JSON 파싱 실패:`, parseError)
       return NextResponse.json(
@@ -112,7 +112,7 @@ export async function POST(req: Request) {
     const { 
       category, 
       note, 
-      notes,
+      notes: bodyNotes,
       logged_at, 
       sub_type, 
       quantity, 
@@ -131,8 +131,12 @@ export async function POST(req: Request) {
       medication_dosage,
       medication_ingredients
     } = body
+    
+    // note와 notes 필드명 통일: notes로 통일 (note는 하위 호환성을 위해 받지만 notes로 통합)
+    const notes = bodyNotes ?? note ?? null
 
     // 운동 시 intensity_metrics 보강: 평균 심박수·운동 시간이 JSONB에 정확히 담기도록
+    // 무게, 횟수, 세트 등 모든 운동 정보가 누락 없이 포함되도록 보강
     const intensity_metrics =
       category === 'exercise'
         ? (bodyIntensityMetrics && typeof bodyIntensityMetrics === 'object'
@@ -145,10 +149,19 @@ export async function POST(req: Request) {
                   bodyIntensityMetrics.heart_rate ??
                   heart_rate ??
                   null,
+                heart_rate:
+                  bodyIntensityMetrics.heart_rate ?? heart_rate ?? null,
+                exercise_type:
+                  bodyIntensityMetrics.exercise_type ?? exercise_type ?? null,
+                // 무게, 횟수, 세트 정보가 있으면 포함
+                ...(bodyIntensityMetrics.weight_kg !== undefined && { weight_kg: bodyIntensityMetrics.weight_kg }),
+                ...(bodyIntensityMetrics.reps !== undefined && { reps: bodyIntensityMetrics.reps }),
+                ...(bodyIntensityMetrics.sets !== undefined && { sets: bodyIntensityMetrics.sets }),
               }
             : {
                 duration_minutes: duration_minutes ?? null,
                 average_heart_rate: heart_rate ?? null,
+                heart_rate: heart_rate ?? null,
                 ...(exercise_type && { exercise_type: exercise_type }),
               })
         : bodyIntensityMetrics
@@ -227,18 +240,17 @@ export async function POST(req: Request) {
       user_id: user.id, 
       user_email: user.email,
       category, 
-      note,
+      notes,
+      has_intensity_metrics: !!intensity_metrics,
       logged_at: logged_at || new Date().toISOString()
     })
 
     // 📦 INSERT 데이터 객체 생성 (user_id 필수 포함)
-    // 메모: notes 컬럼에 긴 텍스트가 들어가도록 note/notes 모두 매핑
-    const noteText = notes ?? note ?? null
+    // notes 필드명으로 통일하여 저장 (note 필드는 제거, notes만 사용)
     const insertData: any = {
       user_id: user.id, // ⚠️ 반드시 포함!
       category,
-      note: noteText,
-      notes: noteText,
+      notes: notes, // notes 필드명으로 통일
       logged_at: logged_at || new Date().toISOString(),
       ...(sub_type && { sub_type }),
       ...(quantity !== undefined && quantity !== null && { quantity }),
@@ -246,11 +258,12 @@ export async function POST(req: Request) {
       // 식사 관련 필드
       ...(meal_description && { meal_description }),
       ...(image_url && { image_url }),
-      // 운동 관련 필드
+      // 운동 관련 필드 - 모든 정보가 누락 없이 포함되도록 보장
       ...(exercise_type && { exercise_type }),
       ...(duration_minutes !== undefined && duration_minutes !== null && { duration_minutes }),
       ...(heart_rate !== undefined && heart_rate !== null && { heart_rate }),
-      ...(intensity_metrics && { intensity_metrics }),
+      // intensity_metrics는 반드시 포함 (운동 카테고리일 때)
+      ...(category === 'exercise' && intensity_metrics && { intensity_metrics }),
       // 복약 관련 필드
       ...(medication_name && { medication_name }),
       ...(medication_dosage && { medication_dosage }),
