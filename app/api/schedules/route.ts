@@ -192,9 +192,14 @@ export async function POST(req: Request) {
 
     // 새 스케줄 삽입 (category 필수 포함)
     // DB에 'time' 컬럼이 있는 경우 대비: time NOT NULL 위반(23502) 방지를 위해 time 값도 전달
+    // DB에 'days' 컬럼이 있는 경우 대비: days NOT NULL 위반(23502) 방지를 위해 days 값도 전달
     const defaultTime = '09:00'
+    const defaultDays = [1, 2, 3, 4, 5] // 기본값: 월~금
     const schedulesToInsert = normalizedSchedules.map(s => {
       const timeValue = (s.scheduled_time && String(s.scheduled_time).trim()) || defaultTime
+      const daysValue = (s.days_of_week && Array.isArray(s.days_of_week) && s.days_of_week.length > 0) 
+        ? s.days_of_week 
+        : defaultDays
       return {
         user_id: user.id,
         category: s.category,
@@ -204,7 +209,8 @@ export async function POST(req: Request) {
         frequency: s.frequency,
         scheduled_time: timeValue,
         time: timeValue, // DB 컬럼명이 'time'인 경우 23502 not_null_violation 방지
-        days_of_week: s.days_of_week,
+        days_of_week: daysValue,
+        days: daysValue, // DB 컬럼명이 'days'인 경우 23502 not_null_violation 방지
         day_of_month: s.day_of_month || null,
         is_active: s.is_active,
         notification_enabled: s.notification_enabled
@@ -219,14 +225,18 @@ export async function POST(req: Request) {
     if (error) {
       console.error('❌ [Schedules] 저장 에러:', error)
       
-      // 23502: not_null_violation (time 또는 scheduled_time에 null 전달된 경우)
+      // 23502: not_null_violation (time, scheduled_time, days 등에 null 전달된 경우)
       if (error.code === '23502' || (error as { message?: string }).message?.includes('not-null constraint')) {
         const msg = (error as { message?: string }).message || ''
+        const isTimeError = msg.includes('time') || msg.includes('scheduled_time')
+        const isDaysError = msg.includes('days')
         return NextResponse.json({
           success: false,
-          error: '알림 시간 값이 누락되었습니다.',
+          error: isDaysError ? '알림 요일 값이 누락되었습니다.' : '알림 시간 값이 누락되었습니다.',
           details: msg,
-          hint: "DB에 'time' 컬럼이 있으면 API가 이제 해당 값도 전달합니다. 배포 후 다시 시도하거나, Supabase에서 supabase/schedules-sync-time-column.sql 실행 후 Reload schema 해주세요."
+          hint: isDaysError
+            ? "DB에 'days' 컬럼이 있으면 API가 이제 해당 값도 전달합니다. 배포 후 다시 시도하거나, Supabase에서 supabase/schedules-sync-days-column.sql 실행 후 Reload schema 해주세요."
+            : "DB에 'time' 컬럼이 있으면 API가 이제 해당 값도 전달합니다. 배포 후 다시 시도하거나, Supabase에서 supabase/schedules-sync-time-column.sql 실행 후 Reload schema 해주세요."
         }, { status: 500 })
       }
       
