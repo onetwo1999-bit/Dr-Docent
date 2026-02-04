@@ -13,9 +13,15 @@ import {
   X,
   Check,
   Loader2,
-  ArrowLeft
+  ArrowLeft,
+  Pencil,
+  Trash2
 } from 'lucide-react'
 import Link from 'next/link'
+import type { HealthLogItem } from './HealthLogButtons'
+import MealLogModal from './MealLogModal'
+import ExerciseLogModal from './ExerciseLogModal'
+import MedicationLogModal from './MedicationLogModal'
 
 type ViewType = 'month' | 'week' | 'day'
 type CategoryType = 'meal' | 'exercise' | 'medication' | 'cycle'
@@ -27,6 +33,7 @@ interface HealthLog {
   logged_at: string
   note?: string | null
   image_url?: string
+  [key: string]: unknown
 }
 
 interface CycleLog {
@@ -95,6 +102,9 @@ export default function CalendarView({ userId }: CalendarViewProps) {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
   const [addingCategory, setAddingCategory] = useState<CategoryType | null>(null)
+  const [editingLog, setEditingLog] = useState<HealthLogItem | null>(null)
+  const [editModalCategory, setEditModalCategory] = useState<CategoryType | null>(null)
+  const [popoverTarget, setPopoverTarget] = useState<{ date: Date; category: CategoryType } | null>(null)
 
   // 데이터 로드
   useEffect(() => {
@@ -323,6 +333,36 @@ export default function CalendarView({ userId }: CalendarViewProps) {
     }
   }
 
+  // 수정: 해당 카테고리 모달 열기 (기존 데이터 채움)
+  const handleEditLog = (e: React.MouseEvent, log: HealthLog) => {
+    e.stopPropagation()
+    if (log.category === 'cycle') return
+    setEditingLog(log as HealthLogItem)
+    setEditModalCategory(log.category as CategoryType)
+    setShowAddModal(false)
+  }
+
+  // 삭제: 확인 후 API 호출
+  const handleDeleteLog = async (e: React.MouseEvent, log: HealthLog) => {
+    e.stopPropagation()
+    if (log.category === 'cycle') return
+    if (!confirm('정말 삭제하시겠습니까?')) return
+    try {
+      const res = await fetch(`/api/health-logs?id=${encodeURIComponent(log.id)}`, { method: 'DELETE', credentials: 'include' })
+      const data = await res.json()
+      if (data.success) {
+        fetchLogs()
+        setEditingLog(null)
+        setEditModalCategory(null)
+      } else {
+        alert(data.error || '삭제에 실패했습니다.')
+      }
+    } catch (err) {
+      console.error('삭제 실패:', err)
+      alert('삭제 중 오류가 발생했습니다.')
+    }
+  }
+
   // 헤더 제목
   const getHeaderTitle = () => {
     if (viewType === 'month') {
@@ -445,7 +485,7 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                     {dayData.date.getDate()}
                   </div>
                   
-                  {/* 카테고리별 아이콘 마커 */}
+                  {/* 카테고리별 아이콘 마커 (아이콘 클릭 시 해당 일의 수정/삭제 팝오버) */}
                   {dayData.logs.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-1">
                       {Object.entries(
@@ -456,15 +496,19 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                       ).map(([category, count]) => {
                         const config = categoryConfig[category as CategoryType]
                         if (!config) return null
-                        
                         return (
-                          <div
+                          <button
                             key={category}
-                            className={`flex items-center justify-center ${config.color} transition-opacity hover:opacity-80`}
-                            title={`${config.label} ${count}회`}
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setPopoverTarget({ date: dayData.date, category: category as CategoryType })
+                            }}
+                            className={`flex items-center justify-center ${config.color} transition-opacity hover:opacity-80 cursor-pointer rounded p-0.5`}
+                            title={`${config.label} ${count}회 - 클릭하여 수정/삭제`}
                           >
                             {config.icon({ className: "w-3.5 h-3.5" })}
-                          </div>
+                          </button>
                         )
                       })}
                     </div>
@@ -532,13 +576,21 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                       {dayLogs.map((log) => {
                         const config = categoryConfig[log.category as CategoryType]
                         if (!config) return null
+                        const canEdit = log.category !== 'cycle'
                         return (
                           <div
                             key={log.id}
+                            onClick={(e) => e.stopPropagation()}
                             className={`text-xs p-1.5 rounded-lg mb-1 bg-white border border-gray-200 ${config.color} flex items-center gap-1.5`}
                           >
                             {config.icon({ className: "w-3 h-3" })}
-                            <span className="text-gray-700 font-medium">{config.label}</span>
+                            <span className="text-gray-700 font-medium flex-1">{config.label}</span>
+                            {canEdit && (
+                              <>
+                                <button type="button" onClick={(e) => handleEditLog(e, log)} className="p-0.5 text-gray-400 hover:text-[#2DD4BF]" title="수정"><Pencil className="w-3 h-3" /></button>
+                                <button type="button" onClick={(e) => handleDeleteLog(e, log)} className="p-0.5 text-gray-400 hover:text-red-500" title="삭제"><Trash2 className="w-3 h-3" /></button>
+                              </>
+                            )}
                           </div>
                         )
                       })}
@@ -584,18 +636,28 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                     {hourLogs.map((log) => {
                       const config = categoryConfig[log.category as CategoryType]
                       if (!config) return null
+                      const canEdit = log.category !== 'cycle'
                       return (
                         <div
                           key={log.id}
-                          className="p-3 rounded-xl mb-2 bg-white border border-gray-200"
+                          onClick={(e) => e.stopPropagation()}
+                          className="p-3 rounded-xl mb-2 bg-white border border-gray-200 flex items-start justify-between gap-2"
                         >
-                          <div className={`flex items-center gap-2 ${config.color}`}>
-                            {config.icon({ className: "w-4 h-4" })}
-                            <span className="font-medium text-gray-700">{config.label}</span>
-                            <span className="text-xs text-gray-400">{formatTime(log.logged_at)}</span>
+                          <div className="min-w-0 flex-1">
+                            <div className={`flex items-center gap-2 ${config.color}`}>
+                              {config.icon({ className: "w-4 h-4" })}
+                              <span className="font-medium text-gray-700">{config.label}</span>
+                              <span className="text-xs text-gray-400">{formatTime(log.logged_at)}</span>
+                            </div>
+                            {(log.note || (log as HealthLogItem).notes) && (
+                              <p className="text-sm text-gray-600 mt-1">{(log as HealthLogItem).notes || log.note}</p>
+                            )}
                           </div>
-                          {log.note && (
-                            <p className="text-sm text-gray-600 mt-1">{log.note}</p>
+                          {canEdit && (
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button type="button" onClick={(e) => handleEditLog(e, log)} className="p-1.5 text-gray-400 hover:text-[#2DD4BF] rounded-lg" title="수정"><Pencil className="w-4 h-4" /></button>
+                              <button type="button" onClick={(e) => handleDeleteLog(e, log)} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg" title="삭제"><Trash2 className="w-4 h-4" /></button>
+                            </div>
                           )}
                         </div>
                       )
@@ -619,6 +681,82 @@ export default function CalendarView({ userId }: CalendarViewProps) {
           </div>
         ))}
       </div>
+
+      {/* 월간 뷰: 해당 일 아이콘 클릭 시 수정/삭제 팝오버 */}
+      {popoverTarget && (
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/30"
+          onClick={() => setPopoverTarget(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-sm max-h-[70vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="font-semibold text-gray-900">
+                {formatDate(popoverTarget.date)} · {categoryConfig[popoverTarget.category]?.label || popoverTarget.category}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setPopoverTarget(null)}
+                className="p-1.5 hover:bg-gray-100 rounded-lg"
+              >
+                <X className="w-5 h-5 text-gray-400" />
+              </button>
+            </div>
+            <div className="p-3 max-h-[50vh] overflow-y-auto space-y-2">
+              {getLogsForDate(popoverTarget.date)
+                .filter((l) => l.category === popoverTarget.category)
+                .map((log) => {
+                  const config = categoryConfig[log.category as CategoryType]
+                  if (!config) return null
+                  const canEdit = log.category !== 'cycle'
+                  return (
+                    <div
+                      key={log.id}
+                      className="flex items-center gap-2 p-3 rounded-xl bg-gray-50 border border-gray-100"
+                    >
+                      <span className={config.color}>{config.icon({ className: "w-4 h-4" })}</span>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs text-gray-500">{formatTime(log.logged_at)}</span>
+                        <p className="text-sm text-gray-800 truncate">{(log as HealthLogItem).notes || log.note || '—'}</p>
+                      </div>
+                      {canEdit && (
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setEditingLog(log as HealthLogItem)
+                              setEditModalCategory(log.category as CategoryType)
+                              setPopoverTarget(null)
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-[#2DD4BF] hover:bg-[#2DD4BF]/10 rounded-lg"
+                            title="수정"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleDeleteLog(e, log)
+                              setPopoverTarget(null)
+                            }}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                            title="삭제"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 기록 추가 모달 */}
       {showAddModal && selectedDate && (
@@ -671,6 +809,26 @@ export default function CalendarView({ userId }: CalendarViewProps) {
           </div>
         </div>
       )}
+
+      {/* 수정 모달 (캘린더에서 아이콘 클릭 → 팝오버에서 수정 선택 시) */}
+      <MealLogModal
+        isOpen={!!editingLog && editModalCategory === 'meal'}
+        onClose={() => { setEditingLog(null); setEditModalCategory(null) }}
+        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
+        initialData={editModalCategory === 'meal' ? editingLog ?? undefined : undefined}
+      />
+      <ExerciseLogModal
+        isOpen={!!editingLog && editModalCategory === 'exercise'}
+        onClose={() => { setEditingLog(null); setEditModalCategory(null) }}
+        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
+        initialData={editModalCategory === 'exercise' ? editingLog ?? undefined : undefined}
+      />
+      <MedicationLogModal
+        isOpen={!!editingLog && editModalCategory === 'medication'}
+        onClose={() => { setEditingLog(null); setEditModalCategory(null) }}
+        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
+        initialData={editModalCategory === 'medication' ? editingLog ?? undefined : undefined}
+      />
     </div>
   )
 }
