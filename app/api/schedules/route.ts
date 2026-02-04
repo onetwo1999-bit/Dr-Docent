@@ -191,19 +191,25 @@ export async function POST(req: Request) {
     }
 
     // 새 스케줄 삽입 (category 필수 포함)
-    const schedulesToInsert = normalizedSchedules.map(s => ({
-      user_id: user.id,
-      category: s.category,
-      sub_type: s.sub_type || null,
-      title: s.title,
-      description: s.description || null,
-      frequency: s.frequency,
-      scheduled_time: s.scheduled_time,
-      days_of_week: s.days_of_week,
-      day_of_month: s.day_of_month || null,
-      is_active: s.is_active,
-      notification_enabled: s.notification_enabled
-    }))
+    // DB에 'time' 컬럼이 있는 경우 대비: time NOT NULL 위반(23502) 방지를 위해 time 값도 전달
+    const defaultTime = '09:00'
+    const schedulesToInsert = normalizedSchedules.map(s => {
+      const timeValue = (s.scheduled_time && String(s.scheduled_time).trim()) || defaultTime
+      return {
+        user_id: user.id,
+        category: s.category,
+        sub_type: s.sub_type || null,
+        title: s.title,
+        description: s.description || null,
+        frequency: s.frequency,
+        scheduled_time: timeValue,
+        time: timeValue, // DB 컬럼명이 'time'인 경우 23502 not_null_violation 방지
+        days_of_week: s.days_of_week,
+        day_of_month: s.day_of_month || null,
+        is_active: s.is_active,
+        notification_enabled: s.notification_enabled
+      }
+    })
 
     const { data, error } = await supabase
       .from('schedules')
@@ -212,6 +218,17 @@ export async function POST(req: Request) {
 
     if (error) {
       console.error('❌ [Schedules] 저장 에러:', error)
+      
+      // 23502: not_null_violation (time 또는 scheduled_time에 null 전달된 경우)
+      if (error.code === '23502' || (error as { message?: string }).message?.includes('not-null constraint')) {
+        const msg = (error as { message?: string }).message || ''
+        return NextResponse.json({
+          success: false,
+          error: '알림 시간 값이 누락되었습니다.',
+          details: msg,
+          hint: "DB에 'time' 컬럼이 있으면 API가 이제 해당 값도 전달합니다. 배포 후 다시 시도하거나, Supabase에서 supabase/schedules-sync-time-column.sql 실행 후 Reload schema 해주세요."
+        }, { status: 500 })
+      }
       
       // 테이블 없음 에러
       if (error.code === '42P01') {
