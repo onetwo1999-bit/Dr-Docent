@@ -92,14 +92,30 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
       }
       
       // 무게, 횟수, 세트 정보를 intensity_metrics에도 포함
+      let weightKg: number | null = null
+      let repsValue: number | null = null
+      let setsValue: number | null = null
+      
       if (weight && weight.trim()) {
-        intensityMetrics.weight_kg = parseFloat(weight.trim())
+        const parsedWeight = Number(weight.trim())
+        if (!isNaN(parsedWeight) && parsedWeight > 0) {
+          weightKg = parsedWeight
+          intensityMetrics.weight_kg = weightKg
+        }
       }
       if (reps && reps.trim()) {
-        intensityMetrics.reps = parseInt(reps.trim())
+        const parsedReps = Number(reps.trim())
+        if (!isNaN(parsedReps) && parsedReps > 0) {
+          repsValue = parsedReps
+          intensityMetrics.reps = repsValue
+        }
       }
       if (sets && sets.trim()) {
-        intensityMetrics.sets = parseInt(sets.trim())
+        const parsedSets = Number(sets.trim())
+        if (!isNaN(parsedSets) && parsedSets > 0) {
+          setsValue = parsedSets
+          intensityMetrics.sets = setsValue
+        }
       }
 
       const response = await fetch('/api/health-logs', {
@@ -113,7 +129,11 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
           heart_rate: heartRateValue,
           intensity_metrics: intensityMetrics,
           notes: finalNotes || null,
-          logged_at: loggedAt
+          logged_at: loggedAt,
+          // 무게, 횟수, 세트를 body에 직접 포함
+          weight_kg: weightKg,
+          reps: repsValue,
+          sets: setsValue
         })
       })
 

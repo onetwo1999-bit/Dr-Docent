@@ -126,6 +126,9 @@ export async function POST(req: Request) {
       duration_minutes,
       heart_rate,
       intensity_metrics: bodyIntensityMetrics,
+      weight_kg: bodyWeightKg,
+      reps: bodyReps,
+      sets: bodySets,
       // 복약 관련
       medication_name,
       medication_dosage,
@@ -134,6 +137,30 @@ export async function POST(req: Request) {
     
     // note와 notes 필드명 통일: notes로 통일 (note는 하위 호환성을 위해 받지만 notes로 통합)
     const notes = bodyNotes ?? note ?? null
+
+    // 무게, 횟수, 세트 값을 안전하게 숫자로 변환 (데이터 무결성 보장)
+    let weightKg: number | null = null
+    let repsValue: number | null = null
+    let setsValue: number | null = null
+    
+    if (bodyWeightKg !== undefined && bodyWeightKg !== null) {
+      const parsed = Number(bodyWeightKg)
+      if (!isNaN(parsed) && parsed > 0) {
+        weightKg = parsed
+      }
+    }
+    if (bodyReps !== undefined && bodyReps !== null) {
+      const parsed = Number(bodyReps)
+      if (!isNaN(parsed) && parsed > 0) {
+        repsValue = parsed
+      }
+    }
+    if (bodySets !== undefined && bodySets !== null) {
+      const parsed = Number(bodySets)
+      if (!isNaN(parsed) && parsed > 0) {
+        setsValue = parsed
+      }
+    }
 
     // 운동 시 intensity_metrics 보강: 평균 심박수·운동 시간이 JSONB에 정확히 담기도록
     // 무게, 횟수, 세트 등 모든 운동 정보가 누락 없이 포함되도록 보강
@@ -153,10 +180,14 @@ export async function POST(req: Request) {
                   bodyIntensityMetrics.heart_rate ?? heart_rate ?? null,
                 exercise_type:
                   bodyIntensityMetrics.exercise_type ?? exercise_type ?? null,
-                // 무게, 횟수, 세트 정보가 있으면 포함
-                ...(bodyIntensityMetrics.weight_kg !== undefined && { weight_kg: bodyIntensityMetrics.weight_kg }),
-                ...(bodyIntensityMetrics.reps !== undefined && { reps: bodyIntensityMetrics.reps }),
-                ...(bodyIntensityMetrics.sets !== undefined && { sets: bodyIntensityMetrics.sets }),
+                // 무게, 횟수, 세트 정보가 있으면 포함 (body에서 직접 받은 값 우선)
+                ...(weightKg !== null && { weight_kg: weightKg }),
+                ...(repsValue !== null && { reps: repsValue }),
+                ...(setsValue !== null && { sets: setsValue }),
+                // intensity_metrics에 이미 포함된 경우도 고려 (하위 호환성)
+                ...(bodyIntensityMetrics.weight_kg !== undefined && weightKg === null && { weight_kg: bodyIntensityMetrics.weight_kg }),
+                ...(bodyIntensityMetrics.reps !== undefined && repsValue === null && { reps: bodyIntensityMetrics.reps }),
+                ...(bodyIntensityMetrics.sets !== undefined && setsValue === null && { sets: bodyIntensityMetrics.sets }),
               }
             : {
                 duration_minutes: duration_minutes ?? null,
@@ -242,6 +273,9 @@ export async function POST(req: Request) {
       category, 
       notes,
       has_intensity_metrics: !!intensity_metrics,
+      weight_kg: weightKg,
+      reps: repsValue,
+      sets: setsValue,
       logged_at: logged_at || new Date().toISOString()
     })
 
@@ -262,6 +296,10 @@ export async function POST(req: Request) {
       ...(exercise_type && { exercise_type }),
       ...(duration_minutes !== undefined && duration_minutes !== null && { duration_minutes }),
       ...(heart_rate !== undefined && heart_rate !== null && { heart_rate }),
+      // 무게, 횟수, 세트를 직접 컬럼으로 저장 (데이터 무결성 보장)
+      ...(weightKg !== null && { weight_kg: weightKg }),
+      ...(repsValue !== null && { reps: repsValue }),
+      ...(setsValue !== null && { sets: setsValue }),
       // intensity_metrics는 반드시 포함 (운동 카테고리일 때)
       ...(category === 'exercise' && intensity_metrics && { intensity_metrics }),
       // 복약 관련 필드
