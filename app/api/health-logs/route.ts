@@ -125,12 +125,33 @@ export async function POST(req: Request) {
       exercise_type,
       duration_minutes,
       heart_rate,
-      intensity_metrics,
+      intensity_metrics: bodyIntensityMetrics,
       // 복약 관련
       medication_name,
       medication_dosage,
       medication_ingredients
     } = body
+
+    // 운동 시 intensity_metrics 보강: 평균 심박수·운동 시간이 JSONB에 정확히 담기도록
+    const intensity_metrics =
+      category === 'exercise'
+        ? (bodyIntensityMetrics && typeof bodyIntensityMetrics === 'object'
+            ? {
+                ...bodyIntensityMetrics,
+                duration_minutes:
+                  bodyIntensityMetrics.duration_minutes ?? duration_minutes ?? null,
+                average_heart_rate:
+                  bodyIntensityMetrics.average_heart_rate ??
+                  bodyIntensityMetrics.heart_rate ??
+                  heart_rate ??
+                  null,
+              }
+            : {
+                duration_minutes: duration_minutes ?? null,
+                average_heart_rate: heart_rate ?? null,
+                ...(exercise_type && { exercise_type: exercise_type }),
+              })
+        : bodyIntensityMetrics
 
     // 유효성 검사
     if (!category || !['meal', 'exercise', 'medication'].includes(category)) {
@@ -211,11 +232,13 @@ export async function POST(req: Request) {
     })
 
     // 📦 INSERT 데이터 객체 생성 (user_id 필수 포함)
+    // 메모: notes 컬럼에 긴 텍스트가 들어가도록 note/notes 모두 매핑
+    const noteText = notes ?? note ?? null
     const insertData: any = {
       user_id: user.id, // ⚠️ 반드시 포함!
       category,
-      note: note || notes || null,
-      notes: notes || note || null,
+      note: noteText,
+      notes: noteText,
       logged_at: logged_at || new Date().toISOString(),
       ...(sub_type && { sub_type }),
       ...(quantity !== undefined && quantity !== null && { quantity }),

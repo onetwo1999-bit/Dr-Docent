@@ -5,6 +5,10 @@ const DEPLOY_DOMAIN = 'dr-docent.vercel.app'
 const SUPABASE_DOMAIN = 'fddoizheudxxqescjpbq.supabase.co'
 
 const nextConfig: NextConfig = {
+  // 루트에서 npm run dev 시 lockfile 경고 방지 (my-app을 워크스페이스 루트로 고정)
+  turbopack: {
+    root: __dirname,
+  },
   async headers() {
     return [
       {

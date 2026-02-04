@@ -199,25 +199,49 @@ function getScoreEmoji(score: number | null | undefined): string {
 }
 
 export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
-  // 🔒 SSR 안전 장치: 클라이언트에서만 렌더링
   const [isClient, setIsClient] = useState(false)
-  
+  // 운동 기록 저장 시 활동량(체력) 점수 갱신 반영
+  const [activityBonus, setActivityBonus] = useState(0)
+
   useEffect(() => {
     setIsClient(true)
   }, [])
-  
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.category === 'exercise') {
+        setActivityBonus(5)
+        const t = setTimeout(() => setActivityBonus(0), 4000)
+        return () => clearTimeout(t)
+      }
+    }
+    window.addEventListener('health-log-updated', handler)
+    return () => window.removeEventListener('health-log-updated', handler)
+  }, [])
+
   const scores = calculateHealthScores(profile)
-  
+  const activityScore = Math.min(100, scores.activity + activityBonus)
+  const overallWithBonus = activityBonus > 0
+    ? Math.round(
+        (scores.cardiovascular * 0.25 +
+          scores.musculoskeletal * 0.2 +
+          scores.nutrition * 0.2 +
+          scores.metabolism * 0.2 +
+          activityScore * 0.15)
+      )
+    : scores.overall
+
   const data = [
     { subject: '심혈관', score: scores.cardiovascular, fullMark: 100 },
     { subject: '근골격', score: scores.musculoskeletal, fullMark: 100 },
     { subject: '영양', score: scores.nutrition, fullMark: 100 },
     { subject: '대사', score: scores.metabolism, fullMark: 100 },
-    { subject: '활동량', score: scores.activity, fullMark: 100 },
+    { subject: '활동량', score: activityScore, fullMark: 100 },
   ]
-  
-  const overallColor = getScoreColor(scores.overall)
-  const overallEmoji = getScoreEmoji(scores.overall)
+
+  const overallColor = getScoreColor(overallWithBonus)
+  const overallEmoji = getScoreEmoji(overallWithBonus)
 
   // SSR 중에는 로딩 표시
   if (!isClient) {
@@ -282,7 +306,7 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
           className="text-4xl font-bold"
           style={{ color: overallColor }}
         >
-          {scores?.overall ?? 0}
+          {overallWithBonus ?? 0}
         </div>
         <div className="text-gray-400 text-xs">종합점수</div>
         <div className="text-xl mt-1">{overallEmoji}</div>

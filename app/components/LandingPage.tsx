@@ -30,9 +30,26 @@ export default function LandingPage() {
       })
 
       if (error) throw error
-    } catch (error) {
+    } catch (error: unknown) {
       console.error('로그인 에러 발생:', error)
-      alert('로그인 연결 중 문제가 발생했습니다. 관리자에게 문의해주세요.')
+      const msg = error instanceof Error ? error.message : String(error)
+      const isNetwork =
+        msg.includes('fetch') ||
+        msg.includes('network') ||
+        msg.includes('Failed to fetch') ||
+        msg.includes('Load failed') ||
+        /DNS|ENOTFOUND|getaddrinfo/i.test(msg)
+      if (isNetwork) {
+        alert(
+          'Supabase 서버에 연결할 수 없습니다.\n\n' +
+            '• 인터넷 연결을 확인해 주세요.\n' +
+            '• VPN/방화벽을 잠시 끄고 다시 시도해 보세요.\n' +
+            '• DNS 설정(예: 8.8.8.8) 또는 프록시를 확인해 주세요.\n' +
+            '• .env.local의 NEXT_PUBLIC_SUPABASE_URL이 Supabase 대시보드와 일치하는지 확인해 주세요.'
+        )
+      } else {
+        alert('로그인 연결 중 문제가 발생했습니다. 관리자에게 문의해주세요.')
+      }
     }
   }
 

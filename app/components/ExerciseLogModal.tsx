@@ -52,15 +52,14 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
       const durationMinutes = parseInt(duration)
       const heartRateValue = heartRate ? parseInt(heartRate) : null
 
-      // intensity_metrics 계산 (간단한 로직)
-      const intensityMetrics: any = {
+      // intensity_metrics: 운동 시간(분)·평균 심박수가 JSONB에 정확히 담기도록
+      const intensityMetrics: Record<string, unknown> = {
         duration_minutes: durationMinutes,
+        average_heart_rate: heartRateValue ?? null,
         exercise_type: exerciseType
       }
-
-      if (heartRateValue) {
+      if (heartRateValue != null) {
         intensityMetrics.heart_rate = heartRateValue
-        // 심박수 기반 강도 계산 (대략적)
         if (heartRateValue >= 180) intensityMetrics.intensity_level = 'very_high'
         else if (heartRateValue >= 150) intensityMetrics.intensity_level = 'high'
         else if (heartRateValue >= 120) intensityMetrics.intensity_level = 'moderate'
@@ -85,7 +84,7 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
       const result = await response.json()
 
       if (result.success) {
-        showToast('운동 기록이 저장되었습니다!', 'success')
+        showToast('오늘의 오운완 기록 성공!', 'success')
         // 폼 초기화
         setExerciseType('')
         setDuration('')
