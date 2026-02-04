@@ -131,6 +131,22 @@ export async function POST(req: Request) {
         )
       }
 
+      // RLS 정책 위반 (403) 시 안내
+      const isRlsError =
+        uploadError.message?.toLowerCase().includes('row-level security') ||
+        uploadError.message?.toLowerCase().includes('violates') ||
+        String((uploadError as { statusCode?: string }).statusCode) === '403'
+      if (isRlsError) {
+        return NextResponse.json(
+          {
+            error: '업로드 권한이 없습니다.',
+            hint: `Supabase SQL Editor에서 'supabase/storage-meal-photos-rls.sql' 파일을 실행해 주세요. (meal-photos 버킷 RLS 정책 적용)`,
+            details: uploadError.message
+          },
+          { status: 403 }
+        )
+      }
+
       return NextResponse.json(
         { error: uploadError.message || '파일 업로드에 실패했습니다.' },
         { status: 500 }

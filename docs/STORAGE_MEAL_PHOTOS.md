@@ -15,24 +15,19 @@
 - **Public bucket**: **ON** (체크) – 업로드된 이미지 공개 URL 사용
 - **Create bucket** 클릭
 
-## 3. 정책(RLS) 설정 (선택)
+## 3. RLS 정책 설정 (필수 – 403 오류 방지)
 
-업로드/다운로드가 막히면 Storage 정책을 추가합니다.
+**"new row violates row-level security policy"** 가 나오면 반드시 아래 SQL을 실행하세요.
 
-- Storage → `meal-photos` → **Policies**
-- **New policy** → "For full customization" 선택 후 아래와 유사하게 설정:
+1. Supabase 대시보드 → **SQL Editor**
+2. **New query** 클릭
+3. 프로젝트 루트의 **`supabase/storage-meal-photos-rls.sql`** 파일 내용을 통째로 복사해 붙여넣기
+4. **Run** 실행
 
-**업로드 허용 (인증된 사용자)**  
-- Policy name: `Users can upload meal photos`
-- Allowed operation: **INSERT**
-- Target roles: `authenticated`
-- USING expression: `true`
-- WITH CHECK expression: `true`
+이 스크립트는 다음 정책을 적용합니다.
 
-**조회 허용 (공개 읽기)**  
-- Policy name: `Public read for meal photos`
-- Allowed operation: **SELECT**
-- Target roles: `public` 또는 `anon`
-- USING expression: `true`
+- **INSERT**: 로그인한 사용자가 자신의 폴더(`user_id/`)에만 업로드 가능
+- **SELECT**: 공개 읽기 (이미지 URL로 접근 가능)
+- **DELETE / UPDATE**: 본인 폴더의 파일만 삭제·수정 가능
 
 저장 후 앱에서 다시 식단 사진 업로드를 시도해 보세요.

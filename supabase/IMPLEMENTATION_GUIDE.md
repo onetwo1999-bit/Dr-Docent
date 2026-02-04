@@ -36,10 +36,11 @@
 2. `supabase/health-logs-schema-expansion.sql` 실행
 3. 실행 결과 확인
 
-### Step 2: Storage 버킷 생성
+### Step 2: Storage 버킷 및 RLS
 1. Supabase 대시보드 > Storage
-2. `health-images` 버킷 생성 (Public)
-3. `supabase/STORAGE_SETUP.md` 참고하여 RLS 정책 설정
+2. `meal-photos` 버킷 생성 (Public) — 앱은 이 버킷 사용
+3. **SQL Editor**에서 `supabase/storage-meal-photos-rls.sql` 실행 (RLS 정책 적용)
+4. 403 / "row-level security policy" 오류 시 위 RLS SQL 재실행 확인
 
 ### Step 3: 테스트
 1. 대시보드에서 "식사 기록" 버튼 클릭
@@ -86,7 +87,7 @@ supabase/
 
 ## ⚠️ 주의사항
 
-1. **Storage 버킷 생성 필수**: 이미지 업로드를 사용하려면 반드시 `health-images` 버킷을 생성해야 합니다.
+1. **Storage 버킷 생성 필수**: 이미지 업로드를 사용하려면 `meal-photos` 버킷을 생성하고, **반드시** `supabase/storage-meal-photos-rls.sql`을 실행해 RLS 정책을 적용해야 합니다.
 
 2. **스키마 확장 필수**: 새로운 필드를 사용하려면 `health-logs-schema-expansion.sql`을 실행해야 합니다.
 
@@ -94,10 +95,11 @@ supabase/
 
 ## 🐛 문제 해결
 
-### 이미지 업로드 실패
-- Storage 버킷이 생성되었는지 확인
-- RLS 정책이 올바르게 설정되었는지 확인
-- 파일 크기가 5MB 이하인지 확인
+### 이미지 업로드 실패 (403 / RLS)
+- `meal-photos` 버킷 생성 여부 확인
+- **SQL Editor에서 `supabase/storage-meal-photos-rls.sql` 실행** (RLS 정책 적용)
+- 파일 경로가 `{user_id}/{category}/{filename}` 형식인지 확인 (API 기본값)
+- 파일 크기 5MB 이하, 이미지 형식인지 확인
 
 ### 모달이 열리지 않음
 - 브라우저 콘솔에서 에러 확인
