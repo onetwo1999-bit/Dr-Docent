@@ -148,36 +148,52 @@ export async function POST(req: Request) {
 
     // 무게, 횟수, 세트 값을 안전하게 숫자로 변환 (데이터 무결성 보장)
     // 값이 없으면 null, 있으면 반드시 Number()로 감싸서 숫자 타입으로 변환
+    // 특히 빈 문자열("")은 null로 변환
     let weightKg: number | null = null
     let repsValue: number | null = null
     let setsValue: number | null = null
     
+    // weight_kg 처리: 빈 문자열("")이면 null, 그 외에는 Number()로 변환
     if (bodyWeightKg !== undefined && bodyWeightKg !== null && bodyWeightKg !== '') {
-      const parsed = Number(bodyWeightKg)
-      if (!isNaN(parsed) && parsed > 0) {
-        weightKg = parsed
+      const strValue = String(bodyWeightKg).trim()
+      if (strValue !== '') {
+        const parsed = Number(strValue)
+        if (!isNaN(parsed) && parsed > 0) {
+          weightKg = parsed
+        }
       }
     }
+    
+    // reps 처리: 빈 문자열("")이면 null, 그 외에는 Number()로 변환
     if (bodyReps !== undefined && bodyReps !== null && bodyReps !== '') {
-      const parsed = Number(bodyReps)
-      if (!isNaN(parsed) && parsed > 0) {
-        repsValue = parsed
+      const strValue = String(bodyReps).trim()
+      if (strValue !== '') {
+        const parsed = Number(strValue)
+        if (!isNaN(parsed) && parsed > 0) {
+          repsValue = parsed
+        }
       }
     }
+    
+    // sets 처리: 빈 문자열("")이면 null, 그 외에는 Number()로 변환
     if (bodySets !== undefined && bodySets !== null && bodySets !== '') {
-      const parsed = Number(bodySets)
-      if (!isNaN(parsed) && parsed > 0) {
-        setsValue = parsed
+      const strValue = String(bodySets).trim()
+      if (strValue !== '') {
+        const parsed = Number(strValue)
+        if (!isNaN(parsed) && parsed > 0) {
+          setsValue = parsed
+        }
       }
     }
     
     console.log(`🔢 [${requestId}] 무게/횟수/세트 변환 결과:`, {
-      bodyWeightKg,
-      bodyReps,
-      bodySets,
-      weightKg,
-      repsValue,
-      setsValue
+      원본값: { bodyWeightKg, bodyReps, bodySets },
+      변환후: { weightKg, repsValue, setsValue },
+      타입확인: {
+        weightKg_type: typeof weightKg,
+        repsValue_type: typeof repsValue,
+        setsValue_type: typeof setsValue
+      }
     })
 
     // 운동 시 intensity_metrics 보강: 평균 심박수·운동 시간이 JSONB에 정확히 담기도록
@@ -299,6 +315,19 @@ export async function POST(req: Request) {
 
     // 📦 INSERT 데이터 객체 생성 (user_id 필수 포함)
     // notes 필드명으로 통일하여 저장 (note 필드는 제거, notes만 사용)
+    
+    // weight_kg, reps, sets 최종 변환 및 검증 (DB 타입: numeric, integer)
+    // 빈 문자열("")은 null로, 유효한 숫자는 Number()로 변환
+    const finalWeightKg = (weightKg !== null && !isNaN(Number(weightKg)) && Number(weightKg) > 0) 
+      ? Number(weightKg) 
+      : null
+    const finalReps = (repsValue !== null && !isNaN(Number(repsValue)) && Number(repsValue) > 0) 
+      ? Number(repsValue) 
+      : null
+    const finalSets = (setsValue !== null && !isNaN(Number(setsValue)) && Number(setsValue) > 0) 
+      ? Number(setsValue) 
+      : null
+    
     const insertData: any = {
       user_id: user.id, // ⚠️ 반드시 포함!
       category,
@@ -314,10 +343,11 @@ export async function POST(req: Request) {
       ...(exercise_type && { exercise_type }),
       ...(duration_minutes !== undefined && duration_minutes !== null && { duration_minutes }),
       ...(heart_rate !== undefined && heart_rate !== null && { heart_rate }),
-      // 무게, 횟수, 세트를 직접 컬럼으로 저장 (값이 없으면 null, 있으면 Number()로 숫자 타입 보장)
-      weight_kg: weightKg !== null ? Number(weightKg) : null,
-      reps: repsValue !== null ? Number(repsValue) : null,
-      sets: setsValue !== null ? Number(setsValue) : null,
+      // 무게, 횟수, 세트를 직접 컬럼으로 저장 (DB 타입: numeric, integer)
+      // 값이 없으면 null, 있으면 반드시 숫자 타입으로 보장
+      weight_kg: finalWeightKg,
+      reps: finalReps,
+      sets: finalSets,
       // intensity_metrics는 반드시 포함 (운동 카테고리일 때)
       ...(category === 'exercise' && intensity_metrics && { intensity_metrics }),
       // 복약 관련 필드
@@ -333,19 +363,78 @@ export async function POST(req: Request) {
 
     // 🔍 INSERT 전 최종 검증
     if (!insertData.user_id) {
-      console.error('❌ [Health Logs] user_id 누락:', insertData)
+      console.error(`❌ [${requestId}] user_id 누락:`, insertData)
       return NextResponse.json(
         { 
           success: false, 
           error: 'user_id가 누락되었습니다.',
-          details: '시스템 오류입니다. 관리자에게 문의해주세요.'
+          details: '시스템 오류입니다. 관리자에게 문의해주세요.',
+          requestId: requestId
         },
         { status: 500 }
       )
     }
+    
+    // 🔍 weight_kg, reps, sets 타입 검증 (DB 타입과 일치하는지 확인)
+    if (insertData.weight_kg !== null && (typeof insertData.weight_kg !== 'number' || isNaN(insertData.weight_kg))) {
+      console.error(`❌ [${requestId}] weight_kg 타입 오류:`, {
+        value: insertData.weight_kg,
+        type: typeof insertData.weight_kg,
+        isNaN: isNaN(insertData.weight_kg)
+      })
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'weight_kg 값이 올바르지 않습니다.',
+          details: `weight_kg는 숫자 타입이어야 합니다. (현재: ${typeof insertData.weight_kg})`,
+          requestId: requestId
+        },
+        { status: 400 }
+      )
+    }
+    if (insertData.reps !== null && (typeof insertData.reps !== 'number' || isNaN(insertData.reps))) {
+      console.error(`❌ [${requestId}] reps 타입 오류:`, {
+        value: insertData.reps,
+        type: typeof insertData.reps,
+        isNaN: isNaN(insertData.reps)
+      })
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'reps 값이 올바르지 않습니다.',
+          details: `reps는 숫자 타입이어야 합니다. (현재: ${typeof insertData.reps})`,
+          requestId: requestId
+        },
+        { status: 400 }
+      )
+    }
+    if (insertData.sets !== null && (typeof insertData.sets !== 'number' || isNaN(insertData.sets))) {
+      console.error(`❌ [${requestId}] sets 타입 오류:`, {
+        value: insertData.sets,
+        type: typeof insertData.sets,
+        isNaN: isNaN(insertData.sets)
+      })
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: 'sets 값이 올바르지 않습니다.',
+          details: `sets는 숫자 타입이어야 합니다. (현재: ${typeof insertData.sets})`,
+          requestId: requestId
+        },
+        { status: 400 }
+      )
+    }
 
-    // 로그 삽입
+    // 🔍 INSERT 전 최종 데이터 검증 및 로깅
     console.log(`💾 [${requestId}] 데이터베이스에 삽입 시도...`)
+    console.log(`📋 [${requestId}] 최종 insertData 검증:`, {
+      weight_kg: { value: insertData.weight_kg, type: typeof insertData.weight_kg, isNull: insertData.weight_kg === null },
+      reps: { value: insertData.reps, type: typeof insertData.reps, isNull: insertData.reps === null },
+      sets: { value: insertData.sets, type: typeof insertData.sets, isNull: insertData.sets === null },
+      intensity_metrics: insertData.intensity_metrics ? '있음' : '없음',
+      category: insertData.category
+    })
+
     const { data, error } = await supabase
       .from('health_logs')
       .insert(insertData)
@@ -353,7 +442,7 @@ export async function POST(req: Request) {
       .single()
 
     if (error) {
-      // 🔍 에러 상세 정보 로깅
+      // 🔍 Supabase 에러 상세 정보 로깅 (message, hint, details 모두 포함)
       const errorDetails = {
         code: error.code,
         message: error.message,
@@ -362,15 +451,21 @@ export async function POST(req: Request) {
         insertData: insertData
       }
       
-      console.error(`\n${'='.repeat(60)}`)
-      console.error(`❌ [${requestId}] 삽입 에러 발생`)
-      console.error(`${'='.repeat(60)}`)
-      console.error('에러 코드:', error.code)
-      console.error('에러 메시지:', error.message)
-      console.error('에러 상세:', error.details)
-      console.error('에러 힌트:', error.hint)
-      console.error('삽입 시도 데이터:', JSON.stringify(insertData, null, 2))
-      console.error(`${'='.repeat(60)}\n`)
+      console.error(`\n${'='.repeat(70)}`)
+      console.error(`❌ [${requestId}] Supabase 삽입 에러 발생`)
+      console.error(`${'='.repeat(70)}`)
+      console.error('📌 에러 코드:', error.code || 'N/A')
+      console.error('📌 에러 메시지:', error.message || 'N/A')
+      console.error('📌 에러 상세 (details):', error.details || 'N/A')
+      console.error('📌 에러 힌트 (hint):', error.hint || 'N/A')
+      console.error('📌 전체 에러 객체:', JSON.stringify(error, null, 2))
+      console.error('📌 삽입 시도 데이터:', JSON.stringify(insertData, null, 2))
+      console.error('📌 데이터 타입 확인:', {
+        weight_kg: { value: insertData.weight_kg, type: typeof insertData.weight_kg },
+        reps: { value: insertData.reps, type: typeof insertData.reps },
+        sets: { value: insertData.sets, type: typeof insertData.sets }
+      })
+      console.error(`${'='.repeat(70)}\n`)
       
       // RLS 정책 관련 에러 (42501 = insufficient_privilege)
       if (error.code === '42501' || error.message?.includes('RLS') || error.message?.includes('policy') || error.message?.includes('permission') || error.message?.includes('row-level security')) {
@@ -452,32 +547,46 @@ export async function POST(req: Request) {
     })
 
   } catch (error: any) {
-    console.error(`\n${'='.repeat(50)}`)
+    console.error(`\n${'='.repeat(70)}`)
     console.error(`❌ [Health Logs] POST 서버 에러 (ID: ${requestId})`)
-    console.error(`${'='.repeat(50)}`)
-    console.error('   - 타입:', typeof error)
-    console.error('   - 이름:', error?.name)
-    console.error('   - 메시지:', error?.message)
-    console.error('   - 스택:', error?.stack?.split('\n').slice(0, 10).join('\n'))
+    console.error(`${'='.repeat(70)}`)
+    console.error('📌 에러 타입:', typeof error)
+    console.error('📌 에러 이름:', error?.name || 'N/A')
+    console.error('📌 에러 메시지:', error?.message || 'N/A')
+    console.error('📌 에러 스택:', error?.stack?.split('\n').slice(0, 15).join('\n') || 'N/A')
+    
+    // Supabase 에러인 경우 상세 정보 로깅
+    if (error?.code || error?.message?.includes('Supabase') || error?.message?.includes('Postgrest')) {
+      console.error('📌 Supabase 관련 에러 감지:')
+      console.error('   - code:', error.code || 'N/A')
+      console.error('   - message:', error.message || 'N/A')
+      console.error('   - details:', error.details || 'N/A')
+      console.error('   - hint:', error.hint || 'N/A')
+      console.error('   - 전체 에러 객체:', JSON.stringify(error, null, 2))
+    }
     
     // 에러가 Error 객체인지 확인
     if (error instanceof Error) {
-      console.error('   - Error 객체:', {
+      console.error('📌 Error 객체 상세:', {
         name: error.name,
         message: error.message,
-        stack: error.stack
+        stack: error.stack,
+        cause: (error as any).cause
       })
     } else {
-      console.error('   - 원본 에러:', error)
+      console.error('📌 원본 에러 객체:', JSON.stringify(error, null, 2))
     }
+    
+    console.error(`${'='.repeat(70)}\n`)
     
     return NextResponse.json(
       { 
         success: false, 
         error: '서버 오류가 발생했습니다.',
         details: error?.message || String(error),
-        requestId: requestId,
-        hint: 'Vercel 로그에서 requestId로 검색하여 상세 에러를 확인하세요.'
+        code: error?.code || 'UNKNOWN',
+        hint: error?.hint || 'Vercel 로그에서 requestId로 검색하여 상세 에러를 확인하세요.',
+        requestId: requestId
       },
       { status: 500 }
     )
