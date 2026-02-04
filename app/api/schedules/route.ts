@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
@@ -149,6 +150,15 @@ export async function POST(req: Request) {
       )
     }
 
+    // category 필드 보강: 누락 시 기본값 'meal', 유효하지 않은 값도 'meal'로 정규화 (PGRST204/42703 방지)
+    const validCategories: CategoryType[] = ['meal', 'exercise', 'medication', 'cycle']
+    const normalizeCategory = (c: unknown): CategoryType =>
+      (typeof c === 'string' && validCategories.includes(c as CategoryType)) ? (c as CategoryType) : 'meal'
+    const normalizedSchedules = schedules.map(s => ({
+      ...s,
+      category: normalizeCategory(s.category)
+    }))
+
     const supabase = await createClient()
     
     // 인증 확인
@@ -160,10 +170,10 @@ export async function POST(req: Request) {
       )
     }
 
-    console.log('📅 [Schedules] 저장 시도:', schedules.length, '개')
+    console.log('📅 [Schedules] 저장 시도:', normalizedSchedules.length, '개')
 
     // 기존 스케줄 삭제 (해당 카테고리만)
-    const categories = [...new Set(schedules.map(s => s.category))]
+    const categories = [...new Set(normalizedSchedules.map(s => s.category))]
     for (const category of categories) {
       await supabase
         .from('schedules')
@@ -172,8 +182,8 @@ export async function POST(req: Request) {
         .eq('category', category)
     }
 
-    // 새 스케줄 삽입
-    const schedulesToInsert = schedules.map(s => ({
+    // 새 스케줄 삽입 (category 필수 포함)
+    const schedulesToInsert = normalizedSchedules.map(s => ({
       user_id: user.id,
       category: s.category,
       sub_type: s.sub_type || null,
@@ -240,6 +250,9 @@ export async function POST(req: Request) {
     }
 
     console.log('✅ [Schedules] 저장 완료:', data?.length, '개')
+
+    revalidatePath('/dashboard')
+    revalidatePath('/')
 
     return NextResponse.json({
       success: true,

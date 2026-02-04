@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
@@ -695,6 +696,9 @@ export async function POST(req: Request) {
       logged_at: data.logged_at
     })
 
+    revalidatePath('/dashboard')
+    revalidatePath('/')
+
     return NextResponse.json({
       success: true,
       message: `${categoryLabels[category as CategoryType]} 기록이 완료되었습니다.`,
@@ -956,6 +960,9 @@ export async function PUT(req: Request) {
       )
     }
 
+    revalidatePath('/dashboard')
+    revalidatePath('/')
+
     return NextResponse.json({
       success: true,
       message: '기록이 수정되었습니다.',
@@ -1009,6 +1016,9 @@ export async function DELETE(req: Request) {
         { status: 500 }
       )
     }
+
+    revalidatePath('/dashboard')
+    revalidatePath('/')
 
     return NextResponse.json({
       success: true,

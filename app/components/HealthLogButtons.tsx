@@ -117,6 +117,8 @@ export default function HealthLogButtons() {
   const [openModal, setOpenModal] = useState<CategoryType | null>(null)
   /** 수정 시 열 모달: 해당 카테고리 + 기존 로그 데이터 */
   const [editingLog, setEditingLog] = useState<HealthLogItem | null>(null)
+  /** 성공 토스트에 수정/저장 구분 표시용 */
+  const [lastSuccessAction, setLastSuccessAction] = useState<'add' | 'edit'>('add')
 
   // 오늘 통계 + 오늘 기록 목록 불러오기
   useEffect(() => {
@@ -144,6 +146,8 @@ export default function HealthLogButtons() {
   }
 
   const handleModalSuccess = (category: CategoryType) => {
+    setError(null)
+    setLastSuccessAction(editingLog ? 'edit' : 'add')
     setSuccessCategory(category)
     setTodayStats(prev => ({
       ...prev,
@@ -161,6 +165,7 @@ export default function HealthLogButtons() {
       const res = await fetch(`/api/health-logs?id=${encodeURIComponent(log.id)}`, { method: 'DELETE', credentials: 'include' })
       const data = await res.json()
       if (data.success) {
+        setError(null)
         window.dispatchEvent(new CustomEvent('health-log-updated', { detail: { category: log.category } }))
         fetchTodayStats()
       } else {
@@ -226,10 +231,10 @@ export default function HealthLogButtons() {
         />
       </div>
 
-      {/* 성공 토스트 메시지 */}
+      {/* 성공 토스트 메시지 (저장/수정 구분) */}
       {successCategory && (
         <div className="mt-4 p-3 bg-[#2DD4BF]/10 border border-[#2DD4BF]/20 text-[#2DD4BF] text-sm rounded-lg text-center font-medium">
-          ✓ {categoryLabels[successCategory]} 기록이 저장되었습니다!
+          ✓ {categoryLabels[successCategory]} 기록이 {lastSuccessAction === 'edit' ? '수정' : '저장'}되었습니다!
         </div>
       )}
 
