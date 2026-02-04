@@ -455,8 +455,15 @@ export async function POST(req: Request) {
       
       const missingColumn = columnMatch?.[1]
       
-      // 운동 관련 컬럼 중 하나가 문제인 경우, 해당 컬럼을 제외하고 재시도
-      const retryableColumns = ['heart_rate', 'exercise_type', 'duration_minutes', 'weight_kg', 'reps', 'sets']
+      // 운동 및 복약 관련 컬럼 중 하나가 문제인 경우, 해당 컬럼을 제외하고 재시도
+      const retryableColumns = [
+        // 운동 관련
+        'heart_rate', 'exercise_type', 'duration_minutes', 'weight_kg', 'reps', 'sets',
+        // 복약 관련
+        'medication_name', 'medication_dosage', 'medication_ingredients',
+        // 기타
+        'intensity_metrics', 'notes', 'meal_description'
+      ]
       
       if (missingColumn && retryableColumns.includes(missingColumn)) {
         console.warn(`⚠️ [${requestId}] ${missingColumn} 컬럼 스키마 캐시 문제 감지. 해당 컬럼을 제외하고 재시도합니다.`)
@@ -579,14 +586,23 @@ export async function POST(req: Request) {
           matched_pattern: columnMatch ? '매칭됨' : '매칭 실패'
         })
         
-        // exercise_type, weight_kg, reps, sets 등 운동 관련 컬럼
-        const exerciseColumns = ['exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate', 'intensity_metrics', 'notes']
+        // 운동, 복약, 식사 관련 모든 컬럼
+        const allRelatedColumns = [
+          // 운동 관련
+          'exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate', 'intensity_metrics',
+          // 복약 관련
+          'medication_name', 'medication_dosage', 'medication_ingredients',
+          // 식사 관련
+          'meal_description',
+          // 기타
+          'notes'
+        ]
         
-        // 컬럼명이 추출되었거나, 운동 관련 컬럼일 가능성이 높은 경우
-        if (missingColumn !== '알 수 없음' || exerciseColumns.some(col => error.message?.includes(col))) {
+        // 컬럼명이 추출되었거나, 관련 컬럼일 가능성이 높은 경우
+        if (missingColumn !== '알 수 없음' || allRelatedColumns.some(col => error.message?.includes(col))) {
           const detectedColumn = missingColumn !== '알 수 없음' 
             ? missingColumn 
-            : exerciseColumns.find(col => error.message?.includes(col)) || '알 수 없음'
+            : allRelatedColumns.find(col => error.message?.includes(col)) || '알 수 없음'
           
           return NextResponse.json({
             success: false,
@@ -624,13 +640,22 @@ export async function POST(req: Request) {
       
       // 컬럼 없음 에러 (weight_kg, reps, sets 등)
       if (error.message?.includes('column') && error.message?.includes('does not exist')) {
-        const columnMatch = error.message.match(/column ['"](\w+)['"]/)
+        const columnMatch = error.message.match(/column ['"](\w+(?:_\w+)*)['"]/)
         const missingColumn = columnMatch?.[1] || '알 수 없음'
         
-        // 운동 관련 컬럼 목록
-        const exerciseColumns = ['exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate', 'intensity_metrics', 'notes']
+        // 운동, 복약, 식사 관련 모든 컬럼 목록
+        const allRelatedColumns = [
+          // 운동 관련
+          'exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate', 'intensity_metrics',
+          // 복약 관련
+          'medication_name', 'medication_dosage', 'medication_ingredients',
+          // 식사 관련
+          'meal_description',
+          // 기타
+          'notes'
+        ]
         
-        if (exerciseColumns.includes(missingColumn)) {
+        if (allRelatedColumns.includes(missingColumn)) {
           return NextResponse.json({
             success: false,
             error: `존재하지 않는 컬럼: ${missingColumn}`,
