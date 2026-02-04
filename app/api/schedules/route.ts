@@ -91,6 +91,16 @@ export async function GET(req: Request) {
         })
       }
       
+      // PGRST205: PostgREST 스키마 캐시에 테이블이 없음 (테이블은 있으나 API가 인식 못함)
+      if (error.code === 'PGRST205') {
+        return NextResponse.json({
+          success: false,
+          error: 'schedules 테이블을 API에서 찾을 수 없습니다.',
+          hint: 'Supabase 대시보드 → SQL Editor에서 schema-v2.sql의 schedules 부분을 실행한 뒤, Settings → API → "Reload schema"를 클릭해주세요.',
+          data: []
+        })
+      }
+      
       return NextResponse.json(
         { success: false, error: '스케줄 조회 중 오류가 발생했습니다.', data: [] },
         { status: 500 }
@@ -182,6 +192,15 @@ export async function POST(req: Request) {
         }, { status: 500 })
       }
       
+      // PGRST205: 스키마 캐시에 테이블 없음
+      if (error.code === 'PGRST205') {
+        return NextResponse.json({
+          success: false,
+          error: 'schedules 테이블을 API에서 찾을 수 없습니다.',
+          hint: 'Supabase SQL Editor에서 schema-v2.sql의 schedules 생성 부분 실행 후, Settings → API → "Reload schema" 클릭해주세요.'
+        }, { status: 500 })
+      }
+      
       // RLS 에러
       if (error.code === '42501') {
         return NextResponse.json({
@@ -248,6 +267,13 @@ export async function DELETE(req: Request) {
 
     if (error) {
       console.error('❌ [Schedules] 삭제 에러:', error)
+      if (error.code === '42P01' || error.code === 'PGRST205') {
+        return NextResponse.json({
+          success: false,
+          error: 'schedules 테이블을 찾을 수 없습니다.',
+          hint: 'Supabase에서 schema-v2.sql 실행 후 "Reload schema" 해주세요.'
+        }, { status: 500 })
+      }
       return NextResponse.json(
         { success: false, error: '스케줄 삭제 중 오류가 발생했습니다.' },
         { status: 500 }

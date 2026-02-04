@@ -1,16 +1,18 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { X, Camera, Upload, Loader2, Calendar, Clock } from 'lucide-react'
 import { useToast } from './Toast'
+import type { HealthLogItem } from './HealthLogButtons'
 
 interface MealLogModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
+  initialData?: HealthLogItem | null
 }
 
-export default function MealLogModal({ isOpen, onClose, onSuccess }: MealLogModalProps) {
+export default function MealLogModal({ isOpen, onClose, onSuccess, initialData }: MealLogModalProps) {
   const { showToast, ToastComponent } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -21,6 +23,24 @@ export default function MealLogModal({ isOpen, onClose, onSuccess }: MealLogModa
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [selectedTime, setSelectedTime] = useState(new Date().toTimeString().slice(0, 5))
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (isOpen && initialData?.id) {
+      const d = new Date(initialData.logged_at)
+      setDescription(initialData.meal_description || initialData.notes || initialData.note || '')
+      setImageUrl(initialData.image_url || null)
+      setImagePreview(initialData.image_url || null)
+      setSelectedDate(d.toISOString().split('T')[0])
+      setSelectedTime(d.toTimeString().slice(0, 5))
+    } else if (isOpen && !initialData) {
+      setDescription('')
+      setImageUrl(null)
+      setImagePreview(null)
+      setImageFile(null)
+      setSelectedDate(new Date().toISOString().split('T')[0])
+      setSelectedTime(new Date().toTimeString().slice(0, 5))
+    }
+  }, [isOpen, initialData])
 
   if (!isOpen) return null
 
@@ -89,36 +109,39 @@ export default function MealLogModal({ isOpen, onClose, onSuccess }: MealLogModa
 
     try {
       const loggedAt = new Date(`${selectedDate}T${selectedTime}`).toISOString()
+      const isEdit = !!initialData?.id
+      const body = {
+        ...(isEdit && { id: initialData.id }),
+        category: 'meal',
+        meal_description: description.trim() || null,
+        image_url: imageUrl || null,
+        notes: description.trim() || null,
+        logged_at: loggedAt
+      }
 
-      // 이미지는 사진 선택 시 이미 업로드됨 → image_url 상태 사용. health_logs에 저장
       const response = await fetch('/api/health-logs', {
-        method: 'POST',
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          category: 'meal',
-          meal_description: description.trim() || null,
-          image_url: imageUrl || null,
-          notes: description.trim() || null,
-          logged_at: loggedAt
-        })
+        body: JSON.stringify(body)
       })
 
       const result = await response.json()
 
       if (result.success) {
-        showToast('식사 기록이 저장되었습니다!', 'success')
-        // 폼 초기화
-        setDescription('')
-        setImageFile(null)
-        setImagePreview(null)
-        setImageUrl(null)
-        setSelectedDate(new Date().toISOString().split('T')[0])
-        setSelectedTime(new Date().toTimeString().slice(0, 5))
+        showToast(isEdit ? '식사 기록이 수정되었습니다!' : '식사 기록이 저장되었습니다!', 'success')
+        if (!isEdit) {
+          setDescription('')
+          setImageFile(null)
+          setImagePreview(null)
+          setImageUrl(null)
+          setSelectedDate(new Date().toISOString().split('T')[0])
+          setSelectedTime(new Date().toTimeString().slice(0, 5))
+        }
         onSuccess()
         setTimeout(() => onClose(), 500)
       } else {
-        showToast(result.error || '식사 기록 저장에 실패했습니다.', 'error')
+        showToast(result.error || (isEdit ? '식사 기록 수정에 실패했습니다.' : '식사 기록 저장에 실패했습니다.'), 'error')
       }
     } catch (error: any) {
       console.error('식사 기록 저장 실패:', error)

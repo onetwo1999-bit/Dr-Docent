@@ -1,13 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Loader2, Calendar, Clock, Heart, Activity } from 'lucide-react'
 import { useToast } from './Toast'
+import type { HealthLogItem } from './HealthLogButtons'
 
 interface ExerciseLogModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
+  initialData?: HealthLogItem | null
 }
 
 const exerciseTypes = [
@@ -22,7 +24,7 @@ const exerciseTypes = [
   { value: 'other', label: '기타' }
 ]
 
-export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: ExerciseLogModalProps) {
+export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialData }: ExerciseLogModalProps) {
   const { showToast, ToastComponent } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [exerciseType, setExerciseType] = useState('')
@@ -34,6 +36,32 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
   const [notes, setNotes] = useState('')
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [selectedTime, setSelectedTime] = useState(new Date().toTimeString().slice(0, 5))
+
+  useEffect(() => {
+    if (isOpen && initialData?.id) {
+      const d = new Date(initialData.logged_at)
+      const im = initialData.intensity_metrics
+      setExerciseType(initialData.exercise_type || (im && typeof im === 'object' && 'exercise_type' in im ? String((im as any).exercise_type) : '') || '')
+      setDuration(initialData.duration_minutes != null ? String(initialData.duration_minutes) : (im && typeof im === 'object' && 'duration_minutes' in im ? String((im as any).duration_minutes) : '') || '')
+      setHeartRate(initialData.heart_rate != null ? String(initialData.heart_rate) : (im && typeof im === 'object' && ('heart_rate' in im || 'average_heart_rate' in im) ? String((im as any).heart_rate ?? (im as any).average_heart_rate) : '') || '')
+      setWeight(initialData.weight_kg != null ? String(initialData.weight_kg) : '')
+      setReps(initialData.reps != null ? String(initialData.reps) : '')
+      setSets(initialData.sets != null ? String(initialData.sets) : '')
+      setNotes(initialData.notes || initialData.note || '')
+      setSelectedDate(d.toISOString().split('T')[0])
+      setSelectedTime(d.toTimeString().slice(0, 5))
+    } else if (isOpen && !initialData) {
+      setExerciseType('')
+      setDuration('')
+      setHeartRate('')
+      setWeight('')
+      setReps('')
+      setSets('')
+      setNotes('')
+      setSelectedDate(new Date().toISOString().split('T')[0])
+      setSelectedTime(new Date().toTimeString().slice(0, 5))
+    }
+  }, [isOpen, initialData])
 
   if (!isOpen) return null
 
@@ -140,8 +168,13 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
         has_intensity_metrics: !!requestBody.intensity_metrics
       })
 
+      const isEdit = !!initialData?.id
+      if (isEdit) {
+        (requestBody as any).id = initialData.id
+      }
+
       const response = await fetch('/api/health-logs', {
-        method: 'POST',
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify(requestBody)
@@ -150,21 +183,22 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
       const result = await response.json()
 
       if (result.success) {
-        showToast('오늘의 오운완 기록 성공!', 'success')
-        // 폼 초기화
-        setExerciseType('')
-        setDuration('')
-        setHeartRate('')
-        setWeight('')
-        setReps('')
-        setSets('')
-        setNotes('')
-        setSelectedDate(new Date().toISOString().split('T')[0])
-        setSelectedTime(new Date().toTimeString().slice(0, 5))
+        showToast(isEdit ? '운동 기록이 수정되었습니다!' : '오늘의 오운완 기록 성공!', 'success')
+        if (!isEdit) {
+          setExerciseType('')
+          setDuration('')
+          setHeartRate('')
+          setWeight('')
+          setReps('')
+          setSets('')
+          setNotes('')
+          setSelectedDate(new Date().toISOString().split('T')[0])
+          setSelectedTime(new Date().toTimeString().slice(0, 5))
+        }
         onSuccess()
         setTimeout(() => onClose(), 500)
       } else {
-        showToast(result.error || '운동 기록 저장에 실패했습니다.', 'error')
+        showToast(result.error || (isEdit ? '운동 기록 수정에 실패했습니다.' : '운동 기록 저장에 실패했습니다.'), 'error')
       }
     } catch (error: any) {
       console.error('운동 기록 저장 실패:', error)

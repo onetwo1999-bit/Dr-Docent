@@ -1,16 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { X, Loader2, Calendar, Clock, Pill } from 'lucide-react'
 import { useToast } from './Toast'
+import type { HealthLogItem } from './HealthLogButtons'
 
 interface MedicationLogModalProps {
   isOpen: boolean
   onClose: () => void
   onSuccess: () => void
+  initialData?: HealthLogItem | null
 }
 
-export default function MedicationLogModal({ isOpen, onClose, onSuccess }: MedicationLogModalProps) {
+export default function MedicationLogModal({ isOpen, onClose, onSuccess, initialData }: MedicationLogModalProps) {
   const { showToast, ToastComponent } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [medicationName, setMedicationName] = useState('')
@@ -19,6 +21,25 @@ export default function MedicationLogModal({ isOpen, onClose, onSuccess }: Medic
   const [notes, setNotes] = useState('')
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0])
   const [selectedTime, setSelectedTime] = useState(new Date().toTimeString().slice(0, 5))
+
+  useEffect(() => {
+    if (isOpen && initialData?.id) {
+      const d = new Date(initialData.logged_at)
+      setMedicationName(initialData.medication_name || '')
+      setDosage(initialData.medication_dosage || '')
+      setIngredients(initialData.medication_ingredients || '')
+      setNotes(initialData.notes || initialData.note || '')
+      setSelectedDate(d.toISOString().split('T')[0])
+      setSelectedTime(d.toTimeString().slice(0, 5))
+    } else if (isOpen && !initialData) {
+      setMedicationName('')
+      setDosage('')
+      setIngredients('')
+      setNotes('')
+      setSelectedDate(new Date().toISOString().split('T')[0])
+      setSelectedTime(new Date().toTimeString().slice(0, 5))
+    }
+  }, [isOpen, initialData])
 
   if (!isOpen) return null
 
@@ -32,36 +53,40 @@ export default function MedicationLogModal({ isOpen, onClose, onSuccess }: Medic
 
     try {
       const loggedAt = new Date(`${selectedDate}T${selectedTime}`).toISOString()
+      const isEdit = !!initialData?.id
+      const body: Record<string, unknown> = {
+        category: 'medication',
+        medication_name: medicationName.trim(),
+        medication_dosage: dosage.trim() || null,
+        medication_ingredients: ingredients.trim() || null,
+        notes: notes.trim() || null,
+        logged_at: loggedAt
+      }
+      if (isEdit) body.id = initialData.id
 
       const response = await fetch('/api/health-logs', {
-        method: 'POST',
+        method: isEdit ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          category: 'medication',
-          medication_name: medicationName.trim(),
-          medication_dosage: dosage.trim() || null,
-          medication_ingredients: ingredients.trim() || null,
-          notes: notes.trim() || null,
-          logged_at: loggedAt
-        })
+        body: JSON.stringify(body)
       })
 
       const result = await response.json()
 
       if (result.success) {
-        showToast('복약 기록이 저장되었습니다!', 'success')
-        // 폼 초기화
-        setMedicationName('')
-        setDosage('')
-        setIngredients('')
-        setNotes('')
-        setSelectedDate(new Date().toISOString().split('T')[0])
-        setSelectedTime(new Date().toTimeString().slice(0, 5))
+        showToast(isEdit ? '복약 기록이 수정되었습니다!' : '복약 기록이 저장되었습니다!', 'success')
+        if (!isEdit) {
+          setMedicationName('')
+          setDosage('')
+          setIngredients('')
+          setNotes('')
+          setSelectedDate(new Date().toISOString().split('T')[0])
+          setSelectedTime(new Date().toTimeString().slice(0, 5))
+        }
         onSuccess()
         setTimeout(() => onClose(), 500)
       } else {
-        showToast(result.error || '복약 기록 저장에 실패했습니다.', 'error')
+        showToast(result.error || (isEdit ? '복약 기록 수정에 실패했습니다.' : '복약 기록 저장에 실패했습니다.'), 'error')
       }
     } catch (error: any) {
       console.error('복약 기록 저장 실패:', error)

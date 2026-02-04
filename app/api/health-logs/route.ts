@@ -840,6 +840,137 @@ export async function GET(req: Request) {
 }
 
 // ========================
+// PUT: 건강 로그 수정
+// ========================
+export async function PUT(req: Request) {
+  try {
+    const body = await req.json()
+    const id = body.id
+    if (!id) {
+      return NextResponse.json(
+        { success: false, error: '수정할 기록 ID가 필요합니다.' },
+        { status: 400 }
+      )
+    }
+
+    const supabase = await createClient()
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: '로그인이 필요합니다.' },
+        { status: 401 }
+      )
+    }
+
+    const {
+      category,
+      note,
+      notes: bodyNotes,
+      logged_at,
+      sub_type,
+      quantity,
+      unit,
+      meal_description,
+      image_url,
+      exercise_type,
+      duration_minutes,
+      heart_rate,
+      intensity_metrics: bodyIntensityMetrics,
+      weight_kg: bodyWeightKg,
+      reps: bodyReps,
+      sets: bodySets,
+      medication_name,
+      medication_dosage,
+      medication_ingredients
+    } = body
+
+    const notes = bodyNotes ?? note ?? undefined
+    let weightKg: number | null = null
+    let repsValue: number | null = null
+    let setsValue: number | null = null
+    if (bodyWeightKg !== undefined && bodyWeightKg !== null && bodyWeightKg !== '') {
+      const parsed = Number(bodyWeightKg)
+      if (!isNaN(parsed) && parsed > 0) weightKg = parsed
+    }
+    if (bodyReps !== undefined && bodyReps !== null && bodyReps !== '') {
+      const parsed = Number(bodyReps)
+      if (!isNaN(parsed) && parsed > 0) repsValue = parsed
+    }
+    if (bodySets !== undefined && bodySets !== null && bodySets !== '') {
+      const parsed = Number(bodySets)
+      if (!isNaN(parsed) && parsed > 0) setsValue = parsed
+    }
+
+    const intensity_metrics =
+      category === 'exercise' && (bodyIntensityMetrics || duration_minutes != null || heart_rate != null)
+        ? {
+            ...(typeof bodyIntensityMetrics === 'object' ? bodyIntensityMetrics : {}),
+            ...(duration_minutes != null && { duration_minutes: Number(duration_minutes) }),
+            ...(heart_rate != null && { heart_rate: Number(heart_rate), average_heart_rate: Number(heart_rate) }),
+            ...(exercise_type && { exercise_type: exercise_type }),
+            ...(weightKg != null && { weight_kg: weightKg }),
+            ...(repsValue != null && { reps: repsValue }),
+            ...(setsValue != null && { sets: setsValue })
+          }
+        : bodyIntensityMetrics
+
+    const updateData: Record<string, unknown> = {}
+    if (notes !== undefined) updateData.notes = notes
+    if (logged_at !== undefined) updateData.logged_at = logged_at
+    if (sub_type !== undefined) updateData.sub_type = sub_type || null
+    if (quantity !== undefined) updateData.quantity = quantity
+    if (unit !== undefined) updateData.unit = unit
+    if (meal_description !== undefined) updateData.meal_description = meal_description
+    if (image_url !== undefined) updateData.image_url = image_url
+    if (exercise_type !== undefined) updateData.exercise_type = exercise_type
+    if (duration_minutes !== undefined) updateData.duration_minutes = duration_minutes
+    if (heart_rate !== undefined) updateData.heart_rate = heart_rate
+    if (weightKg !== undefined) updateData.weight_kg = weightKg
+    if (repsValue !== undefined) updateData.reps = repsValue
+    if (setsValue !== undefined) updateData.sets = setsValue
+    if (category === 'exercise' && intensity_metrics !== undefined) updateData.intensity_metrics = intensity_metrics
+    if (medication_name !== undefined) updateData.medication_name = medication_name
+    if (medication_dosage !== undefined) updateData.medication_dosage = medication_dosage
+    if (medication_ingredients !== undefined) updateData.medication_ingredients = medication_ingredients
+
+    const { data, error } = await supabase
+      .from('health_logs')
+      .update(updateData)
+      .eq('id', id)
+      .eq('user_id', user.id)
+      .select()
+      .single()
+
+    if (error) {
+      console.error('❌ [Health Logs] 수정 에러:', error)
+      return NextResponse.json(
+        { success: false, error: '기록 수정 중 오류가 발생했습니다.', details: error.message },
+        { status: 500 }
+      )
+    }
+
+    if (!data) {
+      return NextResponse.json(
+        { success: false, error: '해당 기록을 찾을 수 없거나 수정할 수 없습니다.' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: '기록이 수정되었습니다.',
+      data
+    })
+  } catch (error: unknown) {
+    console.error('❌ [Health Logs] PUT 서버 에러:', error)
+    return NextResponse.json(
+      { success: false, error: '서버 오류가 발생했습니다.' },
+      { status: 500 }
+    )
+  }
+}
+
+// ========================
 // DELETE: 건강 로그 삭제
 // ========================
 export async function DELETE(req: Request) {
