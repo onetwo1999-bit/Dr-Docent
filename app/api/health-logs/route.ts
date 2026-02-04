@@ -96,7 +96,15 @@ export async function POST(req: Request) {
     let body: any
     try {
       body = await req.json()
-      console.log(`📦 [${requestId}] 요청 본문:`, { category: body.category, hasNotes: !!body.notes, hasNote: !!body.note, hasIntensityMetrics: !!body.intensity_metrics })
+      console.log(`📦 [${requestId}] 요청 본문:`, { 
+        category: body.category, 
+        hasNotes: !!body.notes, 
+        hasNote: !!body.note, 
+        hasIntensityMetrics: !!body.intensity_metrics,
+        weight_kg: body.weight_kg,
+        reps: body.reps,
+        sets: body.sets
+      })
     } catch (parseError: any) {
       console.error(`❌ [${requestId}] JSON 파싱 실패:`, parseError)
       return NextResponse.json(
@@ -139,28 +147,38 @@ export async function POST(req: Request) {
     const notes = bodyNotes ?? note ?? null
 
     // 무게, 횟수, 세트 값을 안전하게 숫자로 변환 (데이터 무결성 보장)
+    // 값이 없으면 null, 있으면 반드시 Number()로 감싸서 숫자 타입으로 변환
     let weightKg: number | null = null
     let repsValue: number | null = null
     let setsValue: number | null = null
     
-    if (bodyWeightKg !== undefined && bodyWeightKg !== null) {
+    if (bodyWeightKg !== undefined && bodyWeightKg !== null && bodyWeightKg !== '') {
       const parsed = Number(bodyWeightKg)
       if (!isNaN(parsed) && parsed > 0) {
         weightKg = parsed
       }
     }
-    if (bodyReps !== undefined && bodyReps !== null) {
+    if (bodyReps !== undefined && bodyReps !== null && bodyReps !== '') {
       const parsed = Number(bodyReps)
       if (!isNaN(parsed) && parsed > 0) {
         repsValue = parsed
       }
     }
-    if (bodySets !== undefined && bodySets !== null) {
+    if (bodySets !== undefined && bodySets !== null && bodySets !== '') {
       const parsed = Number(bodySets)
       if (!isNaN(parsed) && parsed > 0) {
         setsValue = parsed
       }
     }
+    
+    console.log(`🔢 [${requestId}] 무게/횟수/세트 변환 결과:`, {
+      bodyWeightKg,
+      bodyReps,
+      bodySets,
+      weightKg,
+      repsValue,
+      setsValue
+    })
 
     // 운동 시 intensity_metrics 보강: 평균 심박수·운동 시간이 JSONB에 정확히 담기도록
     // 무게, 횟수, 세트 등 모든 운동 정보가 누락 없이 포함되도록 보강
@@ -296,10 +314,10 @@ export async function POST(req: Request) {
       ...(exercise_type && { exercise_type }),
       ...(duration_minutes !== undefined && duration_minutes !== null && { duration_minutes }),
       ...(heart_rate !== undefined && heart_rate !== null && { heart_rate }),
-      // 무게, 횟수, 세트를 직접 컬럼으로 저장 (데이터 무결성 보장)
-      ...(weightKg !== null && { weight_kg: weightKg }),
-      ...(repsValue !== null && { reps: repsValue }),
-      ...(setsValue !== null && { sets: setsValue }),
+      // 무게, 횟수, 세트를 직접 컬럼으로 저장 (값이 없으면 null, 있으면 Number()로 숫자 타입 보장)
+      weight_kg: weightKg !== null ? Number(weightKg) : null,
+      reps: repsValue !== null ? Number(repsValue) : null,
+      sets: setsValue !== null ? Number(setsValue) : null,
       // intensity_metrics는 반드시 포함 (운동 카테고리일 때)
       ...(category === 'exercise' && intensity_metrics && { intensity_metrics }),
       // 복약 관련 필드

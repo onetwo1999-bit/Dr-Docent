@@ -118,23 +118,33 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess }: Exercis
         }
       }
 
+      // body 객체 생성 - weight_kg, reps, sets 명시적으로 포함
+      const requestBody: any = {
+        category: 'exercise',
+        exercise_type: exerciseType,
+        duration_minutes: durationMinutes,
+        heart_rate: heartRateValue,
+        intensity_metrics: intensityMetrics,
+        notes: finalNotes || null,
+        logged_at: loggedAt,
+        // 무게, 횟수, 세트를 body에 직접 포함 (null이어도 명시적으로 포함)
+        weight_kg: weightKg !== null ? Number(weightKg) : null,
+        reps: repsValue !== null ? Number(repsValue) : null,
+        sets: setsValue !== null ? Number(setsValue) : null
+      }
+
+      console.log('🏋️ [ExerciseLogModal] 전송 데이터:', {
+        weight_kg: requestBody.weight_kg,
+        reps: requestBody.reps,
+        sets: requestBody.sets,
+        has_intensity_metrics: !!requestBody.intensity_metrics
+      })
+
       const response = await fetch('/api/health-logs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({
-          category: 'exercise',
-          exercise_type: exerciseType,
-          duration_minutes: durationMinutes,
-          heart_rate: heartRateValue,
-          intensity_metrics: intensityMetrics,
-          notes: finalNotes || null,
-          logged_at: loggedAt,
-          // 무게, 횟수, 세트를 body에 직접 포함
-          weight_kg: weightKg,
-          reps: repsValue,
-          sets: setsValue
-        })
+        body: JSON.stringify(requestBody)
       })
 
       const result = await response.json()
