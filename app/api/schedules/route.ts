@@ -92,24 +92,32 @@ export async function GET(req: Request) {
         })
       }
       
-      // 42703: column does not exist (category 등)
-      if (error.code === '42703' || (error as { message?: string }).message?.includes('does not exist')) {
+      // 42703: column does not exist (scheduled_time, day_of_month 등)
+      const errMsg = (error as { message?: string }).message || ''
+      if (error.code === '42703' || errMsg.includes('does not exist')) {
+        const needPatch = errMsg.includes('scheduled_time') || errMsg.includes('day_of_month')
         return NextResponse.json({
           success: false,
           error: 'schedules 테이블에 필요한 컬럼이 없습니다.',
-          details: (error as { message?: string }).message,
-          hint: 'Supabase SQL Editor에서 my-app/supabase/schedules-ensure-table-and-columns.sql (또는 schedules-add-missing-columns.sql) 을 실행한 뒤, Settings → API → "Reload schema"를 클릭해주세요.',
+          details: errMsg,
+          hint: needPatch
+            ? 'Supabase SQL Editor에서 supabase/schedules-add-scheduled-time-and-day-of-month.sql 을 실행한 뒤, Settings → API → "Reload schema"를 클릭해주세요.'
+            : 'Supabase SQL Editor에서 supabase/schedules-ensure-table-and-columns.sql 을 실행한 뒤, Settings → API → "Reload schema"를 클릭해주세요.',
           data: []
         })
       }
       
       // PGRST205 / PGRST204: 스키마 캐시에 테이블 또는 컬럼 없음
       if (error.code === 'PGRST205' || error.code === 'PGRST204') {
+        const errMsg204 = (error as { message?: string }).message || ''
+        const needPatch = errMsg204.includes('scheduled_time') || errMsg204.includes('day_of_month')
         return NextResponse.json({
           success: false,
           error: 'schedules 테이블 또는 컬럼을 API에서 찾을 수 없습니다.',
-          details: (error as { message?: string }).message,
-          hint: 'Supabase SQL Editor에서 my-app/supabase/schedules-ensure-table-and-columns.sql 을 실행한 뒤 Settings → API → "Reload schema"를 클릭해주세요.',
+          details: errMsg204,
+          hint: needPatch
+            ? 'Supabase SQL Editor에서 supabase/schedules-add-scheduled-time-and-day-of-month.sql 을 실행한 뒤 Settings → API → "Reload schema"를 클릭해주세요.'
+            : 'Supabase SQL Editor에서 supabase/schedules-ensure-table-and-columns.sql 을 실행한 뒤 Settings → API → "Reload schema"를 클릭해주세요.',
           data: []
         })
       }
@@ -214,23 +222,31 @@ export async function POST(req: Request) {
         }, { status: 500 })
       }
       
-      // 42703: column does not exist (category 등)
-      if (error.code === '42703' || (error as { message?: string }).message?.includes('does not exist')) {
+      // 42703: column does not exist (scheduled_time, day_of_month 등)
+      const postErrMsg = (error as { message?: string }).message || ''
+      if (error.code === '42703' || postErrMsg.includes('does not exist')) {
+        const needPatch = postErrMsg.includes('scheduled_time') || postErrMsg.includes('day_of_month')
         return NextResponse.json({
           success: false,
           error: 'schedules 테이블에 필요한 컬럼이 없습니다.',
-          details: (error as { message?: string }).message,
-          hint: 'Supabase SQL Editor에서 my-app/supabase/schedules-ensure-table-and-columns.sql 을 실행한 뒤 Settings → API → "Reload schema"를 클릭해주세요.'
+          details: postErrMsg,
+          hint: needPatch
+            ? 'Supabase SQL Editor에서 supabase/schedules-add-scheduled-time-and-day-of-month.sql 을 실행한 뒤 Settings → API → "Reload schema"를 클릭해주세요.'
+            : 'Supabase SQL Editor에서 supabase/schedules-ensure-table-and-columns.sql 을 실행한 뒤 Settings → API → "Reload schema"를 클릭해주세요.'
         }, { status: 500 })
       }
       
       // PGRST205 / PGRST204: 스키마 캐시
       if (error.code === 'PGRST205' || error.code === 'PGRST204') {
+        const postErrMsg204 = (error as { message?: string }).message || ''
+        const needPatch = postErrMsg204.includes('scheduled_time') || postErrMsg204.includes('day_of_month')
         return NextResponse.json({
           success: false,
           error: 'schedules 테이블/컬럼을 API에서 찾을 수 없습니다.',
-          details: (error as { message?: string }).message,
-          hint: 'my-app/supabase/schedules-ensure-table-and-columns.sql 실행 후 Settings → API → "Reload schema" 클릭해주세요.'
+          details: postErrMsg204,
+          hint: needPatch
+            ? 'Supabase SQL Editor에서 supabase/schedules-add-scheduled-time-and-day-of-month.sql 을 실행한 뒤 Settings → API → "Reload schema"를 클릭해주세요.'
+            : 'supabase/schedules-ensure-table-and-columns.sql 실행 후 Settings → API → "Reload schema" 클릭해주세요.'
         }, { status: 500 })
       }
       
