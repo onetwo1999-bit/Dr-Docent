@@ -41,6 +41,19 @@ BEGIN
     ALTER TABLE health_logs ADD COLUMN medication_ingredients TEXT;
     RAISE NOTICE 'medication_ingredients 추가';
   END IF;
+  -- 운동 관련 상세 정보 컬럼 추가
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'health_logs' AND column_name = 'weight_kg') THEN
+    ALTER TABLE health_logs ADD COLUMN weight_kg NUMERIC(10, 2);
+    RAISE NOTICE 'weight_kg 추가';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'health_logs' AND column_name = 'reps') THEN
+    ALTER TABLE health_logs ADD COLUMN reps INTEGER;
+    RAISE NOTICE 'reps 추가';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'health_logs' AND column_name = 'sets') THEN
+    ALTER TABLE health_logs ADD COLUMN sets INTEGER;
+    RAISE NOTICE 'sets 추가';
+  END IF;
 END $$;
 
 CREATE INDEX IF NOT EXISTS idx_health_logs_intensity_metrics

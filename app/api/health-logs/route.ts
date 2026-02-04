@@ -497,6 +497,43 @@ export async function POST(req: Request) {
         }, { status: 403 })
       }
       
+      // PGRST204 에러: PostgREST 스키마 캐시 문제 (컬럼이 실제로는 있지만 캐시에 없음)
+      if (error.code === 'PGRST204' || error.message?.includes('schema cache') || error.message?.includes('Could not find')) {
+        const columnMatch = error.message.match(/column ['"](\w+)['"]/)
+        const missingColumn = columnMatch?.[1] || '알 수 없음'
+        
+        console.error(`🔄 [${requestId}] PostgREST 스키마 캐시 문제 감지:`, {
+          column: missingColumn,
+          error_code: error.code,
+          error_message: error.message
+        })
+        
+        // exercise_type, weight_kg, reps, sets 등 운동 관련 컬럼
+        const exerciseColumns = ['exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate']
+        
+        if (exerciseColumns.includes(missingColumn)) {
+          return NextResponse.json({
+            success: false,
+            error: `스키마 캐시 문제: '${missingColumn}' 컬럼을 찾을 수 없습니다.`,
+            details: error.message,
+            hint: `PostgREST 스키마 캐시가 업데이트되지 않았습니다. 다음 단계를 따라주세요:`,
+            code: error.code,
+            requestId: requestId,
+            solution: `1. Supabase 대시보드 → SQL Editor 열기\n2. supabase/health-logs-alter-add-columns.sql 파일 내용 복사하여 실행\n3. Supabase 대시보드에서 "Reload schema" 또는 API 재시작\n4. 1-2분 대기 후 페이지 새로고침하여 다시 시도`,
+            troubleshooting: `컬럼이 이미 추가되어 있다면:\n- Supabase 대시보드 → Settings → API → "Reload schema" 클릭\n- 또는 Supabase 프로젝트를 재시작하면 자동으로 스키마 캐시가 갱신됩니다.`
+          }, { status: 500 })
+        }
+        
+        return NextResponse.json({
+          success: false,
+          error: `스키마 캐시 문제: '${missingColumn}' 컬럼을 찾을 수 없습니다.`,
+          details: error.message,
+          hint: 'PostgREST 스키마 캐시가 업데이트되지 않았습니다. Supabase 대시보드에서 스키마를 다시 로드해주세요.',
+          code: error.code,
+          requestId: requestId
+        }, { status: 500 })
+      }
+      
       // 테이블 없음 에러
       if (error.code === '42P01' || error.message?.includes('does not exist') || error.message?.includes('relation')) {
         return NextResponse.json({
@@ -509,14 +546,31 @@ export async function POST(req: Request) {
         }, { status: 500 })
       }
       
-      // 컬럼 없음 에러
+      // 컬럼 없음 에러 (weight_kg, reps, sets 등)
       if (error.message?.includes('column') && error.message?.includes('does not exist')) {
-        const columnMatch = error.message.match(/column "(\w+)"/)
+        const columnMatch = error.message.match(/column ['"](\w+)['"]/)
+        const missingColumn = columnMatch?.[1] || '알 수 없음'
+        
+        // 운동 관련 컬럼 목록
+        const exerciseColumns = ['exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate', 'intensity_metrics', 'notes']
+        
+        if (exerciseColumns.includes(missingColumn)) {
+          return NextResponse.json({
+            success: false,
+            error: `존재하지 않는 컬럼: ${missingColumn}`,
+            details: error.message,
+            hint: `health_logs 테이블에 '${missingColumn}' 컬럼이 없습니다. Supabase SQL Editor에서 'supabase/health-logs-alter-add-columns.sql' 파일을 실행해주세요.`,
+            code: error.code,
+            requestId: requestId,
+            solution: `1. Supabase 대시보드 → SQL Editor 열기\n2. supabase/health-logs-alter-add-columns.sql 파일 내용 복사\n3. 실행하여 컬럼 추가\n4. 페이지 새로고침 후 다시 시도`
+          }, { status: 400 })
+        }
+        
         return NextResponse.json({
           success: false,
-          error: `존재하지 않는 컬럼: ${columnMatch?.[1] || '알 수 없음'}`,
+          error: `존재하지 않는 컬럼: ${missingColumn}`,
           details: error.message,
-          hint: `health_logs 테이블에 '${columnMatch?.[1]}' 컬럼이 없습니다. 스키마를 확인해주세요.`,
+          hint: `health_logs 테이블에 '${missingColumn}' 컬럼이 없습니다. 스키마를 확인해주세요.`,
           code: error.code,
           requestId: requestId
         }, { status: 400 })
