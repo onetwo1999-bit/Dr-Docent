@@ -431,15 +431,74 @@ export async function POST(req: Request) {
       weight_kg: { value: insertData.weight_kg, type: typeof insertData.weight_kg, isNull: insertData.weight_kg === null },
       reps: { value: insertData.reps, type: typeof insertData.reps, isNull: insertData.reps === null },
       sets: { value: insertData.sets, type: typeof insertData.sets, isNull: insertData.sets === null },
+      heart_rate: { value: insertData.heart_rate, type: typeof insertData.heart_rate, isNull: insertData.heart_rate === null },
       intensity_metrics: insertData.intensity_metrics ? '있음' : '없음',
       category: insertData.category
     })
 
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('health_logs')
       .insert(insertData)
       .select()
       .single()
+
+    // PGRST204 에러 발생 시 해당 컬럼을 제외하고 재시도
+    if (error && (error.code === 'PGRST204' || error.message?.includes('schema cache') || error.message?.includes('Could not find'))) {
+      // 컬럼명 추출
+      let columnMatch = error.message.match(/the ['"](\w+(?:_\w+)*)['"] column/i)
+      if (!columnMatch) {
+        columnMatch = error.message.match(/column ['"](\w+(?:_\w+)*)['"]/i)
+      }
+      if (!columnMatch) {
+        columnMatch = error.message.match(/['"](\w+(?:_\w+)*)['"]/i)
+      }
+      
+      const missingColumn = columnMatch?.[1]
+      
+      // 운동 관련 컬럼 중 하나가 문제인 경우, 해당 컬럼을 제외하고 재시도
+      const retryableColumns = ['heart_rate', 'exercise_type', 'duration_minutes', 'weight_kg', 'reps', 'sets']
+      
+      if (missingColumn && retryableColumns.includes(missingColumn)) {
+        console.warn(`⚠️ [${requestId}] ${missingColumn} 컬럼 스키마 캐시 문제 감지. 해당 컬럼을 제외하고 재시도합니다.`)
+        
+        // 문제가 된 컬럼을 제외한 새로운 insertData 생성
+        const retryInsertData = { ...insertData }
+        delete retryInsertData[missingColumn]
+        
+        // intensity_metrics에서도 제거 (있는 경우)
+        if (retryInsertData.intensity_metrics && typeof retryInsertData.intensity_metrics === 'object') {
+          const updatedMetrics = { ...retryInsertData.intensity_metrics }
+          delete updatedMetrics[missingColumn]
+          retryInsertData.intensity_metrics = updatedMetrics
+        }
+        
+        console.log(`🔄 [${requestId}] ${missingColumn} 제외 후 재시도 데이터:`, {
+          ...retryInsertData,
+          intensity_metrics: retryInsertData.intensity_metrics ? '있음 (수정됨)' : '없음'
+        })
+        
+        // 재시도
+        const retryResult = await supabase
+          .from('health_logs')
+          .insert(retryInsertData)
+          .select()
+          .single()
+        
+        if (!retryResult.error) {
+          console.log(`✅ [${requestId}] ${missingColumn} 제외 후 재시도 성공`)
+          return NextResponse.json({
+            success: true,
+            message: `${categoryLabels[category as CategoryType]} 기록이 완료되었습니다. (주의: ${missingColumn} 컬럼은 스키마 캐시 문제로 제외되었습니다. Supabase에서 스키마를 새로고침해주세요.)`,
+            data: retryResult.data,
+            warning: `${missingColumn} 컬럼이 스키마 캐시에 없어 제외되었습니다. Supabase 대시보드 → Settings → API → "Reload schema"를 클릭해주세요.`
+          })
+        }
+        
+        // 재시도도 실패한 경우 원래 에러로 처리
+        error = retryResult.error
+        console.error(`❌ [${requestId}] ${missingColumn} 제외 후 재시도도 실패:`, retryResult.error)
+      }
+    }
 
     if (error) {
       // 🔍 Supabase 에러 상세 정보 로깅 (message, hint, details 모두 포함)

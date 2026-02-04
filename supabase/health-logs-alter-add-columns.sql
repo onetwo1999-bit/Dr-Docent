@@ -1,6 +1,11 @@
 -- =====================================================
 -- health_logs 컬럼 부족 시 즉시 실행용 ALTER TABLE
 -- Supabase SQL Editor에서 이 파일 내용을 붙여넣고 실행하세요.
+-- 
+-- ⚠️ 중요: SQL 실행 후 반드시 다음 단계를 수행하세요:
+-- 1. Supabase 대시보드 → Settings → API → "Reload schema" 클릭
+-- 2. 또는 프로젝트 재시작 (1-2분 소요)
+-- 3. 스키마 캐시 갱신 후 페이지 새로고침하여 다시 시도
 -- =====================================================
 
 DO $$
@@ -61,3 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_health_logs_intensity_metrics
   WHERE intensity_metrics IS NOT NULL;
 
 SELECT 'health_logs 컬럼 추가 완료' AS result;
+
+-- ⚠️ 중요: 이 SQL 실행 후 반드시 스키마 캐시를 새로고침하세요!
+-- Supabase 대시보드 → Settings → API → "Reload schema" 클릭
+-- 또는 프로젝트를 재시작하면 자동으로 스키마 캐시가 갱신됩니다.
