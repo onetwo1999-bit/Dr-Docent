@@ -342,18 +342,23 @@ export default function CalendarView({ userId }: CalendarViewProps) {
     setShowAddModal(false)
   }
 
-  // 삭제: 확인 후 API 호출
+  // 삭제: 확인 후 API 호출 (health_logs 또는 cycle_logs)
   const handleDeleteLog = async (e: React.MouseEvent, log: HealthLog) => {
     e.stopPropagation()
-    if (log.category === 'cycle') return
     if (!confirm('정말 삭제하시겠습니까?')) return
     try {
-      const res = await fetch(`/api/health-logs?id=${encodeURIComponent(log.id)}`, { method: 'DELETE', credentials: 'include' })
+      const isCycle = log.category === 'cycle'
+      const url = isCycle
+        ? `/api/cycle-logs?id=${encodeURIComponent(log.id)}`
+        : `/api/health-logs?id=${encodeURIComponent(log.id)}`
+      const res = await fetch(url, { method: 'DELETE', credentials: 'include' })
       const data = await res.json()
       if (data.success) {
         fetchLogs()
         setEditingLog(null)
         setEditModalCategory(null)
+        if (isCycle) window.dispatchEvent(new Event('cycle-updated'))
+        else window.dispatchEvent(new Event('health-log-updated'))
       } else {
         alert(data.error || '삭제에 실패했습니다.')
       }
@@ -710,7 +715,11 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                 .map((log) => {
                   const config = categoryConfig[log.category as CategoryType]
                   if (!config) return null
-                  const canEdit = log.category !== 'cycle'
+                  const isCycle = log.category === 'cycle'
+                  const canEdit = !isCycle
+                  const description = isCycle
+                    ? '그날 시작'
+                    : (log as HealthLogItem).notes || log.note || '내용 없음'
                   return (
                     <div
                       key={log.id}
@@ -719,10 +728,10 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                       <span className={config.color}>{config.icon({ className: "w-4 h-4" })}</span>
                       <div className="flex-1 min-w-0">
                         <span className="text-xs text-gray-500">{formatTime(log.logged_at)}</span>
-                        <p className="text-sm text-gray-800 truncate">{(log as HealthLogItem).notes || log.note || '—'}</p>
+                        <p className="text-sm text-gray-800 truncate">{description}</p>
                       </div>
-                      {canEdit && (
-                        <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
+                        {canEdit && (
                           <button
                             type="button"
                             onClick={(e) => {
@@ -736,20 +745,20 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                           >
                             <Pencil className="w-4 h-4" />
                           </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDeleteLog(e, log)
-                              setPopoverTarget(null)
-                            }}
-                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
-                            title="삭제"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      )}
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteLog(e, log)
+                            setPopoverTarget(null)
+                          }}
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                          title="삭제"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   )
                 })}
