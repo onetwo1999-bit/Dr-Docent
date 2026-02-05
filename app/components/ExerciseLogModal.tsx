@@ -50,8 +50,8 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialDa
       setReps(initialData.reps != null ? String(initialData.reps) : '')
       setSets(initialData.sets != null ? String(initialData.sets) : '')
       setNotes(initialData.notes || initialData.note || '')
-      setSelectedDate(d.toISOString().split('T')[0])
-      setSelectedTime(d.toTimeString().slice(0, 5))
+      setSelectedDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+      setSelectedTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
     } else if (isOpen && !initialData) {
       setExerciseType('')
       setDuration('')
@@ -62,8 +62,8 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialDa
       setNotes('')
       if (defaultLoggedAt) {
         const d = new Date(defaultLoggedAt)
-        setSelectedDate(d.toISOString().split('T')[0])
-        setSelectedTime(d.toTimeString().slice(0, 5))
+        setSelectedDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
+        setSelectedTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
       } else {
         setSelectedDate(new Date().toISOString().split('T')[0])
         setSelectedTime(new Date().toTimeString().slice(0, 5))
@@ -247,7 +247,7 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialDa
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
+                  max={(() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; })()}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF]"
                 />
               </div>

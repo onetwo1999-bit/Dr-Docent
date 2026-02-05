@@ -93,6 +93,16 @@ const formatDate = (date: Date) => {
   return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
+// 로컬 날짜 기준 ISO 형식 (UTC 변환으로 하루 밀림 방지). 캘린더에서 선택한 날짜를 모달에 넘길 때 사용
+function toLocalDateISOString(date: Date, hour = 9, minute = 0): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  const h = String(hour).padStart(2, '0')
+  const min = String(minute).padStart(2, '0')
+  return `${y}-${m}-${d}T${h}:${min}:00`
+}
+
 export default function CalendarView({ userId }: CalendarViewProps) {
   const [viewType, setViewType] = useState<ViewType>('month')
   const [currentDate, setCurrentDate] = useState(new Date())
@@ -311,12 +321,15 @@ export default function CalendarView({ userId }: CalendarViewProps) {
     setAddDetailCategory(category)
   }
 
-  // 그날(cycle) 시작 기록 (캘린더에서 선택한 날짜로)
+  // 그날(cycle) 시작 기록 (캘린더에서 선택한 날짜로, 로컬 날짜 사용)
   const handleCycleStartFromCalendar = async () => {
     if (!selectedDate) return
     setCycleAddSubmitting(true)
     try {
-      const startDate = selectedDate.toISOString().split('T')[0]
+      const y = selectedDate.getFullYear()
+      const m = String(selectedDate.getMonth() + 1).padStart(2, '0')
+      const d = String(selectedDate.getDate()).padStart(2, '0')
+      const startDate = `${y}-${m}-${d}`
       const res = await fetch('/api/cycle-logs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -852,21 +865,21 @@ export default function CalendarView({ userId }: CalendarViewProps) {
         onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
         onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'meal' ? editingLog ?? undefined : undefined}
-        defaultLoggedAt={addDetailCategory === 'meal' && selectedDate ? selectedDate.toISOString() : undefined}
+        defaultLoggedAt={addDetailCategory === 'meal' && selectedDate ? toLocalDateISOString(selectedDate) : undefined}
       />
       <ExerciseLogModal
         isOpen={(!!editingLog && editModalCategory === 'exercise') || (addDetailCategory === 'exercise' && !!selectedDate)}
         onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
         onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'exercise' ? editingLog ?? undefined : undefined}
-        defaultLoggedAt={addDetailCategory === 'exercise' && selectedDate ? selectedDate.toISOString() : undefined}
+        defaultLoggedAt={addDetailCategory === 'exercise' && selectedDate ? toLocalDateISOString(selectedDate) : undefined}
       />
       <MedicationLogModal
         isOpen={(!!editingLog && editModalCategory === 'medication') || (addDetailCategory === 'medication' && !!selectedDate)}
         onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
         onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'medication' ? editingLog ?? undefined : undefined}
-        defaultLoggedAt={addDetailCategory === 'medication' && selectedDate ? selectedDate.toISOString() : undefined}
+        defaultLoggedAt={addDetailCategory === 'medication' && selectedDate ? toLocalDateISOString(selectedDate) : undefined}
       />
     </div>
   )
