@@ -10,6 +10,8 @@ interface ExerciseLogModalProps {
   onClose: () => void
   onSuccess: () => void
   initialData?: HealthLogItem | null
+  /** 캘린더에서 날짜 선택 후 열 때, 해당 날짜/시간으로 초기화 (ISO 문자열) */
+  defaultLoggedAt?: string | null
 }
 
 const exerciseTypes = [
@@ -24,7 +26,7 @@ const exerciseTypes = [
   { value: 'other', label: '기타' }
 ]
 
-export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialData }: ExerciseLogModalProps) {
+export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialData, defaultLoggedAt }: ExerciseLogModalProps) {
   const { showToast, ToastComponent } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [exerciseType, setExerciseType] = useState('')
@@ -58,10 +60,16 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialDa
       setReps('')
       setSets('')
       setNotes('')
-      setSelectedDate(new Date().toISOString().split('T')[0])
-      setSelectedTime(new Date().toTimeString().slice(0, 5))
+      if (defaultLoggedAt) {
+        const d = new Date(defaultLoggedAt)
+        setSelectedDate(d.toISOString().split('T')[0])
+        setSelectedTime(d.toTimeString().slice(0, 5))
+      } else {
+        setSelectedDate(new Date().toISOString().split('T')[0])
+        setSelectedTime(new Date().toTimeString().slice(0, 5))
+      }
     }
-  }, [isOpen, initialData])
+  }, [isOpen, initialData, defaultLoggedAt])
 
   if (!isOpen) return null
 

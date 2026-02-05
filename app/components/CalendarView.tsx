@@ -101,10 +101,12 @@ export default function CalendarView({ userId }: CalendarViewProps) {
   const [isLoading, setIsLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [showAddModal, setShowAddModal] = useState(false)
-  const [addingCategory, setAddingCategory] = useState<CategoryType | null>(null)
   const [editingLog, setEditingLog] = useState<HealthLogItem | null>(null)
   const [editModalCategory, setEditModalCategory] = useState<CategoryType | null>(null)
   const [popoverTarget, setPopoverTarget] = useState<{ date: Date; category: CategoryType } | null>(null)
+  /** 캘린더에서 "기록 추가" 후 항목 선택 시, 상세 입력 모달을 열기 위한 카테고리 */
+  const [addDetailCategory, setAddDetailCategory] = useState<CategoryType | null>(null)
+  const [cycleAddSubmitting, setCycleAddSubmitting] = useState(false)
 
   // 데이터 로드
   useEffect(() => {
@@ -303,33 +305,37 @@ export default function CalendarView({ userId }: CalendarViewProps) {
     return days
   }
 
-  // 기록 추가 핸들러
-  const handleAddLog = async (category: CategoryType, note?: string) => {
-    if (!selectedDate) return
+  // 캘린더에서 "기록 추가" → 항목 클릭 시 상세 모달 열기 (즉시 저장하지 않음)
+  const handleOpenDetailModal = (category: CategoryType) => {
+    setShowAddModal(false)
+    setAddDetailCategory(category)
+  }
 
-    setAddingCategory(category)
+  // 그날(cycle) 시작 기록 (캘린더에서 선택한 날짜로)
+  const handleCycleStartFromCalendar = async () => {
+    if (!selectedDate) return
+    setCycleAddSubmitting(true)
     try {
-      const response = await fetch('/api/health-logs', {
+      const startDate = selectedDate.toISOString().split('T')[0]
+      const res = await fetch('/api/cycle-logs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          category,
-          note,
-          logged_at: selectedDate.toISOString()
-        })
+        credentials: 'include',
+        body: JSON.stringify({ action: 'start', start_date: startDate })
       })
-
-      const data = await response.json()
+      const data = await res.json()
       if (data.success) {
         fetchLogs()
-        setShowAddModal(false)
+        setAddDetailCategory(null)
+        window.dispatchEvent(new Event('cycle-updated'))
       } else {
-        alert(data.error || '기록 추가에 실패했습니다.')
+        alert(data.error || '그날 시작 기록에 실패했습니다.')
       }
-    } catch (error) {
-      console.error('기록 추가 실패:', error)
+    } catch (err) {
+      console.error('그날 기록 실패:', err)
+      alert('기록 중 오류가 발생했습니다.')
     } finally {
-      setAddingCategory(null)
+      setCycleAddSubmitting(false)
     }
   }
 
@@ -775,7 +781,7 @@ export default function CalendarView({ userId }: CalendarViewProps) {
               <div>
                 <h3 className="font-semibold text-gray-900">기록 추가</h3>
                 <p className="text-sm text-gray-400">
-                  {formatDate(selectedDate)} {selectedDate.getHours().toString().padStart(2, '0')}:00
+                  {formatDate(selectedDate)} · 항목을 누르면 세부 입력 화면이 열립니다
                 </p>
               </div>
               <button
@@ -790,28 +796,19 @@ export default function CalendarView({ userId }: CalendarViewProps) {
               {Object.entries(categoryConfig).map(([key, config]) => (
                 <button
                   key={key}
-                  onClick={() => handleAddLog(key as CategoryType)}
-                  disabled={addingCategory !== null}
-                  className={`
-                    w-full flex items-center gap-4 p-4 rounded-xl border border-gray-100
-                    hover:border-[#2DD4BF] hover:bg-[#2DD4BF]/5 transition-all
-                    ${addingCategory === key ? 'opacity-50' : ''}
-                  `}
+                  onClick={() => handleOpenDetailModal(key as CategoryType)}
+                  className="w-full flex items-center gap-4 p-4 rounded-xl border border-gray-100 hover:border-[#2DD4BF] hover:bg-[#2DD4BF]/5 transition-all"
                 >
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center bg-[#2DD4BF]/10`}>
-                    {addingCategory === key ? (
-                      <Loader2 className={`w-5 h-5 ${config.color} animate-spin`} />
-                    ) : (
-                      <span className={config.color}>
-                        {config.icon({ className: "w-5 h-5" })}
-                      </span>
-                    )}
+                    <span className={config.color}>
+                      {config.icon({ className: "w-5 h-5" })}
+                    </span>
                   </div>
-                  <div className="text-left">
+                  <div className="text-left flex-1">
                     <p className="font-medium text-gray-900">{config.label} 기록</p>
-                    <p className="text-sm text-gray-400">지금 바로 기록하기</p>
+                    <p className="text-sm text-gray-400">세부 내용을 입력해서 기록하기</p>
                   </div>
-                  <Plus className="w-5 h-5 text-gray-300 ml-auto" />
+                  <Plus className="w-5 h-5 text-gray-300 shrink-0" />
                 </button>
               ))}
             </div>
@@ -819,24 +816,57 @@ export default function CalendarView({ userId }: CalendarViewProps) {
         </div>
       )}
 
-      {/* 수정 모달 (캘린더에서 아이콘 클릭 → 팝오버에서 수정 선택 시) */}
+      {/* 그날(cycle) 기록 모달 - 캘린더에서 선택한 날짜로 그날 시작 */}
+      {addDetailCategory === 'cycle' && selectedDate && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-xl p-6">
+            <h3 className="font-semibold text-gray-900 mb-1">그날 케어</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {formatDate(selectedDate)}에 그날 시작을 기록할까요?
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setAddDetailCategory(null)}
+                className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleCycleStartFromCalendar}
+                disabled={cycleAddSubmitting}
+                className="flex-1 py-2.5 rounded-xl bg-[#FF6B9D] text-white hover:bg-[#FF6B9D]/90 disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {cycleAddSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                그날 시작 기록
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 식사/운동/복약 상세 입력 모달 (캘린더 기록 추가 시) 또는 수정 모달 */}
       <MealLogModal
-        isOpen={!!editingLog && editModalCategory === 'meal'}
-        onClose={() => { setEditingLog(null); setEditModalCategory(null) }}
-        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
+        isOpen={(!!editingLog && editModalCategory === 'meal') || (addDetailCategory === 'meal' && !!selectedDate)}
+        onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
+        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'meal' ? editingLog ?? undefined : undefined}
+        defaultLoggedAt={addDetailCategory === 'meal' && selectedDate ? selectedDate.toISOString() : undefined}
       />
       <ExerciseLogModal
-        isOpen={!!editingLog && editModalCategory === 'exercise'}
-        onClose={() => { setEditingLog(null); setEditModalCategory(null) }}
-        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
+        isOpen={(!!editingLog && editModalCategory === 'exercise') || (addDetailCategory === 'exercise' && !!selectedDate)}
+        onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
+        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'exercise' ? editingLog ?? undefined : undefined}
+        defaultLoggedAt={addDetailCategory === 'exercise' && selectedDate ? selectedDate.toISOString() : undefined}
       />
       <MedicationLogModal
-        isOpen={!!editingLog && editModalCategory === 'medication'}
-        onClose={() => { setEditingLog(null); setEditModalCategory(null) }}
-        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
+        isOpen={(!!editingLog && editModalCategory === 'medication') || (addDetailCategory === 'medication' && !!selectedDate)}
+        onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
+        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'medication' ? editingLog ?? undefined : undefined}
+        defaultLoggedAt={addDetailCategory === 'medication' && selectedDate ? selectedDate.toISOString() : undefined}
       />
     </div>
   )

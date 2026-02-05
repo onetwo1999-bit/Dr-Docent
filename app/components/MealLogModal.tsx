@@ -10,9 +10,11 @@ interface MealLogModalProps {
   onClose: () => void
   onSuccess: () => void
   initialData?: HealthLogItem | null
+  /** 캘린더에서 날짜 선택 후 열 때, 해당 날짜/시간으로 초기화 (ISO 문자열) */
+  defaultLoggedAt?: string | null
 }
 
-export default function MealLogModal({ isOpen, onClose, onSuccess, initialData }: MealLogModalProps) {
+export default function MealLogModal({ isOpen, onClose, onSuccess, initialData, defaultLoggedAt }: MealLogModalProps) {
   const { showToast, ToastComponent } = useToast()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
@@ -37,10 +39,16 @@ export default function MealLogModal({ isOpen, onClose, onSuccess, initialData }
       setImageUrl(null)
       setImagePreview(null)
       setImageFile(null)
-      setSelectedDate(new Date().toISOString().split('T')[0])
-      setSelectedTime(new Date().toTimeString().slice(0, 5))
+      if (defaultLoggedAt) {
+        const d = new Date(defaultLoggedAt)
+        setSelectedDate(d.toISOString().split('T')[0])
+        setSelectedTime(d.toTimeString().slice(0, 5))
+      } else {
+        setSelectedDate(new Date().toISOString().split('T')[0])
+        setSelectedTime(new Date().toTimeString().slice(0, 5))
+      }
     }
-  }, [isOpen, initialData])
+  }, [isOpen, initialData, defaultLoggedAt])
 
   if (!isOpen) return null
 
