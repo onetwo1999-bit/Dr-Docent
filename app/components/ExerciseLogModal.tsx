@@ -10,8 +10,13 @@ interface ExerciseLogModalProps {
   onClose: () => void
   onSuccess: () => void
   initialData?: HealthLogItem | null
-  /** 캘린더에서 날짜 선택 후 열 때, 해당 날짜/시간으로 초기화 (ISO 문자열) */
+  /** 캘린더에서 날짜 선택 후 열 때, "YYYY-MM-DD" 문자열만 전달 (파싱 없이 사용해 밀림 방지) */
   defaultLoggedAt?: string | null
+}
+
+function getTodayLocalString(): string {
+  const t = new Date()
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
 }
 
 const exerciseTypes = [
@@ -60,12 +65,11 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialDa
       setReps('')
       setSets('')
       setNotes('')
-      if (defaultLoggedAt) {
-        const d = new Date(defaultLoggedAt)
-        setSelectedDate(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`)
-        setSelectedTime(`${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`)
+      if (defaultLoggedAt && /^\d{4}-\d{2}-\d{2}$/.test(defaultLoggedAt)) {
+        setSelectedDate(defaultLoggedAt)
+        setSelectedTime('09:00')
       } else {
-        setSelectedDate(new Date().toISOString().split('T')[0])
+        setSelectedDate(getTodayLocalString())
         setSelectedTime(new Date().toTimeString().slice(0, 5))
       }
     }
@@ -81,6 +85,12 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialDa
 
     if (!duration || parseInt(duration) <= 0) {
       showToast('운동 시간을 입력해주세요.', 'warning')
+      return
+    }
+
+    const todayStr = getTodayLocalString()
+    if (selectedDate > todayStr) {
+      showToast('오늘 이후 날짜에는 기록할 수 없습니다.', 'warning')
       return
     }
 
@@ -247,7 +257,7 @@ export default function ExerciseLogModal({ isOpen, onClose, onSuccess, initialDa
                   type="date"
                   value={selectedDate}
                   onChange={(e) => setSelectedDate(e.target.value)}
-                  max={(() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`; })()}
+                  max={getTodayLocalString()}
                   className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2 text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF]"
                 />
               </div>

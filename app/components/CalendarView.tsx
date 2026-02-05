@@ -93,14 +93,16 @@ const formatDate = (date: Date) => {
   return date.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
 }
 
-// 로컬 날짜 기준 ISO 형식 (UTC 변환으로 하루 밀림 방지). 캘린더에서 선택한 날짜를 모달에 넘길 때 사용
-function toLocalDateISOString(date: Date, hour = 9, minute = 0): string {
+// 로컬 날짜만 "YYYY-MM-DD"로 전달 (Date 파싱 없이 모달에서 그대로 사용해 밀림 방지)
+function toLocalDateString(date: Date): string {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
-  const h = String(hour).padStart(2, '0')
-  const min = String(minute).padStart(2, '0')
-  return `${y}-${m}-${d}T${h}:${min}:00`
+  return `${y}-${m}-${d}`
+}
+
+function isFutureDate(date: Date): boolean {
+  return toLocalDateString(date) > toLocalDateString(new Date())
 }
 
 export default function CalendarView({ userId }: CalendarViewProps) {
@@ -267,12 +269,16 @@ export default function CalendarView({ userId }: CalendarViewProps) {
     return grid
   }
 
-  // 특정 날짜의 로그 가져오기 (health_logs + cycle_logs 통합)
+  // 특정 날짜의 로그 가져오기 (로컬 날짜 기준으로 비교해 UTC 밀림 방지)
   const getLogsForDate = (date: Date): HealthLog[] => {
-    const dateStr = date.toISOString().split('T')[0]
-    const healthLogsForDate = logs.filter(log => log.logged_at.startsWith(dateStr))
+    const dateStr = toLocalDateString(date)
+    const healthLogsForDate = logs.filter(log => {
+      const logDate = new Date(log.logged_at)
+      const logLocalStr = toLocalDateString(logDate)
+      return logLocalStr === dateStr
+    })
     
-    // cycle_logs에서 해당 날짜에 시작일이 있는지 확인 (status가 'ongoing'이거나 'completed'인 경우)
+    // cycle_logs에서 해당 날짜에 시작일이 있는지 확인
     const cycleLogsForDate = cycleLogs
       .filter(cycle => {
         const cycleStart = cycle.start_date.split('T')[0]
@@ -492,6 +498,10 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                 <div
                   key={dayIdx}
                   onClick={() => {
+                    if (isFutureDate(dayData.date)) {
+                      alert('미래 날짜에는 기록할 수 없습니다. 오늘 또는 과거 날짜를 선택해주세요.')
+                      return
+                    }
                     setSelectedDate(dayData.date)
                     setShowAddModal(true)
                   }}
@@ -499,6 +509,7 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                     min-h-[100px] p-2 border-r border-gray-100 last:border-r-0 cursor-pointer
                     hover:bg-gray-50 transition-colors
                     ${!dayData.isCurrentMonth ? 'bg-gray-50/50' : ''}
+                    ${isFutureDate(dayData.date) ? 'opacity-60' : ''}
                   `}
                 >
                   <div className={`
@@ -588,6 +599,10 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                       onClick={() => {
                         const newDate = new Date(date)
                         newDate.setHours(slot.hour, 0, 0, 0)
+                        if (isFutureDate(newDate)) {
+                          alert('미래 날짜에는 기록할 수 없습니다. 오늘 또는 과거 날짜를 선택해주세요.')
+                          return
+                        }
                         setSelectedDate(newDate)
                         setShowAddModal(true)
                       }}
@@ -595,6 +610,7 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                         min-h-[60px] p-1 border-r border-gray-100 last:border-r-0
                         hover:bg-gray-50 cursor-pointer transition-colors
                         ${isToday ? 'bg-[#2DD4BF]/5' : ''}
+                        ${isFutureDate(new Date(date)) ? 'opacity-60' : ''}
                       `}
                     >
                       {dayLogs.map((log) => {
@@ -645,6 +661,10 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                   onClick={() => {
                     const newDate = new Date(currentDate)
                     newDate.setHours(slot.hour, 0, 0, 0)
+                    if (isFutureDate(newDate)) {
+                      alert('미래 날짜에는 기록할 수 없습니다. 오늘 또는 과거 날짜를 선택해주세요.')
+                      return
+                    }
                     setSelectedDate(newDate)
                     setShowAddModal(true)
                   }}
@@ -865,21 +885,21 @@ export default function CalendarView({ userId }: CalendarViewProps) {
         onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
         onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'meal' ? editingLog ?? undefined : undefined}
-        defaultLoggedAt={addDetailCategory === 'meal' && selectedDate ? toLocalDateISOString(selectedDate) : undefined}
+        defaultLoggedAt={addDetailCategory === 'meal' && selectedDate ? toLocalDateString(selectedDate) : undefined}
       />
       <ExerciseLogModal
         isOpen={(!!editingLog && editModalCategory === 'exercise') || (addDetailCategory === 'exercise' && !!selectedDate)}
         onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
         onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'exercise' ? editingLog ?? undefined : undefined}
-        defaultLoggedAt={addDetailCategory === 'exercise' && selectedDate ? toLocalDateISOString(selectedDate) : undefined}
+        defaultLoggedAt={addDetailCategory === 'exercise' && selectedDate ? toLocalDateString(selectedDate) : undefined}
       />
       <MedicationLogModal
         isOpen={(!!editingLog && editModalCategory === 'medication') || (addDetailCategory === 'medication' && !!selectedDate)}
         onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
         onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'medication' ? editingLog ?? undefined : undefined}
-        defaultLoggedAt={addDetailCategory === 'medication' && selectedDate ? toLocalDateISOString(selectedDate) : undefined}
+        defaultLoggedAt={addDetailCategory === 'medication' && selectedDate ? toLocalDateString(selectedDate) : undefined}
       />
     </div>
   )
