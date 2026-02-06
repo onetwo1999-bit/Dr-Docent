@@ -105,7 +105,7 @@ function computeStreakDays(
     logs
       .filter((l) => l.user_id === userId)
       .map((l) => l.logged_at.slice(0, 10))
-  ))].sort()
+  )].sort()
   const end = new Date(upToDateStr)
   end.setHours(0, 0, 0, 0)
   let streak = 0
