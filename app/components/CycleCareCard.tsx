@@ -3,6 +3,12 @@
 import { useState, useEffect } from 'react'
 import { Heart, Calendar, AlertCircle, Check, Loader2, ChevronRight } from 'lucide-react'
 
+// 한국 시간 기준 오늘 날짜 문자열 반환
+function getTodayLocalString(): string {
+  const t = new Date()
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`
+}
+
 interface CycleData {
   id: string
   start_date: string
@@ -84,7 +90,7 @@ export default function CycleCareCard() {
     setMessage(null)
 
     try {
-      const today = new Date().toISOString().split('T')[0]
+      const today = getTodayLocalString()
       console.log('🔄 [Cycle Start] 요청 시작:', { action: 'start', start_date: today })
       
       const response = await fetch('/api/cycle-logs', {
@@ -137,7 +143,7 @@ export default function CycleCareCard() {
     setMessage(null)
 
     try {
-      const today = new Date().toISOString().split('T')[0]
+      const today = getTodayLocalString()
       
       const response = await fetch('/api/cycle-logs', {
         method: 'POST',

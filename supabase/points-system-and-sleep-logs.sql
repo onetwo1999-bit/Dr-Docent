@@ -137,20 +137,29 @@ DECLARE
   v_new_annual INTEGER;
   v_points_to_actually_add INTEGER;
 BEGIN
-  -- 사용자 포인트 레코드 조회 또는 생성
-  SELECT daily_points, annual_points, last_updated_date
+  -- 사용자 포인트 레코드 조회 또는 생성 (테이블 컬럼명 명시)
+  SELECT up.daily_points, up.annual_points, up.last_updated_date
   INTO v_current_daily, v_current_annual, v_last_updated
-  FROM user_points
-  WHERE user_id = p_user_id;
+  FROM user_points up
+  WHERE up.user_id = p_user_id;
 
   -- 레코드가 없으면 생성
   IF v_current_daily IS NULL THEN
     INSERT INTO user_points (user_id, daily_points, annual_points, last_updated_date)
     VALUES (p_user_id, 0, 0, p_activity_date)
     ON CONFLICT (user_id) DO NOTHING;
-    v_current_daily := 0;
-    v_current_annual := 0;
-    v_last_updated := p_activity_date;
+    -- 재조회하여 값 확인
+    SELECT up.daily_points, up.annual_points, up.last_updated_date
+    INTO v_current_daily, v_current_annual, v_last_updated
+    FROM user_points up
+    WHERE up.user_id = p_user_id;
+    
+    -- 여전히 NULL이면 초기값 설정
+    IF v_current_daily IS NULL THEN
+      v_current_daily := 0;
+      v_current_annual := 0;
+      v_last_updated := p_activity_date;
+    END IF;
   END IF;
 
   -- 날짜가 바뀌면 일일 포인트 리셋
