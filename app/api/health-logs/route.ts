@@ -724,14 +724,18 @@ export async function POST(req: Request) {
       logged_at: data.logged_at
     })
 
-    // health_scores 업서트: 오늘 일일 점수 반영 (일일 최대 10점, 이미 10점이면 더 올리지 않음)
+    // health_scores 업서트: 방금 기록한 로그의 날짜(Asia/Seoul 기준)로 해당 일자 점수 반영
     try {
-      const todayStr = new Date().toISOString().slice(0, 10)
+      const loggedAt = data?.logged_at ? new Date(data.logged_at) : new Date()
+      const activityDateStr = loggedAt.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' }) // YYYY-MM-DD
+      const startOfDayKorea = new Date(`${activityDateStr}T00:00:00+09:00`)
+      const endOfDayKorea = new Date(`${activityDateStr}T23:59:59.999+09:00`)
+      const startOfDay = startOfDayKorea.toISOString()
+      const endOfDay = endOfDayKorea.toISOString()
+
       const { data: profile } = await supabase.from('profiles').select('chart_number').eq('id', user.id).single()
       const chartNumber = (profile as { chart_number?: string } | null)?.chart_number
       if (chartNumber) {
-        const startOfDay = `${todayStr}T00:00:00`
-        const endOfDay = `${todayStr}T23:59:59`
         const { data: dayLogs } = await supabase
           .from('health_logs')
           .select('category')
@@ -751,17 +755,9 @@ export async function POST(req: Request) {
           hasMedication: medication >= 1,
           hasSleep: sleep >= 1,
         })
-        const capped = Math.min(computed, DAILY_SCORE_CAP)
-        const { data: existing } = await supabase
-          .from('health_scores')
-          .select('score')
-          .eq('chart_number', chartNumber)
-          .eq('score_date', todayStr)
-          .single()
-        const existingScore = existing != null ? Number((existing as { score: number }).score) : 0
-        const finalScore = existingScore >= DAILY_SCORE_CAP ? DAILY_SCORE_CAP : Math.min(capped, DAILY_SCORE_CAP)
+        const finalScore = Math.min(computed, DAILY_SCORE_CAP)
         await supabase.from('health_scores').upsert(
-          { chart_number: chartNumber, score_date: todayStr, score: finalScore },
+          { chart_number: chartNumber, score_date: activityDateStr, score: finalScore },
           { onConflict: 'chart_number,score_date' }
         )
       }
@@ -1098,14 +1094,18 @@ export async function DELETE(req: Request) {
       )
     }
 
-    // 삭제 후 오늘 일일 점수 재계산 반영 (health_scores)
+    // 삭제 후 해당 일자(Asia/Seoul 기준 오늘) 점수 재계산 반영 (health_scores)
     try {
-      const todayStr = new Date().toISOString().slice(0, 10)
+      const now = new Date()
+      const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' })
+      const startOfDayKorea = new Date(`${todayStr}T00:00:00+09:00`)
+      const endOfDayKorea = new Date(`${todayStr}T23:59:59.999+09:00`)
+      const startOfDay = startOfDayKorea.toISOString()
+      const endOfDay = endOfDayKorea.toISOString()
+
       const { data: profile } = await supabase.from('profiles').select('chart_number').eq('id', user.id).single()
       const chartNumber = (profile as { chart_number?: string } | null)?.chart_number
       if (chartNumber) {
-        const startOfDay = `${todayStr}T00:00:00`
-        const endOfDay = `${todayStr}T23:59:59`
         const { data: dayLogs } = await supabase
           .from('health_logs')
           .select('category')
