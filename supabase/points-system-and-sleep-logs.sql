@@ -201,9 +201,9 @@ BEGIN
     v_new_annual,
     CASE
       WHEN v_points_to_actually_add < p_points_to_add THEN
-        format('포인트 제한으로 %d점만 추가되었습니다. (일일 최대 10점, 연간 최대 3,650점)', v_points_to_actually_add)
+        format('포인트 제한으로 %s점만 추가되었습니다. (일일 최대 10점, 연간 최대 3,650점)', v_points_to_actually_add)
       ELSE
-        format('%d점이 추가되었습니다.', v_points_to_actually_add)
+        format('%s점이 추가되었습니다.', v_points_to_actually_add)
     END;
 END;
 $$;
