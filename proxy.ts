@@ -84,7 +84,8 @@ export async function proxy(request: NextRequest) {
   // 보호된 경로 체크
   const isProtectedRoute = pathname.startsWith('/chat') ||
                            pathname.startsWith('/dashboard') ||
-                           pathname.startsWith('/profile')
+                           pathname.startsWith('/profile') ||
+                           pathname.startsWith('/admin-test')
   
   const isAuthRoute = pathname.startsWith('/auth')
   const isCallbackRoute = pathname.includes('/callback')
