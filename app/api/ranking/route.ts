@@ -9,15 +9,7 @@ import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-// ─── 가중치 (복약 High, 운동/식단 Medium) ───
-const WEIGHT_MEDICATION = 0.4
-const WEIGHT_EXERCISE = 0.3
-const WEIGHT_MEAL = 0.3
-const STREAK_BONUS_PER_DAY = 2
-/** 일일 3종(식단+운동+복약) 모두 기록 시 추가 가산 */
-const FULL_DAY_BONUS = 5
-
-const BASE_SCALE = 100
+import { computeDailyScore } from '@/lib/ranking-score'
 
 async function createClient() {
   const cookieStore = await cookies()
@@ -51,83 +43,34 @@ function maskChartNumber(chartNumber: string | unknown): string {
   return s.slice(0, 3) + '***'
 }
 
-/** 해당 날짜의 건강 로그로 일일 점수 산출 (GPS 미사용, 5종 데이터만) */
-function computeDailyScore(params: {
-  hasMedication: boolean
-  hasExercise: boolean
-  hasMeal: boolean
-  streakDays: number
-}): number {
-  const { hasMedication, hasExercise, hasMeal, streakDays } = params
-  const dataPart =
-    (hasMedication ? WEIGHT_MEDICATION : 0) +
-    (hasExercise ? WEIGHT_EXERCISE : 0) +
-    (hasMeal ? WEIGHT_MEAL : 0)
-  const streakBonus = streakDays * STREAK_BONUS_PER_DAY
-  const fullDayBonus = hasMedication && hasExercise && hasMeal ? FULL_DAY_BONUS : 0
-  return dataPart * BASE_SCALE + streakBonus + fullDayBonus
-}
-
-/** user_id별 해당 날짜 로그 집계 (식단/운동/복약) */
+/** user_id별 해당 날짜 로그 집계 (식단/운동/복약/수면) */
 function aggregateLogsByUser(
   logs: { user_id: string; category: string; logged_at: string | Date }[],
   dateStr: string
 ): Map<
   string,
-  { meal: number; exercise: number; medication: number }
+  { meal: number; exercise: number; medication: number; sleep: number }
 > {
   const dayStart = `${dateStr}T00:00:00`
   const dayEnd = `${dateStr}T23:59:59`
   const map = new Map<
     string,
-    { meal: number; exercise: number; medication: number }
+    { meal: number; exercise: number; medication: number; sleep: number }
   >()
   for (const log of logs) {
     const logStr = typeof log.logged_at === 'string' ? log.logged_at : new Date(log.logged_at).toISOString()
     if (logStr < dayStart || logStr > dayEnd) continue
     let cur = map.get(log.user_id)
     if (!cur) {
-      cur = { meal: 0, exercise: 0, medication: 0 }
+      cur = { meal: 0, exercise: 0, medication: 0, sleep: 0 }
       map.set(log.user_id, cur)
     }
     if (log.category === 'meal') cur.meal += 1
     else if (log.category === 'exercise') cur.exercise += 1
     else if (log.category === 'medication') cur.medication += 1
+    else if (log.category === 'sleep') cur.sleep += 1
   }
   return map
-}
-
-/** logged_at을 YYYY-MM-DD 문자열로 반환 (Supabase가 Date 객체로 반환해도 안전) */
-function toDateString(loggedAt: string | Date | unknown): string {
-  if (typeof loggedAt === 'string') return loggedAt.slice(0, 10)
-  if (loggedAt instanceof Date) return loggedAt.toISOString().slice(0, 10)
-  if (loggedAt != null) return new Date(loggedAt as string | number).toISOString().slice(0, 10)
-  return ''
-}
-
-/** 연속 기록 일수 계산 (해당 날짜 포함, 그날부터 과거로 연속된 일수) */
-function computeStreakDays(
-  logs: { user_id: string; logged_at: string | Date }[],
-  userId: string,
-  upToDateStr: string
-): number {
-  const userDays = [...new Set(
-    logs
-      .filter((l) => l.user_id === userId)
-      .map((l) => toDateString(l.logged_at))
-      .filter(Boolean)
-  )].sort()
-  const end = new Date(upToDateStr)
-  end.setHours(0, 0, 0, 0)
-  let streak = 0
-  let cursor = new Date(end)
-  while (true) {
-    const dayStr = cursor.toISOString().slice(0, 10)
-    if (!userDays.includes(dayStr)) break
-    streak += 1
-    cursor.setDate(cursor.getDate() - 1)
-  }
-  return streak
 }
 
 export async function GET(req: Request) {
@@ -277,26 +220,16 @@ export async function GET(req: Request) {
       (profilesById || []).map((p: ProfileRow) => [p.chart_number ?? '', p.nickname ?? '회원'])
     )
 
-    const sevenDaysAgo = new Date(scoreDate)
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
-    const { data: streakLogs } = await supabase
-      .from('health_logs')
-      .select('user_id, logged_at')
-      .in('user_id', userIds)
-      .gte('logged_at', sevenDaysAgo.toISOString())
-      .lte('logged_at', endOfDay)
-
     const scores: { chart_number: string; score: number; nickname: string }[] = []
     for (const uid of userIds) {
       const chartNumber = chartByUserId.get(uid)
       if (!chartNumber) continue
       const agg = aggregated.get(uid)!
-      const streak = computeStreakDays(streakLogs || [], uid, dateStr)
       const score = computeDailyScore({
-        hasMedication: (agg.medication ?? 0) >= 1,
+        mealCount: agg.meal ?? 0,
         hasExercise: (agg.exercise ?? 0) >= 1,
-        hasMeal: (agg.meal ?? 0) >= 1,
-        streakDays: streak,
+        hasMedication: (agg.medication ?? 0) >= 1,
+        hasSleep: (agg.sleep ?? 0) >= 1,
       })
       scores.push({
         chart_number: chartNumber,

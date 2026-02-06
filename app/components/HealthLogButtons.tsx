@@ -1,17 +1,19 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Utensils, Dumbbell, Pill, Check, Loader2, Pencil, Trash2 } from 'lucide-react'
+import { Utensils, Dumbbell, Pill, Moon, Check, Loader2, Pencil, Trash2 } from 'lucide-react'
 import MealLogModal from './MealLogModal'
 import ExerciseLogModal from './ExerciseLogModal'
 import MedicationLogModal from './MedicationLogModal'
+import SleepLogModal from './SleepLogModal'
 
-type CategoryType = 'meal' | 'exercise' | 'medication'
+type CategoryType = 'meal' | 'exercise' | 'medication' | 'sleep'
 
 const categoryLabels: Record<CategoryType, string> = {
   meal: '식사',
   exercise: '운동',
-  medication: '복약'
+  medication: '복약',
+  sleep: '수면'
 }
 
 export interface HealthLogItem {
@@ -32,12 +34,14 @@ export interface HealthLogItem {
   medication_name?: string | null
   medication_dosage?: string | null
   medication_ingredients?: string | null
+  sleep_duration_hours?: number | null
 }
 
 interface TodayStats {
   meal: number
   exercise: number
   medication: number
+  sleep: number
 }
 
 interface LogButtonProps {
@@ -101,6 +105,7 @@ function logSummary(log: HealthLogItem): string {
     return parts.length ? parts.join(' · ') : (log.notes || log.note || '운동')
   }
   if (log.category === 'medication') return log.medication_name || log.notes || log.note || '복약'
+  if (log.category === 'sleep') return log.sleep_duration_hours != null ? `${log.sleep_duration_hours}시간 수면` : (log.notes || log.note || '수면')
   return log.notes || log.note || '기록'
 }
 
@@ -108,7 +113,8 @@ export default function HealthLogButtons() {
   const [todayStats, setTodayStats] = useState<TodayStats>({
     meal: 0,
     exercise: 0,
-    medication: 0
+    medication: 0,
+    sleep: 0
   })
   const [todayLogs, setTodayLogs] = useState<HealthLogItem[]>([])
   const [loadingCategory, setLoadingCategory] = useState<CategoryType | null>(null)
@@ -155,6 +161,7 @@ export default function HealthLogButtons() {
     }))
     setEditingLog(null)
     window.dispatchEvent(new CustomEvent('health-log-updated', { detail: { category } }))
+    window.dispatchEvent(new CustomEvent('ranking-updated'))
     setTimeout(() => setSuccessCategory(null), 3000)
     fetchTodayStats()
   }
@@ -167,6 +174,7 @@ export default function HealthLogButtons() {
       if (data.success) {
         setError(null)
         window.dispatchEvent(new CustomEvent('health-log-updated', { detail: { category: log.category } }))
+        window.dispatchEvent(new CustomEvent('ranking-updated'))
         fetchTodayStats()
       } else {
         setError(data.error || '삭제에 실패했습니다.')
@@ -200,8 +208,8 @@ export default function HealthLogButtons() {
         </div>
       )}
 
-      {/* 3개의 로그 버튼 */}
-      <div className="grid grid-cols-3 gap-4">
+      {/* 4개의 로그 버튼 */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <LogButton
           category="meal"
           icon={<Utensils className="w-6 h-6" />}
@@ -229,6 +237,15 @@ export default function HealthLogButtons() {
           isLoading={loadingCategory === 'medication'}
           isSuccess={successCategory === 'medication'}
         />
+        <LogButton
+          category="sleep"
+          icon={<Moon className="w-6 h-6" />}
+          label="수면 기록"
+          count={todayStats.sleep}
+          onLog={() => handleLog('sleep')}
+          isLoading={loadingCategory === 'sleep'}
+          isSuccess={successCategory === 'sleep'}
+        />
       </div>
 
       {/* 성공 토스트 메시지 (저장/수정 구분) */}
@@ -248,7 +265,8 @@ export default function HealthLogButtons() {
               const config = {
                 meal: { icon: <Utensils className="w-4 h-4" />, label: categoryLabels.meal },
                 exercise: { icon: <Dumbbell className="w-4 h-4" />, label: categoryLabels.exercise },
-                medication: { icon: <Pill className="w-4 h-4" />, label: categoryLabels.medication }
+                medication: { icon: <Pill className="w-4 h-4" />, label: categoryLabels.medication },
+                sleep: { icon: <Moon className="w-4 h-4" />, label: categoryLabels.sleep }
               }[cat]
               if (!config) return null
               return (
@@ -307,6 +325,12 @@ export default function HealthLogButtons() {
         onClose={handleCloseModal}
         onSuccess={() => handleModalSuccess('medication')}
         initialData={openModal === 'medication' ? editingLog : null}
+      />
+      <SleepLogModal
+        isOpen={openModal === 'sleep'}
+        onClose={handleCloseModal}
+        onSuccess={() => handleModalSuccess('sleep')}
+        initialData={openModal === 'sleep' ? editingLog : null}
       />
     </div>
   )

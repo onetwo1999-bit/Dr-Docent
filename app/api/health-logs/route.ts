@@ -2,19 +2,21 @@ import { NextResponse } from 'next/server'
 import { revalidatePath } from 'next/cache'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
+import { computeDailyScore, DAILY_SCORE_CAP } from '@/lib/ranking-score'
 
 // ========================
 // 📊 Health Logs API
 // 식사, 운동, 복약 기록 저장/조회
 // ========================
 
-type CategoryType = 'meal' | 'exercise' | 'medication'
+type CategoryType = 'meal' | 'exercise' | 'medication' | 'sleep'
 
 // 카테고리별 한글 라벨
 const categoryLabels: Record<CategoryType, string> = {
   meal: '식사',
   exercise: '운동',
-  medication: '복약'
+  medication: '복약',
+  sleep: '수면'
 }
 
 // Supabase 클라이언트 생성 (Route Handler용)
@@ -141,7 +143,9 @@ export async function POST(req: Request) {
       // 복약 관련
       medication_name,
       medication_dosage,
-      medication_ingredients
+      medication_ingredients,
+      // 수면 관련
+      sleep_duration_hours: bodySleepDuration
     } = body
     
     // note와 notes 필드명 통일: notes로 통일 (note는 하위 호환성을 위해 받지만 notes로 통합)
@@ -232,11 +236,24 @@ export async function POST(req: Request) {
               })
         : bodyIntensityMetrics
 
+    // 수면 시간 파싱 (숫자, 0~24)
+    let sleepDurationHours: number | null = null
+    if (category === 'sleep' && bodySleepDuration != null && bodySleepDuration !== '') {
+      const parsed = Number(bodySleepDuration)
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 24) sleepDurationHours = parsed
+    }
+
     // 유효성 검사
-    if (!category || !['meal', 'exercise', 'medication'].includes(category)) {
+    if (!category || !['meal', 'exercise', 'medication', 'sleep'].includes(category)) {
       console.error(`❌ [${requestId}] 유효하지 않은 카테고리:`, category)
       return NextResponse.json(
         { success: false, error: '유효하지 않은 카테고리입니다.' },
+        { status: 400 }
+      )
+    }
+    if (category === 'sleep' && (sleepDurationHours == null || sleepDurationHours < 0)) {
+      return NextResponse.json(
+        { success: false, error: '수면 시간(0~24시간)을 입력해주세요.' },
         { status: 400 }
       )
     }
@@ -354,7 +371,9 @@ export async function POST(req: Request) {
       // 복약 관련 필드
       ...(medication_name && { medication_name }),
       ...(medication_dosage && { medication_dosage }),
-      ...(medication_ingredients && { medication_ingredients })
+      ...(medication_ingredients && { medication_ingredients }),
+      // 수면 관련
+      ...(category === 'sleep' && sleepDurationHours != null && { sleep_duration_hours: sleepDurationHours })
     }
     
     // schedule_id는 현재 스키마에 없으므로 제외
@@ -696,6 +715,51 @@ export async function POST(req: Request) {
       logged_at: data.logged_at
     })
 
+    // health_scores 업서트: 오늘 일일 점수 반영 (일일 최대 10점, 이미 10점이면 더 올리지 않음)
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const { data: profile } = await supabase.from('profiles').select('chart_number').eq('id', user.id).single()
+      const chartNumber = (profile as { chart_number?: string } | null)?.chart_number
+      if (chartNumber) {
+        const startOfDay = `${todayStr}T00:00:00`
+        const endOfDay = `${todayStr}T23:59:59`
+        const { data: dayLogs } = await supabase
+          .from('health_logs')
+          .select('category')
+          .eq('user_id', user.id)
+          .gte('logged_at', startOfDay)
+          .lte('logged_at', endOfDay)
+        let meal = 0, exercise = 0, medication = 0, sleep = 0
+        for (const row of dayLogs || []) {
+          if (row.category === 'meal') meal += 1
+          else if (row.category === 'exercise') exercise += 1
+          else if (row.category === 'medication') medication += 1
+          else if (row.category === 'sleep') sleep += 1
+        }
+        const computed = computeDailyScore({
+          mealCount: meal,
+          hasExercise: exercise >= 1,
+          hasMedication: medication >= 1,
+          hasSleep: sleep >= 1,
+        })
+        const capped = Math.min(computed, DAILY_SCORE_CAP)
+        const { data: existing } = await supabase
+          .from('health_scores')
+          .select('score')
+          .eq('chart_number', chartNumber)
+          .eq('score_date', todayStr)
+          .single()
+        const existingScore = existing != null ? Number((existing as { score: number }).score) : 0
+        const finalScore = existingScore >= DAILY_SCORE_CAP ? DAILY_SCORE_CAP : Math.min(capped, DAILY_SCORE_CAP)
+        await supabase.from('health_scores').upsert(
+          { chart_number: chartNumber, score_date: todayStr, score: finalScore },
+          { onConflict: 'chart_number,score_date' }
+        )
+      }
+    } catch (upsertErr) {
+      console.warn(`[${requestId}] health_scores upsert 실패(무시):`, upsertErr)
+    }
+
     revalidatePath('/dashboard')
     revalidatePath('/')
 
@@ -789,7 +853,7 @@ export async function GET(req: Request) {
     }
     
     // 카테고리 필터
-    if (category && ['meal', 'exercise', 'medication'].includes(category)) {
+    if (category && ['meal', 'exercise', 'medication', 'sleep'].includes(category)) {
       query = query.eq('category', category)
     }
 
@@ -805,12 +869,12 @@ export async function GET(req: Request) {
           error: 'health_logs 테이블이 존재하지 않습니다.',
           hint: 'supabase/schema-v2.sql 파일을 실행해주세요.',
           data: [],
-          todayStats: { meal: 0, exercise: 0, medication: 0 }
+          todayStats: { meal: 0, exercise: 0, medication: 0, sleep: 0 }
         })
       }
       
       return NextResponse.json(
-        { success: false, error: '기록 조회 중 오류가 발생했습니다.', data: [], todayStats: { meal: 0, exercise: 0, medication: 0 } },
+        { success: false, error: '기록 조회 중 오류가 발생했습니다.', data: [], todayStats: { meal: 0, exercise: 0, medication: 0, sleep: 0 } },
         { status: 500 }
       )
     }
@@ -825,6 +889,7 @@ export async function GET(req: Request) {
       meal: todayLogs.filter(l => l.category === 'meal').length,
       exercise: todayLogs.filter(l => l.category === 'exercise').length,
       medication: todayLogs.filter(l => l.category === 'medication').length,
+      sleep: todayLogs.filter(l => l.category === 'sleep').length,
     }
 
     return NextResponse.json({
@@ -837,7 +902,7 @@ export async function GET(req: Request) {
   } catch (error) {
     console.error('❌ [Health Logs] 서버 에러:', error)
     return NextResponse.json(
-      { success: false, error: '서버 오류가 발생했습니다.', data: [], todayStats: { meal: 0, exercise: 0, medication: 0 } },
+      { success: false, error: '서버 오류가 발생했습니다.', data: [], todayStats: { meal: 0, exercise: 0, medication: 0, sleep: 0 } },
       { status: 500 }
     )
   }
@@ -885,10 +950,16 @@ export async function PUT(req: Request) {
       sets: bodySets,
       medication_name,
       medication_dosage,
-      medication_ingredients
+      medication_ingredients,
+      sleep_duration_hours: bodySleepDuration
     } = body
 
     const notes = bodyNotes ?? note ?? undefined
+    let sleepDurationHours: number | null = null
+    if (bodySleepDuration != null && bodySleepDuration !== '') {
+      const parsed = Number(bodySleepDuration)
+      if (!isNaN(parsed) && parsed >= 0 && parsed <= 24) sleepDurationHours = parsed
+    }
     let weightKg: number | null = null
     let repsValue: number | null = null
     let setsValue: number | null = null
@@ -936,6 +1007,7 @@ export async function PUT(req: Request) {
     if (medication_name !== undefined) updateData.medication_name = medication_name
     if (medication_dosage !== undefined) updateData.medication_dosage = medication_dosage
     if (medication_ingredients !== undefined) updateData.medication_ingredients = medication_ingredients
+    if (sleepDurationHours !== undefined && sleepDurationHours !== null) updateData.sleep_duration_hours = sleepDurationHours
 
     const { data, error } = await supabase
       .from('health_logs')
@@ -1015,6 +1087,42 @@ export async function DELETE(req: Request) {
         { success: false, error: '기록 삭제 중 오류가 발생했습니다.' },
         { status: 500 }
       )
+    }
+
+    // 삭제 후 오늘 일일 점수 재계산 반영 (health_scores)
+    try {
+      const todayStr = new Date().toISOString().slice(0, 10)
+      const { data: profile } = await supabase.from('profiles').select('chart_number').eq('id', user.id).single()
+      const chartNumber = (profile as { chart_number?: string } | null)?.chart_number
+      if (chartNumber) {
+        const startOfDay = `${todayStr}T00:00:00`
+        const endOfDay = `${todayStr}T23:59:59`
+        const { data: dayLogs } = await supabase
+          .from('health_logs')
+          .select('category')
+          .eq('user_id', user.id)
+          .gte('logged_at', startOfDay)
+          .lte('logged_at', endOfDay)
+        let meal = 0, exercise = 0, medication = 0, sleep = 0
+        for (const row of dayLogs || []) {
+          if (row.category === 'meal') meal += 1
+          else if (row.category === 'exercise') exercise += 1
+          else if (row.category === 'medication') medication += 1
+          else if (row.category === 'sleep') sleep += 1
+        }
+        const finalScore = Math.min(computeDailyScore({
+          mealCount: meal,
+          hasExercise: exercise >= 1,
+          hasMedication: medication >= 1,
+          hasSleep: sleep >= 1,
+        }), DAILY_SCORE_CAP)
+        await supabase.from('health_scores').upsert(
+          { chart_number: chartNumber, score_date: todayStr, score: finalScore },
+          { onConflict: 'chart_number,score_date' }
+        )
+      }
+    } catch (e) {
+      console.warn('[Health Logs] DELETE 후 health_scores upsert 실패(무시):', e)
     }
 
     revalidatePath('/dashboard')
