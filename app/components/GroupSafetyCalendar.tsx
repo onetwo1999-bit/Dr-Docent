@@ -359,28 +359,28 @@ export default function GroupSafetyCalendar({ groupId }: GroupSafetyCalendarProp
                       <div className="flex flex-col gap-1.5">
                         {/* 복약: 완료(초록) / 미복용(빨강) */}
                         {activity.medication ? (
-                          <div className="flex items-center justify-center">
-                            <Pill className="w-5 h-5 text-green-500" title="복약 완료" />
+                          <div className="flex items-center justify-center" title="복약 완료">
+                            <Pill className="w-5 h-5 text-green-500" />
                           </div>
                         ) : (
-                          <div className="flex items-center justify-center">
-                            <AlertCircle className="w-4 h-4 text-red-400" title="복약 미완료" />
+                          <div className="flex items-center justify-center" title="복약 미완료">
+                            <AlertCircle className="w-4 h-4 text-red-400" />
                           </div>
                         )}
                         {/* 운동: 달성(파랑) / 미달성(회색) */}
                         {activity.exercise ? (
-                          <div className="flex items-center justify-center">
-                            <Footprints className="w-5 h-5 text-blue-500" title="운동 달성" />
+                          <div className="flex items-center justify-center" title="운동 달성">
+                            <Footprints className="w-5 h-5 text-blue-500" />
                           </div>
                         ) : (
-                          <div className="flex items-center justify-center">
-                            <div className="w-2 h-2 rounded-full bg-gray-300" title="운동 미달성" />
+                          <div className="flex items-center justify-center" title="운동 미달성">
+                            <div className="w-2 h-2 rounded-full bg-gray-300" />
                           </div>
                         )}
                         {/* 식단: 기록(주황) */}
                         {activity.meal && (
-                          <div className="flex items-center justify-center">
-                            <Utensils className="w-5 h-5 text-orange-500" title="식단 기록" />
+                          <div className="flex items-center justify-center" title="식단 기록">
+                            <Utensils className="w-5 h-5 text-orange-500" />
                           </div>
                         )}
                       </div>
