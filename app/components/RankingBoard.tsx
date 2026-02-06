@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Trophy, Medal, Award, Loader2, RefreshCw } from 'lucide-react'
+import { createClient } from '@/utils/supabase/client'
 
 export interface RankingEntry {
   rank: number
@@ -96,6 +97,37 @@ export default function RankingBoard() {
     return () => clearInterval(id)
   }, [fetchRanking])
 
+  // Realtime: health_scores 변경 시 즉시 업데이트
+  useEffect(() => {
+    const supabase = createClient()
+    const today = new Date().toISOString().slice(0, 10)
+    
+    const channel = supabase
+      .channel('ranking-realtime-updates')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'health_scores',
+          filter: `score_date=eq.${today}`,
+        },
+        () => {
+          fetchRanking()
+        }
+      )
+      .subscribe()
+    
+    // 커스텀 이벤트도 리스닝 (다른 컴포넌트에서 트리거 가능)
+    const handleRankingUpdate = () => fetchRanking()
+    window.addEventListener('ranking-updated', handleRankingUpdate)
+    
+    return () => {
+      supabase.removeChannel(channel)
+      window.removeEventListener('ranking-updated', handleRankingUpdate)
+    }
+  }, [fetchRanking])
+
   const rankIcon = (rank: number) => {
     if (rank === 1) return <Trophy className="w-5 h-5 text-amber-500" />
     if (rank === 2) return <Medal className="w-5 h-5 text-gray-400" />
@@ -114,9 +146,9 @@ export default function RankingBoard() {
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100 bg-gray-50/50">
-        <h2 className="text-lg font-semibold text-gray-900">실시간 건강 랭킹</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
+      <div className="px-5 py-4 border-b border-gray-200 bg-gray-50/50">
+        <h2 className="text-xl md:text-2xl font-bold text-gray-900">실시간 건강 랭킹</h2>
+        <p className="text-sm md:text-base text-gray-600 mt-1">
           {date ? `${date} 기준 · 상위 10명` : '상위 10명'}
         </p>
       </div>
@@ -142,42 +174,42 @@ export default function RankingBoard() {
               {rankIcon(entry.rank)}
             </div>
             <div className="min-w-0 flex-1">
-              <span className="font-mono text-sm font-medium text-gray-700">
+              <span className="font-mono text-base md:text-lg font-semibold text-gray-800">
                 {entry.chart_number_masked}
               </span>
               {entry.nickname && entry.nickname !== '회원' && (
-                <span className="ml-2 text-xs text-gray-400">{entry.nickname}</span>
+                <span className="ml-2 text-sm text-gray-600">{entry.nickname}</span>
               )}
             </div>
             <div className="shrink-0 text-right">
-              <span className="text-[#2DD4BF] font-semibold tabular-nums">
+              <span className="text-[#2DD4BF] font-bold text-lg md:text-xl tabular-nums">
                 <AnimatedNumber value={entry.score} duration={600} decimals={2} />
               </span>
-              <span className="text-gray-400 text-xs ml-0.5">점</span>
+              <span className="text-gray-600 text-sm ml-1">점</span>
             </div>
           </li>
         ))}
       </ul>
 
       {me && (
-        <div className="mt-2 mx-4 mb-4 p-4 rounded-xl bg-[#2DD4BF]/10 border border-[#2DD4BF]/30">
-          <p className="text-xs font-medium text-[#2DD4BF] uppercase tracking-wide mb-2">
+        <div className="mt-2 mx-5 mb-5 p-5 rounded-xl bg-[#2DD4BF]/10 border-2 border-[#2DD4BF]/40">
+          <p className="text-sm md:text-base font-bold text-[#2DD4BF] uppercase tracking-wide mb-3">
             내 순위
           </p>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="font-mono text-sm font-semibold text-gray-800">
+            <div className="flex items-center gap-4">
+              <span className="font-mono text-base md:text-lg font-bold text-gray-900">
                 {me.chart_number_masked}
               </span>
-              <span className="text-gray-500 text-sm">
+              <span className="text-gray-700 text-base md:text-lg font-semibold">
                 <AnimatedNumber value={me.rank} duration={600} decimals={0} />위
               </span>
             </div>
             <div className="text-right">
-              <span className="text-xl font-bold text-[#2DD4BF] tabular-nums">
+              <span className="text-2xl md:text-3xl font-bold text-[#2DD4BF] tabular-nums">
                 <AnimatedNumber value={me.score} duration={600} decimals={2} />
               </span>
-              <span className="text-gray-500 text-sm ml-1">점</span>
+              <span className="text-gray-700 text-base md:text-lg ml-2 font-medium">점</span>
             </div>
           </div>
         </div>
@@ -190,7 +222,7 @@ export default function RankingBoard() {
             setLoading(true)
             fetchRanking().finally(() => setLoading(false))
           }}
-          className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-[#2DD4BF] transition-colors"
+          className="inline-flex items-center gap-2 text-sm md:text-base text-gray-600 hover:text-[#2DD4BF] transition-colors font-medium"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           새로고침

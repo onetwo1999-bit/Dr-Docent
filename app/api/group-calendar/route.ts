@@ -1,6 +1,7 @@
 /**
- * 그룹 캘린더 API
- * - 수치·몸무게·키 등 민감 데이터는 절대 포함하지 않음. 활동 여부(날짜+카테고리)만 반환.
+ * 그룹 캘린더 API (프라이버시 우선)
+ * - 키, 몸무게, 구체적인 약 이름 등 민감 정보는 응답에서 철저히 차단.
+ * - 반환: 날짜별 기록 여부(meal/exercise/medication)와 요약 문구만. 수치 데이터 없음.
  */
 
 import { NextResponse } from 'next/server'
@@ -48,11 +49,31 @@ function aggregateDays(rows: { activity_date: string; category: string }[]): Rec
   return days
 }
 
-/** 활동 요약 문구 생성 (AI 스타일, 수치형 민감 데이터 없음) */
+/** 활동 요약 (숫자만, 민감 데이터 없음) */
 function buildActivitySummary(days: Record<string, { meal: boolean; exercise: boolean; medication: boolean }>): string {
   const dates = Object.keys(days).sort()
+  if (dates.length === 0) return '아직 그룹 활동 기록이 없어요. 첫 기록을 남겨보세요.'
+  let mealDays = 0
+  let exerciseDays = 0
+  let medicationDays = 0
+  for (const d of dates) {
+    if (days[d].meal) mealDays += 1
+    if (days[d].exercise) exerciseDays += 1
+    if (days[d].medication) medicationDays += 1
+  }
+  const parts: string[] = []
+  if (mealDays > 0) parts.push(`식단 ${mealDays}일`)
+  if (exerciseDays > 0) parts.push(`운동 ${exerciseDays}일`)
+  if (medicationDays > 0) parts.push(`복약 ${medicationDays}일`)
+  if (parts.length === 0) return '이번 기간에는 활동 기록이 없었어요.'
+  return `이번 기간 그룹은 ${parts.join(', ')} 기록했어요. 함께 꾸준히 챙기고 있어요.`
+}
+
+/** 닥터 도슨트의 그룹 건강 요약 (따뜻한 문체, 수치/민감 정보 없음) */
+function buildGroupHealthBriefing(days: Record<string, { meal: boolean; exercise: boolean; medication: boolean }>): string {
+  const dates = Object.keys(days).sort()
   if (dates.length === 0) {
-    return '아직 그룹 활동 기록이 없어요. 첫 기록을 남겨보세요.'
+    return '아직 그룹의 건강 기록이 없어요. 누군가 첫 기록을 남기면 여기에 따뜻한 요약이 써질 거예요. 함께 시작해 보아요.'
   }
   let mealDays = 0
   let exerciseDays = 0
@@ -62,13 +83,21 @@ function buildActivitySummary(days: Record<string, { meal: boolean; exercise: bo
     if (days[d].exercise) exerciseDays += 1
     if (days[d].medication) medicationDays += 1
   }
-  const totalDays = dates.length
-  const parts: string[] = []
-  if (mealDays > 0) parts.push(`식단 ${mealDays}일`)
-  if (exerciseDays > 0) parts.push(`운동 ${exerciseDays}일`)
-  if (medicationDays > 0) parts.push(`복약 ${medicationDays}일`)
-  if (parts.length === 0) return '이번 기간에는 활동 기록이 없었어요.'
-  return `이번 기간 그룹은 ${parts.join(', ')} 기록했어요. 함께 꾸준히 챙기고 있어요.`
+  const hasMeal = mealDays > 0
+  const hasExercise = exerciseDays > 0
+  const hasMedication = medicationDays > 0
+  if (!hasMeal && !hasExercise && !hasMedication) {
+    return '이번 달에는 아직 기록된 활동이 없어요. 조금만 챙겨도 다음엔 분명 더 풍성한 요약이 함께할 거예요.'
+  }
+  const lines: string[] = []
+  if (hasMeal) lines.push('식단을 꾸준히 기록하고 계세요.')
+  if (hasExercise) lines.push('운동도 함께 챙기고 있어요.')
+  if (hasMedication) lines.push('복약까지 놓치지 않고 잘 관리하고 계세요.')
+  const first = lines.slice(0, -1).join(' ')
+  const last = lines[lines.length - 1]
+  const intro = '이번 달 그룹 건강 요약이에요.'
+  const body = lines.length > 1 ? `${first} ${last}` : last
+  return `${intro} ${body} 작은 습관이 모여 더 건강한 일상을 만들어 가고 있어요. 계속 응원할게요.`
 }
 
 export async function GET(req: Request) {
@@ -117,12 +146,21 @@ export async function GET(req: Request) {
     const list = (rows || []) as { activity_date: string; category: string }[]
     const days = aggregateDays(list)
     const summary = buildActivitySummary(days)
+    const ai_briefing = buildGroupHealthBriefing(days)
 
-    return NextResponse.json({
+    // 응답은 오직 아래 필드만 반환 (키·몸무게·약 이름 등 민감 정보 절대 미포함)
+    const body: {
+      success: true
+      days: Record<string, { meal: boolean; exercise: boolean; medication: boolean }>
+      summary: string
+      ai_briefing: string
+    } = {
       success: true,
       days,
       summary,
-    })
+      ai_briefing,
+    }
+    return NextResponse.json(body)
   } catch (e) {
     console.error('[Group Calendar] error:', e)
     return NextResponse.json(

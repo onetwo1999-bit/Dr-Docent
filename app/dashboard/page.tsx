@@ -17,6 +17,8 @@ import HealthLogButtons from '../components/HealthLogButtons'
 import CycleCareCard from '../components/CycleCareCard'
 import NotificationSettingsCard from '../components/NotificationSettingsCard'
 import HealthReport from '../components/HealthReport'
+import DashboardRankingSection from '../components/DashboardRankingSection'
+import DashboardGroupSection from '../components/DashboardGroupSection'
 
 // 🔒 HTTP → HTTPS 변환 함수
 function toSecureUrl(url: string | null | undefined): string | null {
@@ -205,7 +207,7 @@ export default async function DashboardPage() {
       profile={profile}
     >
       <div className="min-h-screen bg-white text-gray-800 p-4 md:p-6">
-        <div className="max-w-4xl mx-auto space-y-6">
+        <div className="max-w-6xl mx-auto space-y-6">
           
           {/* 🎯 VIP 인사말 헤더 */}
           <div className="bg-white rounded-2xl p-6 border border-gray-100 shadow-sm">
@@ -215,11 +217,11 @@ export default async function DashboardPage() {
                 😊
               </div>
               <div className="flex-1">
-                <p className="text-[#2DD4BF] text-sm font-semibold">차트 #{chartNumber} 선생님</p>
-                <h1 className="text-xl md:text-2xl font-bold text-gray-900">
+                <p className="text-[#2DD4BF] text-base md:text-lg font-semibold">차트 #{chartNumber} 선생님</p>
+                <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
                   {realName}님, {greeting}! ✨ 
                 </h1>
-                <p className="text-gray-500 text-sm mt-1">
+                <p className="text-gray-600 text-base md:text-lg mt-1">
                   오늘 컨디션은 어떠세요?
                 </p>
               </div>
@@ -240,8 +242,8 @@ export default async function DashboardPage() {
                     <User className="w-5 h-5 text-[#2DD4BF]" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">기본 신체 지표</h3>
-                    <p className="text-xs text-gray-400">Basic Metrics</p>
+                    <h3 className="text-lg md:text-xl font-bold text-gray-900">기본 신체 지표</h3>
+                    <p className="text-sm md:text-base text-gray-500">Basic Metrics</p>
                   </div>
                 </div>
                 <ArrowUpRight className="w-5 h-5 text-gray-300 group-hover:text-[#2DD4BF] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
@@ -250,24 +252,24 @@ export default async function DashboardPage() {
               {hasProfile && profile ? (
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-500 text-sm">나이</span>
-                    <span className="font-medium text-gray-900">{profile.age || '-'}세</span>
+                    <span className="text-gray-600 text-base md:text-lg font-medium">나이</span>
+                    <span className="font-bold text-gray-900 text-base md:text-lg">{profile.age || '-'}세</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-500 text-sm">키</span>
-                    <span className="font-medium text-gray-900">{profile.height || '-'}cm</span>
+                    <span className="text-gray-600 text-base md:text-lg font-medium">키</span>
+                    <span className="font-bold text-gray-900 text-base md:text-lg">{profile.height || '-'}cm</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-gray-500 text-sm">몸무게</span>
-                    <span className="font-medium text-gray-900">{profile.weight || '-'}kg</span>
+                    <span className="text-gray-600 text-base md:text-lg font-medium">몸무게</span>
+                    <span className="font-bold text-gray-900 text-base md:text-lg">{profile.weight || '-'}kg</span>
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                    <span className="text-gray-500 text-sm">BMI</span>
+                    <span className="text-gray-600 text-base md:text-lg font-medium">BMI</span>
                     <div className="text-right">
-                      <span className={`font-bold text-lg ${bmi?.color || 'text-gray-900'}`}>
+                      <span className={`font-bold text-xl md:text-2xl ${bmi?.color || 'text-gray-900'}`}>
                         {bmi?.value || '-'}
                       </span>
-                      <span className={`ml-2 text-xs ${bmi?.color || 'text-gray-400'}`}>
+                      <span className={`ml-2 text-sm md:text-base font-medium ${bmi?.color || 'text-gray-600'}`}>
                         ({bmi?.category || '-'})
                       </span>
                     </div>
@@ -295,8 +297,8 @@ export default async function DashboardPage() {
                     <MessageSquare className="w-5 h-5 text-[#2DD4BF]" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">AI 분석 요약</h3>
-                    <p className="text-xs text-gray-400">Last Consultation</p>
+                    <h3 className="text-lg md:text-xl font-bold text-gray-900">AI 분석 요약</h3>
+                    <p className="text-sm md:text-base text-gray-500">Last Consultation</p>
                   </div>
                 </div>
                 <ArrowUpRight className="w-5 h-5 text-gray-300 group-hover:text-[#2DD4BF] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
@@ -356,13 +358,13 @@ export default async function DashboardPage() {
                     <Activity className="w-5 h-5 text-[#2DD4BF]" />
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">종합 건강 점수</h3>
-                    <p className="text-xs text-gray-400">Health Score</p>
+                    <h3 className="text-lg md:text-xl font-bold text-gray-900">종합 건강 점수</h3>
+                    <p className="text-sm md:text-base text-gray-500">Health Score</p>
                   </div>
                 </div>
-                <div className={`text-2xl font-bold ${getScoreColor(healthScore)}`}>
+                <div className={`text-3xl md:text-4xl font-bold ${getScoreColor(healthScore)}`}>
                   {hasProfile ? healthScore : '-'}
-                  <span className="text-sm font-normal text-gray-400">/100</span>
+                  <span className="text-lg md:text-xl font-normal text-gray-600">/100</span>
                 </div>
               </div>
               
@@ -419,6 +421,12 @@ export default async function DashboardPage() {
 
           {/* 📝 오늘의 건강 기록 버튼 */}
           <HealthLogButtons />
+
+          {/* 🏆 실시간 건강 랭킹 */}
+          <DashboardRankingSection />
+
+          {/* 👥 그룹 캘린더 */}
+          <DashboardGroupSection />
 
           {/* 🌸 그날 케어 & 🔔 알림 설정 (여성 사용자 또는 전체 표시) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

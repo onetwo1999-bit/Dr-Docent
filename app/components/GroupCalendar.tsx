@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
-import { ChevronLeft, ChevronRight, Loader2, ArrowLeft, Users } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Loader2, ArrowLeft, Users, Stethoscope } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
 
@@ -12,6 +12,7 @@ export interface GroupCalendarProps {
 
 type DayActivity = { meal: boolean; exercise: boolean; medication: boolean }
 
+/** 수치 데이터 없이 기록 여부만 표시: 💊 복약, 🏋️ 운동, 🥗 식단 */
 const ICON_MEAL = '🥗'
 const ICON_EXERCISE = '🏋️'
 const ICON_MEDICATION = '💊'
@@ -38,6 +39,7 @@ export default function GroupCalendar({ groupId, groupName }: GroupCalendarProps
   const [currentDate, setCurrentDate] = useState(new Date())
   const [days, setDays] = useState<Record<string, DayActivity>>({})
   const [summary, setSummary] = useState<string>('')
+  const [aiBriefing, setAiBriefing] = useState<string>('')
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -56,15 +58,18 @@ export default function GroupCalendar({ groupId, groupName }: GroupCalendarProps
         setError(data.error || '조회에 실패했습니다.')
         setDays({})
         setSummary('')
+        setAiBriefing('')
         return
       }
       setDays(data.days || {})
       setSummary(data.summary || '')
+      setAiBriefing(data.ai_briefing || '')
     } catch (e) {
       console.error('[GroupCalendar] fetch error:', e)
       setError('네트워크 오류가 발생했습니다.')
       setDays({})
       setSummary('')
+      setAiBriefing('')
     } finally {
       setIsLoading(false)
     }
@@ -93,8 +98,14 @@ export default function GroupCalendar({ groupId, groupName }: GroupCalendarProps
         }
       )
       .subscribe()
+    
+    // 커스텀 이벤트도 리스닝
+    const handleGroupUpdate = () => fetchCalendar()
+    window.addEventListener('group-calendar-updated', handleGroupUpdate)
+    
     return () => {
       supabase.removeChannel(channel)
+      window.removeEventListener('group-calendar-updated', handleGroupUpdate)
     }
   }, [groupId, fetchCalendar])
 
@@ -155,15 +166,24 @@ export default function GroupCalendar({ groupId, groupName }: GroupCalendarProps
             <ArrowLeft className="w-6 h-6" />
           </Link>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-              <Users className="w-7 h-7 text-[#2DD4BF]" />
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
+              <Users className="w-7 h-7 md:w-8 md:h-8 text-[#2DD4BF]" />
               그룹 캘린더
             </h1>
-            <p className="text-sm text-gray-500">
+            <p className="text-base md:text-lg text-gray-600">
               {groupName ? `${groupName} · 활동만 공유돼요` : '그룹원의 활동 여부만 아이콘으로 표시돼요'}
             </p>
           </div>
         </div>
+      </div>
+
+      {/* 아이콘 범례: 수치 없이 기록 여부만 표시 */}
+      <div className="mb-5 flex flex-wrap items-center gap-4 text-base md:text-lg text-gray-700">
+        <span className="font-bold text-gray-900">표시 의미</span>
+        <span className="font-medium"><span className="mr-1 text-xl">🥗</span> 식단 기록</span>
+        <span className="font-medium"><span className="mr-1 text-xl">🏋️</span> 운동 기록</span>
+        <span className="font-medium"><span className="mr-1 text-xl">💊</span> 복약 기록</span>
+        <span className="text-gray-600">· 수치·민감 정보는 노출되지 않습니다</span>
       </div>
 
       {error && (
@@ -181,7 +201,7 @@ export default function GroupCalendar({ groupId, groupName }: GroupCalendarProps
           >
             <ChevronLeft className="w-5 h-5 text-gray-600" />
           </button>
-          <h2 className="text-lg font-semibold text-gray-900 min-w-[200px] text-center">
+          <h2 className="text-xl md:text-2xl font-bold text-gray-900 min-w-[200px] text-center">
             {currentDate.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long' })}
           </h2>
           <button
@@ -195,7 +215,7 @@ export default function GroupCalendar({ groupId, groupName }: GroupCalendarProps
         <button
           type="button"
           onClick={goToToday}
-          className="px-4 py-2 text-sm font-medium text-[#2DD4BF] hover:bg-[#2DD4BF]/10 rounded-lg transition-colors"
+          className="px-5 py-2.5 text-base md:text-lg font-semibold text-[#2DD4BF] hover:bg-[#2DD4BF]/10 rounded-lg transition-colors"
         >
           오늘
         </button>
@@ -247,10 +267,10 @@ export default function GroupCalendar({ groupId, groupName }: GroupCalendarProps
                       {cell.date.getDate()}
                     </div>
                     {activity && (activity.meal || activity.exercise || activity.medication) && (
-                      <div className="flex flex-wrap gap-1 mt-1" title="그룹 활동">
-                        {activity.meal && <span className="text-base" title="식단">🥗</span>}
-                        {activity.exercise && <span className="text-base" title="운동">🏋️</span>}
-                        {activity.medication && <span className="text-base" title="복약">💊</span>}
+                      <div className="flex flex-wrap gap-1.5 mt-2" title="그룹 활동">
+                        {activity.meal && <span className="text-xl md:text-2xl" title="식단">🥗</span>}
+                        {activity.exercise && <span className="text-xl md:text-2xl" title="운동">🏋️</span>}
+                        {activity.medication && <span className="text-xl md:text-2xl" title="복약">💊</span>}
                       </div>
                     )}
                   </div>
@@ -261,11 +281,17 @@ export default function GroupCalendar({ groupId, groupName }: GroupCalendarProps
         </div>
       )}
 
-      {summary && !isLoading && (
-        <div className="mt-6 p-4 bg-[#2DD4BF]/5 border border-[#2DD4BF]/20 rounded-2xl">
-          <p className="text-sm font-medium text-gray-500 mb-1">활동 요약</p>
-          <p className="text-gray-800 leading-relaxed">{summary}</p>
-        </div>
+      {/* 닥터 도슨트의 그룹 건강 요약 */}
+      {(aiBriefing || summary) && !isLoading && (
+        <section className="mt-8 rounded-2xl border-2 border-[#2DD4BF]/30 bg-gradient-to-b from-[#2DD4BF]/5 to-white p-6 md:p-8">
+          <div className="flex items-center gap-3 mb-4">
+            <Stethoscope className="w-6 h-6 md:w-7 md:h-7 text-[#2DD4BF]" />
+            <h3 className="text-xl md:text-2xl font-bold text-gray-900">닥터 도슨트의 그룹 건강 요약</h3>
+          </div>
+          <p className="text-base md:text-lg text-gray-800 leading-relaxed font-medium">
+            {aiBriefing || summary}
+          </p>
+        </section>
       )}
     </div>
   )
