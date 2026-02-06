@@ -138,6 +138,13 @@ export async function GET(req: Request) {
       )
     }
 
+    const { data: myProfile } = await supabase
+      .from('profiles')
+      .select('chart_number')
+      .eq('id', user.id)
+      .single()
+    const myChartNumber = (myProfile as { chart_number?: string } | null)?.chart_number ?? null
+
     // 1) health_scores에 해당 날짜 데이터가 있으면 우선 사용 (실시간에 가깝게)
     const { data: existingScores } = await supabase
       .from('health_scores')
@@ -169,11 +176,32 @@ export async function GET(req: Request) {
         score: Number(row.score),
       }))
 
+      let me: { rank: number; score: number; chart_number_masked: string } | null = null
+      if (myChartNumber) {
+        const { data: myRow } = await supabase
+          .from('health_scores')
+          .select('score')
+          .eq('chart_number', myChartNumber)
+          .eq('score_date', dateStr)
+          .single()
+        if (myRow) {
+          const myScore = Number((myRow as { score: number }).score)
+          const { count } = await supabase
+            .from('health_scores')
+            .select('*', { count: 'exact', head: true })
+            .eq('score_date', dateStr)
+            .gt('score', myScore)
+          const myRank = (count ?? 0) + 1
+          me = { rank: myRank, score: myScore, chart_number_masked: maskChartNumber(myChartNumber) }
+        }
+      }
+
       return NextResponse.json({
         success: true,
         date: dateStr,
         source: 'health_scores',
         ranking,
+        me,
       })
     }
 
@@ -197,11 +225,30 @@ export async function GET(req: Request) {
     const aggregated = aggregateLogsByUser(dayLogs || [], dateStr)
     const userIds = [...aggregated.keys()]
     if (userIds.length === 0) {
+      let me: { rank: number; score: number; chart_number_masked: string } | null = null
+      if (myChartNumber) {
+        const { data: myRow } = await supabase
+          .from('health_scores')
+          .select('score')
+          .eq('chart_number', myChartNumber)
+          .eq('score_date', dateStr)
+          .single()
+        if (myRow) {
+          const myScore = Number((myRow as { score: number }).score)
+          const { count } = await supabase
+            .from('health_scores')
+            .select('*', { count: 'exact', head: true })
+            .eq('score_date', dateStr)
+            .gt('score', myScore)
+          me = { rank: (count ?? 0) + 1, score: myScore, chart_number_masked: maskChartNumber(myChartNumber) }
+        }
+      }
       return NextResponse.json({
         success: true,
         date: dateStr,
         source: 'realtime',
         ranking: [],
+        me,
         message: '해당 날짜에 기록이 없습니다.',
       })
     }
@@ -255,11 +302,25 @@ export async function GET(req: Request) {
       score: Math.round(s.score * 100) / 100,
     }))
 
+    let me: { rank: number; score: number; chart_number_masked: string } | null = null
+    if (myChartNumber) {
+      const myIdx = scores.findIndex((s) => s.chart_number === myChartNumber)
+      if (myIdx >= 0) {
+        const s = scores[myIdx]
+        me = {
+          rank: myIdx + 1,
+          score: Math.round(s.score * 100) / 100,
+          chart_number_masked: maskChartNumber(s.chart_number),
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       date: dateStr,
       source: 'realtime',
       ranking: top10,
+      me,
     })
   } catch (e) {
     console.error('[Ranking] 서버 에러:', e)
