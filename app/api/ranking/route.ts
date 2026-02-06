@@ -45,9 +45,10 @@ async function createClient() {
 }
 
 /** 차트 번호 마스킹 (개인정보 보호): D76850 → D76*** */
-function maskChartNumber(chartNumber: string): string {
-  if (!chartNumber || chartNumber.length < 4) return '***'
-  return chartNumber.slice(0, 3) + '***'
+function maskChartNumber(chartNumber: string | unknown): string {
+  const s = typeof chartNumber === 'string' ? chartNumber : String(chartNumber ?? '')
+  if (!s || s.length < 4) return '***'
+  return s.slice(0, 3) + '***'
 }
 
 /** 해당 날짜의 건강 로그로 일일 점수 산출 (GPS 미사용, 5종 데이터만) */
@@ -69,7 +70,7 @@ function computeDailyScore(params: {
 
 /** user_id별 해당 날짜 로그 집계 (식단/운동/복약) */
 function aggregateLogsByUser(
-  logs: { user_id: string; category: string; logged_at: string }[],
+  logs: { user_id: string; category: string; logged_at: string | Date }[],
   dateStr: string
 ): Map<
   string,
@@ -82,7 +83,8 @@ function aggregateLogsByUser(
     { meal: number; exercise: number; medication: number }
   >()
   for (const log of logs) {
-    if (log.logged_at < dayStart || log.logged_at > dayEnd) continue
+    const logStr = typeof log.logged_at === 'string' ? log.logged_at : new Date(log.logged_at).toISOString()
+    if (logStr < dayStart || logStr > dayEnd) continue
     let cur = map.get(log.user_id)
     if (!cur) {
       cur = { meal: 0, exercise: 0, medication: 0 }
@@ -95,16 +97,25 @@ function aggregateLogsByUser(
   return map
 }
 
+/** logged_at을 YYYY-MM-DD 문자열로 반환 (Supabase가 Date 객체로 반환해도 안전) */
+function toDateString(loggedAt: string | Date | unknown): string {
+  if (typeof loggedAt === 'string') return loggedAt.slice(0, 10)
+  if (loggedAt instanceof Date) return loggedAt.toISOString().slice(0, 10)
+  if (loggedAt != null) return new Date(loggedAt as string | number).toISOString().slice(0, 10)
+  return ''
+}
+
 /** 연속 기록 일수 계산 (해당 날짜 포함, 그날부터 과거로 연속된 일수) */
 function computeStreakDays(
-  logs: { user_id: string; logged_at: string }[],
+  logs: { user_id: string; logged_at: string | Date }[],
   userId: string,
   upToDateStr: string
 ): number {
   const userDays = [...new Set(
     logs
       .filter((l) => l.user_id === userId)
-      .map((l) => l.logged_at.slice(0, 10))
+      .map((l) => toDateString(l.logged_at))
+      .filter(Boolean)
   )].sort()
   const end = new Date(upToDateStr)
   end.setHours(0, 0, 0, 0)
