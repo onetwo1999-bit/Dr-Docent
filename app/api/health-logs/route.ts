@@ -475,12 +475,14 @@ export async function POST(req: Request) {
       
       const missingColumn = columnMatch?.[1]
       
-      // 운동 및 복약 관련 컬럼 중 하나가 문제인 경우, 해당 컬럼을 제외하고 재시도
+      // 운동·복약·수면 등 관련 컬럼 중 하나가 문제인 경우, 해당 컬럼을 제외하고 재시도
       const retryableColumns = [
         // 운동 관련
         'heart_rate', 'exercise_type', 'duration_minutes', 'weight_kg', 'reps', 'sets',
         // 복약 관련
         'medication_name', 'medication_dosage', 'medication_ingredients',
+        // 수면 관련
+        'sleep_duration_hours',
         // 기타
         'intensity_metrics', 'notes', 'meal_description'
       ]
@@ -606,7 +608,7 @@ export async function POST(req: Request) {
           matched_pattern: columnMatch ? '매칭됨' : '매칭 실패'
         })
         
-        // 운동, 복약, 식사 관련 모든 컬럼
+        // 운동, 복약, 식사, 수면 관련 모든 컬럼
         const allRelatedColumns = [
           // 운동 관련
           'exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate', 'intensity_metrics',
@@ -614,6 +616,8 @@ export async function POST(req: Request) {
           'medication_name', 'medication_dosage', 'medication_ingredients',
           // 식사 관련
           'meal_description',
+          // 수면 관련
+          'sleep_duration_hours',
           // 기타
           'notes'
         ]
@@ -631,7 +635,7 @@ export async function POST(req: Request) {
             hint: `PostgREST 스키마 캐시가 업데이트되지 않았습니다. 다음 단계를 따라주세요:`,
             code: error.code,
             requestId: requestId,
-            solution: `1. Supabase 대시보드 → SQL Editor 열기\n2. supabase/health-logs-alter-add-columns.sql 파일 내용 복사하여 실행\n3. Supabase 대시보드 → Settings → API → "Reload schema" 클릭 (또는 프로젝트 재시작)\n4. 1-2분 대기 후 페이지 새로고침하여 다시 시도`,
+            solution: `1. Supabase 대시보드 → SQL Editor 열기\n2. supabase/health-logs-sleep-category.sql 실행 (수면 컬럼) 또는 health-logs-alter-add-columns.sql 실행\n3. Settings → API → "Reload schema" 클릭 (또는 프로젝트 재시작)\n4. 1-2분 대기 후 페이지 새로고침하여 다시 시도`,
             troubleshooting: `컬럼이 이미 추가되어 있다면:\n- Supabase 대시보드 → Settings → API → "Reload schema" 버튼 클릭\n- 또는 Supabase 프로젝트를 재시작하면 자동으로 스키마 캐시가 갱신됩니다.\n- 스키마 캐시 갱신에는 보통 1-2분이 소요됩니다.`
           }, { status: 500 })
         }
@@ -663,7 +667,7 @@ export async function POST(req: Request) {
         const columnMatch = error.message.match(/column ['"](\w+(?:_\w+)*)['"]/)
         const missingColumn = columnMatch?.[1] || '알 수 없음'
         
-        // 운동, 복약, 식사 관련 모든 컬럼 목록
+        // 운동, 복약, 식사, 수면 관련 모든 컬럼 목록
         const allRelatedColumns = [
           // 운동 관련
           'exercise_type', 'weight_kg', 'reps', 'sets', 'duration_minutes', 'heart_rate', 'intensity_metrics',
@@ -671,19 +675,24 @@ export async function POST(req: Request) {
           'medication_name', 'medication_dosage', 'medication_ingredients',
           // 식사 관련
           'meal_description',
+          // 수면 관련
+          'sleep_duration_hours',
           // 기타
           'notes'
         ]
         
+        const sqlFile = missingColumn === 'sleep_duration_hours' ? 'supabase/health-logs-sleep-category.sql' : 'supabase/health-logs-alter-add-columns.sql'
         if (allRelatedColumns.includes(missingColumn)) {
           return NextResponse.json({
             success: false,
             error: `존재하지 않는 컬럼: ${missingColumn}`,
             details: error.message,
-            hint: `health_logs 테이블에 '${missingColumn}' 컬럼이 없습니다. Supabase SQL Editor에서 'supabase/health-logs-alter-add-columns.sql' 파일을 실행해주세요.`,
+            hint: `health_logs 테이블에 '${missingColumn}' 컬럼이 없습니다. Supabase SQL Editor에서 '${sqlFile}' 파일을 실행해주세요.`,
             code: error.code,
             requestId: requestId,
-            solution: `1. Supabase 대시보드 → SQL Editor 열기\n2. supabase/health-logs-alter-add-columns.sql 파일 내용 복사\n3. 실행하여 컬럼 추가\n4. 페이지 새로고침 후 다시 시도`
+            solution: missingColumn === 'sleep_duration_hours'
+              ? `1. Supabase 대시보드 → SQL Editor 열기\n2. supabase/health-logs-sleep-category.sql 실행\n3. Settings → API → "Reload schema" 클릭\n4. 페이지 새로고침 후 다시 시도`
+              : `1. Supabase 대시보드 → SQL Editor 열기\n2. supabase/health-logs-alter-add-columns.sql 파일 내용 복사\n3. 실행하여 컬럼 추가\n4. 페이지 새로고침 후 다시 시도`
           }, { status: 400 })
         }
         
