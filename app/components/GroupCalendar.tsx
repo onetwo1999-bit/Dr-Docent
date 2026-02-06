@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, ArrowLeft, Users, Stethoscope } from 'lucide-react'
 import Link from 'next/link'
 import { createClient } from '@/utils/supabase/client'
+import MedicalDisclaimer from './MedicalDisclaimer'
 
 export interface GroupCalendarProps {
   groupId: string
@@ -291,6 +292,9 @@ export default function GroupCalendar({ groupId, groupName }: GroupCalendarProps
           <p className="text-base md:text-lg text-gray-800 leading-relaxed font-medium">
             {aiBriefing || summary}
           </p>
+          <div className="mt-4 pt-4 border-t border-gray-200">
+            <MedicalDisclaimer variant="compact" />
+          </div>
         </section>
       )}
     </div>

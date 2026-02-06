@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -133,6 +134,11 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                 <p className="whitespace-pre-wrap text-sm leading-relaxed">
                   {message.content}
                 </p>
+                {message.role === 'assistant' && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <MedicalDisclaimer variant="compact" />
+                  </div>
+                )}
               </div>
               {message.role === 'user' && (
                 <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">

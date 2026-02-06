@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts'
 import { Loader2, TrendingDown, TrendingUp, FileText } from 'lucide-react'
+import MedicalDisclaimer from './MedicalDisclaimer'
 
 type UserTier = 'Standard' | 'VIP'
 
@@ -239,6 +240,11 @@ ${ageComment} 이는 꾸준한 건강 관리의 결과로 보입니다.
               </ResponsiveContainer>
             </div>
           )}
+
+          {/* 면책 조항 */}
+          <div className="mt-8">
+            <MedicalDisclaimer variant="full" />
+          </div>
         </div>
       </div>
     )
@@ -365,6 +371,9 @@ ${ageComment} 이는 꾸준한 건강 관리의 결과로 보입니다.
             <div className="prose prose-invert max-w-none">
               <div className="text-gray-200 text-base md:text-lg leading-relaxed whitespace-pre-line font-serif">
                 {vipReport.doctorLetter}
+              </div>
+              <div className="mt-6 pt-6 border-t border-[#d4af37]/30">
+                <MedicalDisclaimer variant="compact" className="text-amber-200" />
               </div>
             </div>
           </div>

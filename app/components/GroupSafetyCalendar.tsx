@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, Pill, Footprints, Utensils, AlertCircle, ThumbsUp, Stethoscope } from 'lucide-react'
 import { createClient } from '@/utils/supabase/client'
 import { useToast } from './Toast'
+import MedicalDisclaimer from './MedicalDisclaimer'
 
 export interface GroupSafetyCalendarProps {
   groupId: string
@@ -405,6 +406,9 @@ export default function GroupSafetyCalendar({ groupId }: GroupSafetyCalendarProp
               <p className="text-base md:text-lg text-gray-800 leading-relaxed font-medium">
                 {aiComment}
               </p>
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <MedicalDisclaimer variant="compact" />
+              </div>
             </div>
             {selectedMember && !selectedMember.isOwn && (
               <button
