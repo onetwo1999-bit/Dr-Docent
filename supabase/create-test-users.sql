@@ -4,6 +4,9 @@
 -- ⚠️ 주의: 이 스크립트는 RLS를 우회하여 실행됩니다.
 -- =====================================================
 
+-- pgcrypto 확장 활성화 (비밀번호 해싱용)
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- RLS 정책을 우회하기 위한 SECURITY DEFINER 함수 생성
 CREATE OR REPLACE FUNCTION create_test_users()
 RETURNS TABLE(created_count INTEGER, user_ids UUID[])
@@ -37,6 +40,7 @@ BEGIN
     v_chart_number := UPPER(REPLACE(SUBSTRING(v_user_id::TEXT, 1, 8), '-', ''));
     
     -- auth.users에 사용자 생성 (이메일은 테스트용)
+    -- 비밀번호: test123456 (bcrypt 해싱)
     INSERT INTO auth.users (
       id,
       instance_id,
@@ -53,7 +57,7 @@ BEGIN
       v_user_id,
       '00000000-0000-0000-0000-000000000000',
       'test_user_' || i || '@test.com',
-      crypt('test123456', gen_salt('bf')), -- 비밀번호: test123456
+      crypt('test123456', gen_salt('bf', 10)), -- 비밀번호: test123456 (bcrypt, 10 rounds)
       NOW(),
       NOW(),
       NOW(),
