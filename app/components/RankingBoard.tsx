@@ -30,7 +30,7 @@ function AnimatedNumber({
 }) {
   const [display, setDisplay] = useState(value)
   const prevRef = useRef(value)
-  const rafRef = useRef<number>()
+  const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (value === prevRef.current) return
