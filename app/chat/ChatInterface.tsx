@@ -18,8 +18,8 @@ interface ChatInterfaceProps {
 const MIN_THINKING_MS = 3000
 const MIN_THINKING_LONG_MS = 5000
 const LONG_REPLY_LENGTH = 200
-/** 문단 단위 노출 간격: 11시→5시로 부드럽게 느껴지도록 충분히 여유 있게 */
-const PARAGRAPH_REVEAL_MS = 420
+/** 전체 내용 기준 횡열 1줄씩 노출 간격. 11시→5시 굴림 느낌으로 조금 더 천천히 */
+const LINE_REVEAL_MS = 540
 
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
@@ -33,15 +33,15 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [pendingTypewriterContent, setPendingTypewriterContent] = useState<string | null>(null)
-  /** 노출된 문단 개수 (0 = 아무것도 안 보임, 1 = 첫 문단만, ...) */
-  const [revealedParagraphCount, setRevealedParagraphCount] = useState(0)
+  /** 노출된 줄 개수 (전체 내용 기준 횡열 1줄씩) */
+  const [revealedLineCount, setRevealedLineCount] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const thinkingStartedAtRef = useRef<number>(0)
 
   // 메시지가 추가될 때마다 스크롤 (문단 노출 중에도 부드럽게)
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, revealedParagraphCount])
+  }, [messages, revealedLineCount])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -100,7 +100,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         setIsLoading(false)
         setMessages(prev => [...prev, { role: 'assistant', content: '' }])
         setPendingTypewriterContent(reply)
-        setRevealedParagraphCount(0)
+        setRevealedLineCount(0)
       }
 
       if (waitMs > 0) {
@@ -120,25 +120,12 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     }
   }
 
-  // 문단 단위 노출 효과 (이중 줄바꿈 기준 문단, 없으면 단일 줄 단위)
-  const { paragraphs, paragraphSeparator } = (() => {
-    if (!pendingTypewriterContent) return { paragraphs: [] as string[], paragraphSeparator: '\n' as const }
-    const byDouble = pendingTypewriterContent.split(/\n\n+/)
-    if (byDouble.length > 1) {
-      return {
-        paragraphs: byDouble.map(p => p.trim()).filter(Boolean),
-        paragraphSeparator: '\n\n' as const,
-      }
-    }
-    return {
-      paragraphs: pendingTypewriterContent.split('\n').filter(Boolean),
-      paragraphSeparator: '\n' as const,
-    }
-  })()
+  // 전체 내용 기준 횡열 1줄씩 노출 (줄바꿈 \n 기준)
+  const lines = pendingTypewriterContent != null ? pendingTypewriterContent.split('\n') : []
 
   useEffect(() => {
     if (pendingTypewriterContent == null) return
-    if (revealedParagraphCount >= paragraphs.length) {
+    if (revealedLineCount >= lines.length) {
       setMessages(prev => {
         const next = [...prev]
         const last = next[next.length - 1]
@@ -146,12 +133,12 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         return next
       })
       setPendingTypewriterContent(null)
-      setRevealedParagraphCount(0)
+      setRevealedLineCount(0)
       return
     }
-    const t = setTimeout(() => setRevealedParagraphCount(prev => prev + 1), PARAGRAPH_REVEAL_MS)
+    const t = setTimeout(() => setRevealedLineCount(prev => prev + 1), LINE_REVEAL_MS)
     return () => clearTimeout(t)
-  }, [pendingTypewriterContent, revealedParagraphCount, paragraphs.length])
+  }, [pendingTypewriterContent, revealedLineCount, lines.length])
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -176,13 +163,13 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         <div className="max-w-2xl mx-auto space-y-4">
           {messages.map((message, index) => {
             const isLastAssistant = message.role === 'assistant' && index === messages.length - 1
-            const displayParagraphs = isLastAssistant && pendingTypewriterContent != null && paragraphs.length > 0
-              ? paragraphs.slice(0, revealedParagraphCount)
+            const displayLines = isLastAssistant && pendingTypewriterContent != null && lines.length > 0
+              ? lines.slice(0, revealedLineCount)
               : null
-            const displayContent = displayParagraphs != null
-              ? displayParagraphs.join(paragraphSeparator)
+            const displayContent = displayLines != null
+              ? displayLines.join('\n')
               : message.content
-            const isStillRevealing = isLastAssistant && pendingTypewriterContent != null && revealedParagraphCount < paragraphs.length
+            const isStillRevealing = isLastAssistant && pendingTypewriterContent != null && revealedLineCount < lines.length
             return (
             <div
               key={index}
@@ -201,15 +188,15 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                 }`}
               >
                 <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {displayParagraphs != null ? (
+                  {displayLines != null ? (
                     <>
-                      {displayParagraphs.map((para, pi) => (
+                      {displayLines.map((line, li) => (
                         <span
-                          key={pi}
-                          className="block animate-chat-reveal-11-5"
+                          key={li}
+                          className="block animate-chat-reveal-11-5 origin-top-left"
                         >
-                          {para}
-                          {pi < displayParagraphs.length - 1 ? paragraphSeparator : null}
+                          {line}
+                          {li < displayLines.length - 1 ? '\n' : null}
                         </span>
                       ))}
                     </>

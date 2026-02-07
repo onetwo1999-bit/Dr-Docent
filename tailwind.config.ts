@@ -17,13 +17,19 @@ const config: Config = {
           '50%': { opacity: '0.85', transform: 'scale(1.05)' },
         },
         'chat-reveal-11-5': {
-          '0%': { opacity: '0', transform: 'translate(-8px, -8px)' },
-          '100%': { opacity: '1', transform: 'translate(0, 0)' },
+          '0%': {
+            opacity: '0',
+            transform: 'perspective(180px) rotateX(6deg) translate(-6px, -6px)',
+          },
+          '100%': {
+            opacity: '1',
+            transform: 'perspective(180px) rotateX(0deg) translate(0, 0)',
+          },
         },
       },
       animation: {
         'ai-pulse': 'ai-pulse 2s ease-in-out infinite',
-        'chat-reveal-11-5': 'chat-reveal-11-5 0.55s ease-out forwards',
+        'chat-reveal-11-5': 'chat-reveal-11-5 0.72s ease-out forwards',
       },
       colors: {
         primary: "#2DD4BF", // 닥터 도슨트 메인 컬러
