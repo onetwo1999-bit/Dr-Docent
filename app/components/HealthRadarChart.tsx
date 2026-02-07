@@ -223,6 +223,7 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
   }, [])
 
   const scores = calculateHealthScores(profile)
+  const currentAge = getAgeFromBirthDate(profile.birth_date)
   const activityScore = Math.min(100, scores.activity + activityBonus)
   const overallWithBonus = activityBonus > 0
     ? Math.round(
@@ -333,7 +334,7 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
       {process.env.NODE_ENV === 'development' && (
         <div className="mt-4 p-2 bg-gray-100 rounded text-[10px] text-gray-500">
           <div>BMI: {profile.height && profile.weight ? (profile.weight / Math.pow(profile.height / 100, 2)).toFixed(1) : 'N/A'}</div>
-          <div>프로필: {profile.height}cm / {profile.weight}kg / {age != null ? `${age}세` : 'N/A'}</div>
+          <div>프로필: {profile.height}cm / {profile.weight}kg / {currentAge != null ? `${currentAge}세` : 'N/A'}</div>
           <div>기저질환: {profile.conditions || '없음'}</div>
         </div>
       )}
