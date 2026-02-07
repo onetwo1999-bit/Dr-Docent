@@ -19,6 +19,7 @@ import NotificationSettingsCard from '../components/NotificationSettingsCard'
 import HealthReport from '../components/HealthReport'
 import DashboardRankingSection from '../components/DashboardRankingSection'
 import DashboardGroupSection from '../components/DashboardGroupSection'
+import DashboardShell from '../components/DashboardShell'
 
 // 🔒 HTTP → HTTPS 변환 함수
 function toSecureUrl(url: string | null | undefined): string | null {
@@ -206,6 +207,7 @@ export default async function DashboardPage() {
       userName={realName} 
       profile={profile}
     >
+      <DashboardShell userId={user.id}>
       <div className="min-h-screen bg-white text-gray-800 p-3 md:p-5 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-6xl mx-auto space-y-4">
           
@@ -515,6 +517,7 @@ export default async function DashboardPage() {
           <LogoutSection />
         </div>
       </div>
+      </DashboardShell>
     </DashboardClient>
   )
 }
