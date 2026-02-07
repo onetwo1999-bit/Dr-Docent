@@ -15,10 +15,15 @@ BEGIN
   END IF;
 END $$;
 
--- 2. 기존 age 값이 있으면 대략적인 birth_date로 마이그레이션
-UPDATE profiles
-SET birth_date = (CURRENT_DATE - (age * interval '1 year'))::date
-WHERE age IS NOT NULL AND birth_date IS NULL AND age BETWEEN 1 AND 120;
+-- 2. 기존 age 값이 있으면 대략적인 birth_date로 마이그레이션 (age 컬럼이 있을 때만)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'age') THEN
+    UPDATE profiles
+    SET birth_date = (CURRENT_DATE - (age * interval '1 year'))::date
+    WHERE age IS NOT NULL AND birth_date IS NULL AND age BETWEEN 1 AND 120;
+  END IF;
+END $$;
 
 -- 3. age 컬럼 삭제
 DO $$

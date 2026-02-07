@@ -421,11 +421,14 @@ export async function POST(req: Request) {
         statusCode = 400
         const columnMatch = error.message.match(/column ['"]?(\w+)['"]?/i) || 
                            error.message.match(/['"](\w+)['"]/i)
-        const missingColumn = columnMatch?.[1] || 'bmi'
+        const missingColumn = columnMatch?.[1] || 'unknown'
+        const scriptName = missingColumn === 'birth_date'
+          ? 'profiles-birth-date-migration.sql'
+          : 'profiles-schema-update.sql'
         errorResponse = {
           error: `데이터베이스 스키마가 업데이트되지 않았습니다.`,
           code: 'SCHEMA_MISMATCH',
-          details: `'${missingColumn}' 컬럼이 profiles 테이블에 없습니다. Supabase SQL Editor에서 profiles-schema-update.sql 스크립트를 실행해주세요.`,
+          details: `'${missingColumn}' 컬럼이 profiles 테이블에 없습니다. Supabase 대시보드 → SQL Editor에서 supabase/${scriptName} 내용을 붙여넣고 실행한 뒤, Settings → API에서 "Reload schema"를 클릭해주세요.`,
           field: missingColumn
         }
       }
