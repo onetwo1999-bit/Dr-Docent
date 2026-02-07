@@ -169,7 +169,7 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+      <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-200 shadow-sm">
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 text-[#2DD4BF] animate-spin" />
         </div>
@@ -179,7 +179,7 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
 
   if (!profile || !profile.height || !profile.weight) {
     return (
-      <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
+      <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-200 shadow-sm">
         <div className="text-center py-8">
           <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-400 text-sm">프로필 정보를 입력하면</p>
@@ -194,13 +194,13 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
 
   // 컴팩트한 요약 카드 (기본 표시)
   const SummaryCard = () => (
-    <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300 cursor-pointer group"
+    <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300 cursor-pointer group"
          onClick={() => setIsModalOpen(true)}>
       {/* 헤더 */}
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#2DD4BF]/10 flex items-center justify-center">
-            <FileText className="w-5 h-5 text-[#2DD4BF]" />
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-lg bg-[#2DD4BF]/10 flex items-center justify-center">
+            <FileText className="w-4 h-4 text-[#2DD4BF]" />
           </div>
           <div>
             <h3 className="font-semibold text-gray-900">AI 건강 리포트</h3>

@@ -60,7 +60,7 @@ function LogButton({ category, icon, label, count, onLog, isLoading, isSuccess }
       onClick={onLog}
       disabled={isLoading}
       className={`
-        flex flex-col items-center justify-center p-5 rounded-xl border transition-all duration-200
+        flex flex-col items-center justify-center p-3 md:p-4 rounded-xl border transition-all duration-200
         ${isSuccess 
           ? 'bg-[#2DD4BF]/5 border-[#2DD4BF] scale-[1.02]' 
           : 'bg-white border-gray-200 hover:border-[#2DD4BF] hover:bg-[#2DD4BF]/5'
@@ -69,18 +69,18 @@ function LogButton({ category, icon, label, count, onLog, isLoading, isSuccess }
       `}
     >
       <div className={`
-        w-14 h-14 rounded-xl flex items-center justify-center mb-3 transition-all
+        w-11 h-11 md:w-12 md:h-12 rounded-xl flex items-center justify-center mb-2 transition-all
         ${isSuccess ? 'bg-[#2DD4BF] shadow-sm' : 'bg-[#2DD4BF]/10'}
       `}>
         {isLoading ? (
-          <Loader2 className="w-7 h-7 text-[#2DD4BF] animate-spin" />
+          <Loader2 className="w-5 h-5 md:w-6 md:h-6 text-[#2DD4BF] animate-spin" />
         ) : isSuccess ? (
-          <Check className="w-7 h-7 text-white" />
+          <Check className="w-5 h-5 md:w-6 md:h-6 text-white" />
         ) : (
           <span className="text-[#2DD4BF]">{icon}</span>
         )}
       </div>
-      <span className="text-sm font-semibold text-gray-800 mb-1">{label}</span>
+      <span className="text-xs md:text-sm font-semibold text-gray-800 mb-0.5">{label}</span>
       <span className="text-xs text-gray-500">
         {count > 0 ? `오늘 ${count}회` : '기록하기'}
       </span>
@@ -191,8 +191,8 @@ export default function HealthLogButtons() {
   }
 
   return (
-    <div className="bg-white rounded-2xl p-6 border border-gray-200 shadow-sm">
-      <div className="flex items-center justify-between mb-5">
+    <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-200 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="font-bold text-gray-900 text-lg">오늘의 건강 기록</h3>
           <p className="text-xs text-gray-400 mt-0.5">
@@ -209,10 +209,10 @@ export default function HealthLogButtons() {
       )}
 
       {/* 4개의 로그 버튼 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
         <LogButton
           category="meal"
-          icon={<Utensils className="w-6 h-6" />}
+          icon={<Utensils className="w-5 h-5 md:w-6 md:h-6" />}
           label="식사 기록"
           count={todayStats.meal}
           onLog={() => handleLog('meal')}
@@ -221,7 +221,7 @@ export default function HealthLogButtons() {
         />
         <LogButton
           category="exercise"
-          icon={<Dumbbell className="w-6 h-6" />}
+          icon={<Dumbbell className="w-5 h-5 md:w-6 md:h-6" />}
           label="운동 완료"
           count={todayStats.exercise}
           onLog={() => handleLog('exercise')}
@@ -230,7 +230,7 @@ export default function HealthLogButtons() {
         />
         <LogButton
           category="medication"
-          icon={<Pill className="w-6 h-6" />}
+          icon={<Pill className="w-5 h-5 md:w-6 md:h-6" />}
           label="복약 완료"
           count={todayStats.medication}
           onLog={() => handleLog('medication')}
@@ -239,7 +239,7 @@ export default function HealthLogButtons() {
         />
         <LogButton
           category="sleep"
-          icon={<Moon className="w-6 h-6" />}
+          icon={<Moon className="w-5 h-5 md:w-6 md:h-6" />}
           label="수면 기록"
           count={todayStats.sleep}
           onLog={() => handleLog('sleep')}

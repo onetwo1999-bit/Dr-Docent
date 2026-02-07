@@ -205,7 +205,7 @@ export default function CycleCareCard() {
 
   if (isLoading) {
     return (
-      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+      <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
         <div className="flex items-center justify-center py-8">
           <Loader2 className="w-6 h-6 text-[#2DD4BF] animate-spin" />
         </div>
@@ -217,9 +217,9 @@ export default function CycleCareCard() {
   const daysUntil = getDaysUntil(data?.prediction.predictedNextDate || null)
 
   return (
-    <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+    <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
       {/* 헤더 */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-pink-50 flex items-center justify-center">
             <Heart className="w-5 h-5 text-pink-400" />

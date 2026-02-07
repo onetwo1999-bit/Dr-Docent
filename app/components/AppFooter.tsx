@@ -12,7 +12,7 @@ export default function AppFooter() {
   }
 
   return (
-    <footer className="border-t border-gray-200 bg-white py-6 px-4 mt-auto">
+    <footer className="border-t border-gray-200 bg-white py-4 px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] mt-auto">
       <div className="max-w-7xl mx-auto">
         <MedicalDisclaimer variant="full" />
       </div>

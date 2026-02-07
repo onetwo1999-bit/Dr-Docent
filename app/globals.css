@@ -2,14 +2,23 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 아래는 기존에 쓰시던 배경색 설정입니다 */
+/* 루트 폰트: 16px 기준, 30·40대 답답함 없이 시니어 가독성 확보 */
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --font-size-base: 16px;
+  --font-size-scale: 1;
+}
+
+html {
+  font-size: var(--font-size-base);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   margin: 0;
-}body { background-color: red !important; }
+  line-height: 1.5;
+}

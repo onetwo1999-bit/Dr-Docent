@@ -137,17 +137,17 @@ export default function RankingBoard() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-16">
-        <Loader2 className="w-10 h-10 text-[#2DD4BF] animate-spin" />
+      <div className="flex flex-col items-center justify-center py-10">
+        <Loader2 className="w-8 h-8 text-[#2DD4BF] animate-spin" />
         <p className="mt-3 text-sm text-gray-500">랭킹 불러오는 중...</p>
       </div>
     )
   }
 
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white overflow-hidden">
-      <div className="px-5 py-4 border-b border-gray-200 bg-gray-50/50">
-        <h2 className="text-xl md:text-2xl font-bold text-gray-900">실시간 건강 랭킹</h2>
+    <div className="rounded-xl md:rounded-2xl border border-gray-100 bg-white overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50/50">
+        <h2 className="text-base md:text-xl font-bold text-gray-900">실시간 건강 랭킹</h2>
         <p className="text-sm md:text-base text-gray-600 mt-1">
           {date ? `${date} 기준 · 상위 10명` : '상위 10명'}
         </p>
@@ -168,7 +168,7 @@ export default function RankingBoard() {
         {ranking.map((entry) => (
           <li
             key={`${entry.rank}-${entry.chart_number_masked}`}
-            className="flex items-center gap-4 px-4 py-3 hover:bg-gray-50/50 transition-colors"
+            className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50/50 transition-colors"
           >
             <div className="flex items-center justify-center w-8 shrink-0">
               {rankIcon(entry.rank)}
@@ -192,8 +192,8 @@ export default function RankingBoard() {
       </ul>
 
       {me && (
-        <div className="mt-2 mx-5 mb-5 p-5 rounded-xl bg-[#2DD4BF]/10 border-2 border-[#2DD4BF]/40">
-          <p className="text-sm md:text-base font-bold text-[#2DD4BF] uppercase tracking-wide mb-3">
+        <div className="mt-2 mx-4 mb-4 p-4 rounded-xl bg-[#2DD4BF]/10 border-2 border-[#2DD4BF]/40">
+          <p className="text-xs md:text-sm font-bold text-[#2DD4BF] uppercase tracking-wide mb-2">
             내 순위
           </p>
           <div className="flex items-center justify-between">

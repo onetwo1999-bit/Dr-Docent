@@ -66,7 +66,7 @@ export default function DashboardGroupSection() {
 
   if (error) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 p-6">
+      <div className="bg-white rounded-xl md:rounded-2xl border border-gray-100 p-4">
         <div className="flex items-center gap-3 mb-2">
           <Users className="w-6 h-6 text-gray-400" />
           <h3 className="text-lg font-semibold text-gray-900">그룹 캘린더</h3>

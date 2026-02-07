@@ -147,7 +147,7 @@ export default function NotificationSettingsCard({ userId }: NotificationSetting
 
   if (!isSupported) {
     return (
-      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+      <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
         <p className="text-gray-400 text-sm text-center">
           이 브라우저에서는 푸시 알림을 지원하지 않습니다.
         </p>
@@ -157,17 +157,17 @@ export default function NotificationSettingsCard({ userId }: NotificationSetting
 
   return (
     <>
-      <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+      <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
         {/* 헤더 */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2.5">
+            <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
               isSubscribed ? 'bg-[#2DD4BF]/10' : 'bg-gray-100'
             }`}>
               {isSubscribed ? (
-                <Bell className="w-5 h-5 text-[#2DD4BF]" />
+                <Bell className="w-4 h-4 text-[#2DD4BF]" />
               ) : (
-                <BellOff className="w-5 h-5 text-gray-400" />
+                <BellOff className="w-4 h-4 text-gray-400" />
               )}
             </div>
             <div>
