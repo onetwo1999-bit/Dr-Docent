@@ -7,6 +7,7 @@ import ExerciseLogModal from './ExerciseLogModal'
 import MedicationLogModal from './MedicationLogModal'
 import SleepLogModal from './SleepLogModal'
 import { getInstantFeedbackMessage, type FeedbackPayload } from '@/lib/instant-feedback-messages'
+import { getLocalTodayUtcBounds } from '@/lib/utils'
 import { useAppContextStore } from '@/store/useAppContextStore'
 
 type CategoryType = 'meal' | 'exercise' | 'medication' | 'sleep'
@@ -135,8 +136,8 @@ export default function HealthLogButtons() {
 
   const fetchTodayStats = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0]
-      const response = await fetch(`/api/health-logs?start_date=${today}&end_date=${today}`)
+      const { start, end } = getLocalTodayUtcBounds()
+      const response = await fetch(`/api/health-logs?start_utc=${encodeURIComponent(start)}&end_utc=${encodeURIComponent(end)}`)
       const data = await response.json()
       
       if (data.success) {

@@ -829,6 +829,8 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url)
     const startDate = searchParams.get('start_date')
     const endDate = searchParams.get('end_date')
+    const startUtc = searchParams.get('start_utc')
+    const endUtc = searchParams.get('end_utc')
     const category = searchParams.get('category')
 
     const supabase = await createClient()
@@ -849,12 +851,16 @@ export async function GET(req: Request) {
       .eq('user_id', user.id)
       .order('logged_at', { ascending: false })
 
-    // 날짜 필터
-    if (startDate) {
-      query = query.gte('logged_at', `${startDate}T00:00:00`)
-    }
-    if (endDate) {
-      query = query.lte('logged_at', `${endDate}T23:59:59`)
+    // 날짜 필터: start_utc/end_utc 우선 (로컬 날짜 기준 오늘 조회용)
+    if (startUtc && endUtc) {
+      query = query.gte('logged_at', startUtc).lte('logged_at', endUtc)
+    } else {
+      if (startDate) {
+        query = query.gte('logged_at', `${startDate}T00:00:00`)
+      }
+      if (endDate) {
+        query = query.lte('logged_at', `${endDate}T23:59:59`)
+      }
     }
     
     // 카테고리 필터
@@ -884,18 +890,24 @@ export async function GET(req: Request) {
       )
     }
 
-    // 오늘 날짜 기준 통계 계산
-    const today = new Date().toISOString().split('T')[0]
-    const todayLogs = data?.filter(log => 
-      log.logged_at.startsWith(today)
-    ) || []
-
-    const todayStats = {
-      meal: todayLogs.filter(l => l.category === 'meal').length,
-      exercise: todayLogs.filter(l => l.category === 'exercise').length,
-      medication: todayLogs.filter(l => l.category === 'medication').length,
-      sleep: todayLogs.filter(l => l.category === 'sleep').length,
-    }
+    // 오늘 통계: start_utc/end_utc 요청 시 응답 데이터가 이미 오늘 기록이므로 직접 집계
+    const todayStats = startUtc && endUtc
+      ? {
+          meal: (data?.filter((l: any) => l.category === 'meal').length) ?? 0,
+          exercise: (data?.filter((l: any) => l.category === 'exercise').length) ?? 0,
+          medication: (data?.filter((l: any) => l.category === 'medication').length) ?? 0,
+          sleep: (data?.filter((l: any) => l.category === 'sleep').length) ?? 0,
+        }
+      : (() => {
+          const today = new Date().toISOString().split('T')[0]
+          const todayLogs = data?.filter((log: any) => log.logged_at?.startsWith?.(today)) ?? []
+          return {
+            meal: todayLogs.filter((l: any) => l.category === 'meal').length,
+            exercise: todayLogs.filter((l: any) => l.category === 'exercise').length,
+            medication: todayLogs.filter((l: any) => l.category === 'medication').length,
+            sleep: todayLogs.filter((l: any) => l.category === 'sleep').length,
+          }
+        })()
 
     return NextResponse.json({
       success: true,
