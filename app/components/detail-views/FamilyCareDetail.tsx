@@ -12,38 +12,43 @@ export default function FamilyCareDetail() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (!user) {
-        setError('로그인이 필요합니다.')
+
+    const fetchGroup = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) {
+          setError('로그인이 필요합니다.')
+          return
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('chart_number')
+          .eq('id', user.id)
+          .single()
+
+        if (!profile?.chart_number) {
+          setError('차트 번호가 없습니다.')
+          return
+        }
+
+        const { data: group } = await supabase
+          .from('user_groups')
+          .select('group_id')
+          .contains('member_chart_numbers', [profile.chart_number])
+          .limit(1)
+          .single()
+
+        if (group) setGroupId(group.group_id)
+        else setError('가입한 그룹이 없습니다.')
+      } catch {
+        setError('그룹을 불러오는 중 오류가 발생했습니다.')
+      } finally {
         setLoading(false)
-        return
       }
+    }
 
-      supabase
-        .from('profiles')
-        .select('chart_number')
-        .eq('id', user.id)
-        .single()
-        .then(({ data: profile }) => {
-          if (!profile?.chart_number) {
-            setError('차트 번호가 없습니다.')
-            setLoading(false)
-            return
-          }
-
-          supabase
-            .from('user_groups')
-            .select('group_id')
-            .contains('member_chart_numbers', [profile.chart_number])
-            .limit(1)
-            .single()
-            .then(({ data: group }) => {
-              if (group) setGroupId(group.group_id)
-              else setError('가입한 그룹이 없습니다.')
-            })
-            .finally(() => setLoading(false))
-        })
-    })
+    fetchGroup()
   }, [])
 
   if (loading) {
