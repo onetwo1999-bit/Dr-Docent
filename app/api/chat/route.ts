@@ -5,6 +5,10 @@ import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { openai } from '@ai-sdk/openai'
 import { getAgeFromBirthDate, getAgeContextForAI } from '@/utils/health'
+import { aggregateHealthContext, formatAggregateForPrompt } from '@/utils/health-aggregator'
+
+// 매 요청마다 최신 DB 조회 (대시보드 기록 반영). 캐시 사용 안 함.
+export const dynamic = 'force-dynamic'
 
 // ========================
 // 🔧 설정 상수
@@ -123,12 +127,19 @@ function logHealthProfile(profile: UserProfile | null, userId: string): void {
 // ========================
 // 🏥 시스템 프롬프트 생성
 // ========================
-function buildSystemPrompt(profile: UserProfile | null): string {
+function buildSystemPrompt(profile: UserProfile | null, currentHealthContext: string | null): string {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
   
-  let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의입니다.
+  let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의이자, **사용자의 실시간 대시보드 데이터를 분석하는 전문가**입니다.
 
 ## 핵심 지침
+
+### 역할
+- 단순히 채팅하는 AI가 아니라, **선생님의 최신 건강 기록(수면·운동·식단·복약·랭킹)을 매 요청 시점에 반영**해 분석합니다.
+- 사용자가 묻지 않아도, **데이터상 특이점**이 보이면 먼저 언급하며 의견을 제시하세요.
+  예: 수면 부족 후 고강도 운동일, 복약은 잘 지키는데 수면이 4시간대로 떨어진 날, 랭킹 1위인데 당일 운동 강도 과다 등.
+- **데이터 간 상관관계**를 찾아 의견을 전달하세요. 사실 나열이 아니라, "지난 3일간 복약은 완벽하지만 수면이 4시간대로 떨어졌습니다", "랭킹 1위도 좋지만 오늘 운동 강도는 조절이 필요해 보입니다"처럼 **철저히 수준 높은 데이터 기반 코칭**을 하세요.
+- 모든 의견은 **의료법 범위를 넘지 않는 '코칭' 어조**를 유지하고, 진단·처방이 아닌 생활 습관 조언으로 한정하세요.
 
 ### 페르소나
 - 따뜻하고 공감 능력이 뛰어난 의사
@@ -137,7 +148,7 @@ function buildSystemPrompt(profile: UserProfile | null): string {
 
 ### 답변 구조 (엄격히 준수)
 1. **[따뜻한 공감]**: 유저의 상황에 공감하며 시작 (예: "많이 불편하셨겠어요", "걱정되셨죠")
-2. **[데이터 기반 수치 분석]**: 프로필 데이터와 글로벌 의료 가이드라인 기반 분석
+2. **[데이터 기반 수치·최신 기록 분석]**: 프로필 + **아래 [최신 건강 상태 요약]** 데이터와 글로벌 의료 가이드라인 기반 분석. 특이점이 있으면 먼저 짚어 주세요.
 3. **[생활 처방]**: 구체적이고 실천 가능한 조언 제시
 4. **[따뜻한 응원]**: 긍정적 메시지로 마무리
 
@@ -193,6 +204,10 @@ function buildSystemPrompt(profile: UserProfile | null): string {
     }
   } else {
     systemPrompt += `\n## 건강 프로필\n아직 등록된 건강 프로필이 없습니다. 맞춤 상담을 위해 프로필 등록을 권유하세요.\n`
+  }
+
+  if (currentHealthContext) {
+    systemPrompt += `\n## 최신 건강 상태 요약 (Current Health Context)\n아래는 **최근 7일간** 대시보드에 기록된 데이터의 요약입니다. 매 채팅 요청 시점마다 갱신되므로, 방금 기록한 식사·운동·수면·복약도 반영됩니다. 답변 시 이 데이터를 우선 참고하고, 특이점·상관관계가 있으면 먼저 언급하세요.\n\n\`\`\`\n${currentHealthContext}\n\`\`\`\n`
   }
 
   systemPrompt += `
@@ -356,12 +371,22 @@ export async function POST(req: Request) {
     // 🔍 건강 데이터 로깅 (상세)
     logHealthProfile(profile, user.id)
 
+    // 최근 7일 데이터 집계 (캐시 없음, 매 요청마다 최신 반영)
+    let currentHealthContext: string | null = null
+    try {
+      const aggregate = await aggregateHealthContext(supabase, user.id)
+      currentHealthContext = formatAggregateForPrompt(aggregate)
+      console.log(`📊 [${requestId}] 건강 컨텍스트 집계 완료 (${aggregate.period.start} ~ ${aggregate.period.end})`)
+    } catch (aggErr) {
+      console.warn(`⚠️ [${requestId}] 건강 집계 실패 (상담은 계속 진행):`, aggErr)
+    }
+
     // 스마트 모델 라우팅
     const selectedModel = selectModel(message)
     console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? 'Claude 3.5 Haiku (20241022)' : 'GPT-4o-mini'}`)
 
-    // 시스템 프롬프트 생성
-    const systemPrompt = buildSystemPrompt(profile)
+    // 시스템 프롬프트 생성 (프로필 + 최신 건강 요약)
+    const systemPrompt = buildSystemPrompt(profile, currentHealthContext)
 
     // 🔑 API 키 검증 (상세)
     const apiKeys = validateApiKeys()
