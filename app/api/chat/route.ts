@@ -452,10 +452,10 @@ export async function POST(req: Request) {
     }
 
     const model = actualModel === 'claude'
-      ? anthropic('claude-3-5-haiku-20241022')
+      ? anthropic('claude-3-5-haiku-latest')
       : openai('gpt-4o-mini')
 
-    console.log(`🚀 [${requestId}] AI 스트리밍 시작: ${actualModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
+    console.log(`🚀 [${requestId}] AI 스트리밍 시작: ${actualModel === 'claude' ? 'Claude 3.5 Haiku (latest)' : 'GPT-4o-mini'}`)
 
     const result = streamText({
       model,
