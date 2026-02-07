@@ -6,7 +6,7 @@ import { ArrowLeft, Save, User, Ruler, Pill } from 'lucide-react'
 import Link from 'next/link'
 
 interface Profile {
-  age: number | null
+  birth_date: string | null
   gender: string | null
   height: number | null
   weight: number | null
@@ -24,7 +24,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
   const router = useRouter()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [data, setData] = useState({
-    age: initialProfile?.age?.toString() || '',
+    birth_date: initialProfile?.birth_date || '',
     gender: initialProfile?.gender || '',
     height: initialProfile?.height?.toString() || '',
     weight: initialProfile?.weight?.toString() || '',
@@ -47,12 +47,12 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
         credentials: 'include',
         body: JSON.stringify({
           user_id: userId,
-          age: parseInt(data.age) || null,
+          birth_date: data.birth_date || null,
           gender: data.gender || null,
           height: parseFloat(data.height) || null,
           weight: parseFloat(data.weight) || null,
           conditions: data.conditions || null,
-          chronic_diseases: data.conditions || null, // conditions를 chronic_diseases에도 저장
+          chronic_diseases: data.conditions || null,
           medications: data.medications || null
         })
       })
@@ -111,12 +111,12 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
           
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-gray-500 mb-2">나이</label>
+              <label className="block text-sm text-gray-500 mb-2">생년월일</label>
               <input
-                type="number"
-                value={data.age}
-                onChange={(e) => handleChange('age', e.target.value)}
-                placeholder="30"
+                type="date"
+                value={data.birth_date}
+                onChange={(e) => handleChange('birth_date', e.target.value)}
+                max={new Date().toISOString().split('T')[0]}
                 className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
               />
             </div>

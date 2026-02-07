@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import OnboardingModal from './OnboardingModal'
 
 interface Profile {
-  age: number | null
+  birth_date: string | null
   gender: string | null
   height: number | null
   weight: number | null

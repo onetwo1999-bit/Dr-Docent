@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { FileText, TrendingUp, AlertTriangle, CheckCircle, Loader2, Heart, Activity, ArrowUpRight, X } from 'lucide-react'
 
 interface Profile {
-  age: number | null
+  birth_date: string | null
   gender: string | null
   height: number | null
   weight: number | null

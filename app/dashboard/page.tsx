@@ -3,19 +3,18 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { 
   User, 
-  HeartPulse, 
   MessageSquare, 
   Activity, 
   ArrowUpRight,
   Settings,
   Calendar
 } from 'lucide-react'
+import { getAgeFromBirthDate, getAgeGroupHealthGuide } from '@/utils/health'
 import LogoutSection from '../components/LogoutSection'
 import DashboardClient from '../components/DashboardClient'
 import HealthRadarChart from '../components/HealthRadarChart'
 import HealthLogButtons from '../components/HealthLogButtons'
 import CycleCareCard from '../components/CycleCareCard'
-import NotificationSettingsCard from '../components/NotificationSettingsCard'
 import HealthReport from '../components/HealthReport'
 import DashboardRankingSection from '../components/DashboardRankingSection'
 import DashboardGroupSection from '../components/DashboardGroupSection'
@@ -46,9 +45,10 @@ function calculateBMI(height: number | null, weight: number | null): { value: nu
   return { value: bmiRounded, category, color }
 }
 
-// 🎯 건강 점수 계산 (5대 지표 평균)
+// 🎯 건강 점수 계산 (5대 지표 평균) — age는 birth_date에서 계산된 만 나이
 function calculateHealthScore(profile: {
-  age: number | null
+  birth_date?: string | null
+  age?: number | null
   height: number | null
   weight: number | null
   conditions?: string | null
@@ -103,18 +103,18 @@ function calculateHealthScore(profile: {
     if (otherDiseases.length > 0) deductionCount++
   }
   
-  // 나이 감점 (최대 -20점)
-  if (profile.age) {
-    if (profile.age >= 70) {
+  const age = profile.age ?? (profile.birth_date ? getAgeFromBirthDate(profile.birth_date) : null)
+  if (age !== null) {
+    if (age >= 70) {
       totalScore -= 20
       deductionCount++
-    } else if (profile.age >= 60) {
+    } else if (age >= 60) {
       totalScore -= 15
       deductionCount++
-    } else if (profile.age >= 50) {
+    } else if (age >= 50) {
       totalScore -= 10
       deductionCount++
-    } else if (profile.age >= 40) {
+    } else if (age >= 40) {
       totalScore -= 5
       deductionCount++
     }
@@ -144,7 +144,7 @@ export default async function DashboardPage() {
   // 📊 profiles 테이블에서 사용자 데이터 조회
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('age, gender, height, weight, conditions, medications, chronic_diseases, bmi')
+    .select('birth_date, gender, height, weight, conditions, medications, chronic_diseases, bmi')
     .eq('id', user.id)
     .single()
 
@@ -180,11 +180,12 @@ export default async function DashboardPage() {
   
   const avatarUrl = toSecureUrl(rawAvatarUrl)
 
-  // 프로필 데이터 확인
+  const currentAge = profile?.birth_date ? getAgeFromBirthDate(profile.birth_date) : null
   const hasProfile = profile?.height && profile?.weight
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
-  const healthScore = profile ? calculateHealthScore(profile) : 0
+  const healthScore = profile ? calculateHealthScore({ ...profile, age: currentAge }) : 0
   const hypertension = hasHypertension(profile?.conditions, profile?.chronic_diseases)
+  const ageGuide = getAgeGroupHealthGuide(currentAge)
 
   // 시간대별 인사말
   const hour = new Date().getHours()
@@ -255,8 +256,13 @@ export default async function DashboardPage() {
                 <div className="space-y-2">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-600 font-medium">나이</span>
-                    <span className="font-bold text-gray-900">{profile.age || '-'}세</span>
+                    <span className="font-bold text-gray-900">{currentAge != null ? `${currentAge}세` : '-'}</span>
                   </div>
+                  {ageGuide && (
+                    <p className="text-xs text-[#2DD4BF]/90 bg-[#2DD4BF]/5 rounded-lg px-2.5 py-2 border border-[#2DD4BF]/20">
+                      💡 {ageGuide}
+                    </p>
+                  )}
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-600 font-medium">키</span>
                     <span className="font-bold text-gray-900">{profile.height || '-'}cm</span>
@@ -328,7 +334,7 @@ export default async function DashboardPage() {
                         #혈당관리
                       </span>
                     )}
-                    {profile?.age && profile.age >= 50 && (
+                    {currentAge != null && currentAge >= 50 && (
                       <span className="px-2.5 py-1 bg-purple-50 text-purple-600 text-xs rounded-full">
                         #중장년건강
                       </span>
@@ -430,16 +436,10 @@ export default async function DashboardPage() {
           {/* 👥 그룹 캘린더 */}
           <DashboardGroupSection />
 
-          {/* 🌸 그날 케어 & 🔔 알림 설정 (여성 사용자 또는 전체 표시) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* 그날 케어 (성별이 여성이거나 미설정인 경우에만 표시) */}
-            {(!profile?.gender || profile?.gender === 'female') && (
-              <CycleCareCard />
-            )}
-            
-            {/* 알림 설정 */}
-            <NotificationSettingsCard userId={user.id} />
-          </div>
+          {/* 🌸 그날 케어 (여성 사용자 또는 미설정 시에만 표시) */}
+          {(!profile?.gender || profile?.gender === 'female') && (
+            <CycleCareCard />
+          )}
 
           {/* 🕸️ 건강 레이더 차트 (확장 섹션) */}
           {hasProfile && profile && (

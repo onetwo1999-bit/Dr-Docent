@@ -1,7 +1,8 @@
 import { Activity, TrendingUp, AlertCircle, CheckCircle, Scale } from 'lucide-react'
+import { getAgeFromBirthDate } from '@/utils/health'
 
 interface Profile {
-  age: number | null
+  birth_date: string | null
   gender: string | null
   height: number | null
   weight: number | null
@@ -86,7 +87,8 @@ function getAgeAdvice(age: number | null, gender: string | null): string {
 export default function HealthSummary({ profile, userName }: HealthSummaryProps) {
   const bmi = calculateBMI(profile.height, profile.weight)
   const bmiInfo = bmi ? getBMICategory(bmi) : null
-  const ageAdvice = getAgeAdvice(profile.age, profile.gender)
+  const currentAge = getAgeFromBirthDate(profile.birth_date)
+  const ageAdvice = getAgeAdvice(currentAge, profile.gender)
 
   if (!profile.height || !profile.weight) {
     return null
@@ -164,10 +166,10 @@ export default function HealthSummary({ profile, userName }: HealthSummaryProps)
       </div>
 
       {/* 나이별 조언 */}
-      {profile.age && ageAdvice && (
+      {currentAge != null && ageAdvice && (
         <div className="bg-[#40E0D0]/10 rounded-lg p-3 mb-4">
           <p className="text-xs text-[#40E0D0] mb-1">
-            {profile.age}세 {profile.gender === 'male' ? '남성' : profile.gender === 'female' ? '여성' : ''}을 위한 조언
+            {currentAge}세 {profile.gender === 'male' ? '남성' : profile.gender === 'female' ? '여성' : ''}을 위한 조언
           </p>
           <p className="text-sm text-white/80">{ageAdvice}</p>
         </div>

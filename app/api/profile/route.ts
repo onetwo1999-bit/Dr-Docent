@@ -7,20 +7,19 @@ import { cookies } from 'next/headers'
 // ========================
 interface ProfileInput {
   user_id?: string
-  age?: string | number | null
+  birth_date?: string | null
   gender?: string | null
   height?: string | number | null
   weight?: string | number | null
   conditions?: string | null
   medications?: string | null
   chronic_diseases?: string | null
-  // 프론트엔드에서 다른 이름으로 보낼 수 있는 필드들
-  diseases?: string | null  // conditions와 동일
+  diseases?: string | null
 }
 
 interface ProfileData {
   id: string
-  age: number | null
+  birth_date: string | null
   gender: string | null
   height: number | null
   weight: number | null
@@ -108,32 +107,73 @@ function validateAndTransform(input: ProfileInput, authenticatedUserId: string):
   }
   
   // 3. 데이터 타입 변환
-  const age = toNumber(input.age)
   const height = toNumber(input.height)
   const weight = toNumber(input.weight)
   const gender = toString(input.gender)
-  
-  // conditions와 diseases 모두 지원 (스키마 매칭)
+  let birth_date: string | null = typeof input.birth_date === 'string' && input.birth_date.trim()
+    ? input.birth_date.trim()
+    : null
+
   const conditions = toString(input.conditions) || toString(input.diseases)
   const medications = toString(input.medications)
   const chronic_diseases = toString(input.chronic_diseases) || conditions
-  
-  // BMI 자동 계산
+
   const bmi = calculateBMI(height, weight)
-  
-  // 4. 범위 검증
-  if (age !== null && (age < 0 || age > 150)) {
-    return {
-      success: false,
-      error: {
-        error: '나이는 0-150 사이여야 합니다',
-        code: 'INVALID_AGE',
-        field: 'age',
-        received: input.age
+
+  // 4. birth_date 검증 (YYYY-MM-DD, 미래일 불가, 합리적 범위)
+  if (birth_date) {
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/
+    if (!dateRegex.test(birth_date)) {
+      return {
+        success: false,
+        error: {
+          error: '생년월일은 YYYY-MM-DD 형식이어야 합니다',
+          code: 'INVALID_BIRTH_DATE',
+          field: 'birth_date',
+          received: input.birth_date
+        }
+      }
+    }
+    const bd = new Date(birth_date)
+    if (isNaN(bd.getTime())) {
+      return {
+        success: false,
+        error: {
+          error: '올바른 생년월일을 입력해 주세요',
+          code: 'INVALID_BIRTH_DATE',
+          field: 'birth_date',
+          received: input.birth_date
+        }
+      }
+    }
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    if (bd > today) {
+      return {
+        success: false,
+        error: {
+          error: '생년월일은 오늘 이후일 수 없습니다',
+          code: 'INVALID_BIRTH_DATE',
+          field: 'birth_date',
+          received: input.birth_date
+        }
+      }
+    }
+    const minDate = new Date(today)
+    minDate.setFullYear(minDate.getFullYear() - 120)
+    if (bd < minDate) {
+      return {
+        success: false,
+        error: {
+          error: '생년월일이 유효 범위를 벗어났습니다',
+          code: 'INVALID_BIRTH_DATE',
+          field: 'birth_date',
+          received: input.birth_date
+        }
       }
     }
   }
-  
+
   if (height !== null && (height < 50 || height > 300)) {
     return {
       success: false,
@@ -176,7 +216,7 @@ function validateAndTransform(input: ProfileInput, authenticatedUserId: string):
     success: true,
     data: {
       id: userId,
-      age,
+      birth_date,
       gender,
       height,
       weight,
@@ -293,7 +333,7 @@ export async function POST(req: Request) {
     // 첫 번째 시도: 모든 필드 포함
     let upsertData: Record<string, unknown> = {
       id: profileData.id,
-      age: profileData.age,
+      birth_date: profileData.birth_date,
       gender: profileData.gender,
       height: profileData.height,
       weight: profileData.weight,
@@ -317,7 +357,7 @@ export async function POST(req: Request) {
       // 필수 컬럼만 포함 (기존 스키마 호환)
       const fallbackData: Record<string, unknown> = {
         id: profileData.id,
-        age: profileData.age,
+        birth_date: profileData.birth_date,
         gender: profileData.gender,
         height: profileData.height,
         weight: profileData.weight,

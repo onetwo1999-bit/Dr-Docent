@@ -10,9 +10,10 @@ import {
   ResponsiveContainer,
   Tooltip
 } from 'recharts'
+import { getAgeFromBirthDate } from '@/utils/health'
 
 interface Profile {
-  age: number | null
+  birth_date: string | null
   gender: string | null
   height: number | null
   weight: number | null
@@ -35,7 +36,8 @@ function calculateHealthScores(profile: Profile): {
   activity: number
   overall: number
 } {
-  const { age, height, weight, conditions } = profile
+  const age = getAgeFromBirthDate(profile.birth_date)
+  const { height, weight, conditions } = profile
   
   // 기본 점수 (모두 80점에서 시작)
   let cardiovascular = 80  // 심혈관
@@ -331,7 +333,7 @@ export default function HealthRadarChart({ profile }: HealthRadarChartProps) {
       {process.env.NODE_ENV === 'development' && (
         <div className="mt-4 p-2 bg-gray-100 rounded text-[10px] text-gray-500">
           <div>BMI: {profile.height && profile.weight ? (profile.weight / Math.pow(profile.height / 100, 2)).toFixed(1) : 'N/A'}</div>
-          <div>프로필: {profile.height}cm / {profile.weight}kg / {profile.age}세</div>
+          <div>프로필: {profile.height}cm / {profile.weight}kg / {age != null ? `${age}세` : 'N/A'}</div>
           <div>기저질환: {profile.conditions || '없음'}</div>
         </div>
       )}

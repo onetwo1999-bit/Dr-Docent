@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { generateText } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { openai } from '@ai-sdk/openai'
+import { getAgeFromBirthDate, getAgeContextForAI } from '@/utils/health'
 
 // ========================
 // 🔧 설정 상수
@@ -15,7 +16,7 @@ const DISCLAIMER = '\n\n━━━━━━━━━━━━━━━━━━�
 // 📊 유저 프로필 타입
 // ========================
 interface UserProfile {
-  age: number | null
+  birth_date: string | null
   gender: string | null
   height: number | null
   weight: number | null
@@ -76,8 +77,9 @@ function logHealthProfile(profile: UserProfile | null, userId: string): void {
   }
   
   const bmi = calculateBMI(profile.height, profile.weight)
+  const age = getAgeFromBirthDate(profile.birth_date)
   
-  console.log('👤 나이:', profile.age ? `${profile.age}세` : '미입력')
+  console.log('👤 나이:', age != null ? `${age}세` : '미입력')
   console.log('⚧️ 성별:', profile.gender === 'male' ? '남성' : profile.gender === 'female' ? '여성' : '미입력')
   console.log('📏 신장:', profile.height ? `${profile.height}cm` : '미입력')
   console.log('⚖️ 체중:', profile.weight ? `${profile.weight}kg` : '미입력')
@@ -154,10 +156,17 @@ function buildSystemPrompt(profile: UserProfile | null): string {
 
   // 유저 프로필 데이터 주입
   if (profile) {
+    const age = getAgeFromBirthDate(profile.birth_date)
+    const ageContext = getAgeContextForAI(age, profile.birth_date)
+    
     systemPrompt += `\n## 현재 상담 중인 선생님의 건강 프로필\n`
     
-    if (profile.age) {
-      systemPrompt += `- 연령: ${profile.age}세\n`
+    if (ageContext) {
+      systemPrompt += `- ${ageContext}\n`
+      systemPrompt += `- 답변 시 예: "올해 OO세가 되셨으니, 혈압 관리에 조금 더 주의가 필요합니다"처럼 나이와 연령대를 인지한 맞춤 조언을 해주세요.\n`
+    }
+    if (age != null) {
+      systemPrompt += `- 연령: ${age}세 (생년월일 기반 만 나이, 매년 자동 갱신)\n`
     }
     if (profile.gender) {
       systemPrompt += `- 성별: ${profile.gender === 'male' ? '남성' : '여성'}\n`
@@ -336,7 +345,7 @@ export async function POST(req: Request) {
     // 프로필 로드
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .select('age, gender, height, weight, conditions, medications')
+      .select('birth_date, gender, height, weight, conditions, medications')
       .eq('id', user.id)
       .single()
     
