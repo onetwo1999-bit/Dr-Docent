@@ -415,20 +415,22 @@ export async function POST(req: Request) {
       }
       
       // 컬럼 없음 에러 (PGRST204 포함)
+      // Supabase 메시지 예: "Could not find the 'birth_date' column of 'profiles' in the schema cache"
+      // → '컬럼명'이 "column" 앞에 오므로, 따옴표 안의 이름을 우선 추출
       if (error.code === 'PGRST204' || 
           (error.message.includes('column') && error.message.includes('does not exist')) ||
           error.message.includes('schema cache')) {
         statusCode = 400
-        const columnMatch = error.message.match(/column ['"]?(\w+)['"]?/i) || 
-                           error.message.match(/['"](\w+)['"]/i)
-        const missingColumn = columnMatch?.[1] || 'unknown'
+        const quotedColumn = error.message.match(/['"]([a-zA-Z0-9_]+)['"]\s*column/i)?.[1]
+        const columnMatch = quotedColumn || error.message.match(/column\s+['"]?(\w+)['"]?/i)?.[1] || error.message.match(/['"]([a-zA-Z0-9_]+)['"]/)?.[1]
+        const missingColumn = columnMatch || 'unknown'
         const scriptName = missingColumn === 'birth_date'
           ? 'profiles-birth-date-migration.sql'
           : 'profiles-schema-update.sql'
         errorResponse = {
           error: `데이터베이스 스키마가 업데이트되지 않았습니다.`,
           code: 'SCHEMA_MISMATCH',
-          details: `'${missingColumn}' 컬럼이 profiles 테이블에 없습니다. Supabase 대시보드 → SQL Editor에서 supabase/${scriptName} 내용을 붙여넣고 실행한 뒤, Settings → API에서 "Reload schema"를 클릭해주세요.`,
+          details: `'${missingColumn}' 컬럼이 profiles 테이블에 없거나 스키마 캐시에 반영되지 않았습니다. ① SQL Editor에서 supabase/${scriptName} 실행 ② 이미 실행했다면 Supabase Settings → API → "Reload schema" 클릭 후 다시 시도해주세요.`,
           field: missingColumn
         }
       }
