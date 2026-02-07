@@ -18,8 +18,8 @@ interface ChatInterfaceProps {
 const MIN_THINKING_MS = 3000
 const MIN_THINKING_LONG_MS = 5000
 const LONG_REPLY_LENGTH = 200
-/** 문단 단위로 표시할 때 문단 간 노출 간격 (ms). 한 글자씩보다 빠르고 자연스럽게 */
-const PARAGRAPH_REVEAL_MS = 180
+/** 문단 단위 노출 간격: 11시→5시로 부드럽게 느껴지도록 충분히 여유 있게 */
+const PARAGRAPH_REVEAL_MS = 420
 
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
@@ -176,8 +176,11 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         <div className="max-w-2xl mx-auto space-y-4">
           {messages.map((message, index) => {
             const isLastAssistant = message.role === 'assistant' && index === messages.length - 1
-            const displayContent = isLastAssistant && pendingTypewriterContent != null && paragraphs.length > 0
-              ? paragraphs.slice(0, revealedParagraphCount).join(paragraphSeparator)
+            const displayParagraphs = isLastAssistant && pendingTypewriterContent != null && paragraphs.length > 0
+              ? paragraphs.slice(0, revealedParagraphCount)
+              : null
+            const displayContent = displayParagraphs != null
+              ? displayParagraphs.join(paragraphSeparator)
               : message.content
             const isStillRevealing = isLastAssistant && pendingTypewriterContent != null && revealedParagraphCount < paragraphs.length
             return (
@@ -198,7 +201,21 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                 }`}
               >
                 <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {displayContent}
+                  {displayParagraphs != null ? (
+                    <>
+                      {displayParagraphs.map((para, pi) => (
+                        <span
+                          key={pi}
+                          className="block animate-chat-reveal-11-5"
+                        >
+                          {para}
+                          {pi < displayParagraphs.length - 1 ? paragraphSeparator : null}
+                        </span>
+                      ))}
+                    </>
+                  ) : (
+                    displayContent
+                  )}
                   {isStillRevealing && (
                     <span className="inline-block w-2 h-4 ml-0.5 bg-[#2DD4BF] animate-pulse align-middle" />
                   )}
