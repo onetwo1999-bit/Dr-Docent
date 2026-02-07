@@ -461,7 +461,7 @@ export async function POST(req: Request) {
       model,
       system: systemPrompt,
       prompt: message,
-      maxTokens: 800,
+      maxOutputTokens: 800,
       experimental_transform: smoothStream(),
       onError({ error }) {
         console.error(`❌ [${requestId}] 스트림 에러:`, error)
