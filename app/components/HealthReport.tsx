@@ -251,10 +251,17 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
   const bmi = calculateBMI(profile.height, profile.weight)
   const bmiCategory = bmi ? getBMICategory(bmi) : null
 
-  // 컴팩트한 요약 카드 (기본 표시)
+  // 컴팩트한 요약 카드: 긍정 피드백 한 줄, 길면 앞부분 선명 + 나머지 그라데이션 페이드로 탭 유도
+  const VISIBLE_LINES = 2
+  const lineHeightRem = 1.375
+  const maxHeightRem = VISIBLE_LINES * lineHeightRem
+  const showFade = report && report.feedback.length > 36
+
   const SummaryCard = () => (
-    <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300 cursor-pointer group"
-         onClick={() => setIsModalOpen(true)}>
+    <div
+      className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300 cursor-pointer group"
+      onClick={() => setIsModalOpen(true)}
+    >
       {/* 헤더 */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2.5">
@@ -269,17 +276,39 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
         <ArrowUpRight className="w-5 h-5 text-gray-300 group-hover:text-[#2DD4BF] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
       </div>
 
-      {/* 요약 정보 */}
+      {/* 긍정 피드백 한줄: 짧으면 통째로, 길면 일부 선명 + 아래쪽 페이드 */}
       {report && (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-gray-500 text-sm">현재 상태</span>
-            <span className="text-sm font-medium text-gray-900 line-clamp-1">{report.status}</span>
+        <div className="relative rounded-lg bg-[#2DD4BF]/5 border border-[#2DD4BF]/15 p-3">
+          <div className="flex items-start gap-2">
+            <CheckCircle className="w-4 h-4 text-[#2DD4BF] mt-0.5 flex-shrink-0" />
+            <div className="flex-1 min-w-0 relative">
+              <p
+                className="text-sm text-gray-700 leading-[1.375] pr-1"
+                style={{
+                  maxHeight: showFade ? `${maxHeightRem}rem` : undefined,
+                  overflow: 'hidden',
+                  display: '-webkit-box',
+                  WebkitLineClamp: showFade ? VISIBLE_LINES : undefined,
+                  WebkitBoxOrient: 'vertical',
+                } as React.CSSProperties}
+              >
+                {report.feedback}
+              </p>
+              {/* 나머지 구간 그라데이션 페이드 (길 때만) */}
+              {showFade && (
+                <div
+                  className="absolute bottom-0 left-0 right-0 h-10 pointer-events-none rounded-b-lg"
+                  style={{
+                    background: 'linear-gradient(to top, rgba(255,255,255,0.99) 0%, rgba(255,255,255,0.75) 25%, transparent 100%)',
+                  }}
+                  aria-hidden
+                />
+              )}
+            </div>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-gray-500 text-sm">주의사항</span>
-            <span className="text-sm font-medium text-amber-600 line-clamp-1">{report.caution}</span>
-          </div>
+          {showFade && (
+            <p className="text-xs text-[#2DD4BF] mt-2 font-medium">탭하면 전체 보기</p>
+          )}
         </div>
       )}
     </div>
