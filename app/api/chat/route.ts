@@ -125,9 +125,21 @@ function logHealthProfile(profile: UserProfile | null, userId: string): void {
 }
 
 // ========================
+// 🏥 앱 컨텍스트 타입
+// ========================
+interface AppContextForAPI {
+  recentActions?: Array< { type: string; label: string; detail?: string; path?: string } >
+  hesitationHint?: boolean
+}
+
+// ========================
 // 🏥 시스템 프롬프트 생성
 // ========================
-function buildSystemPrompt(profile: UserProfile | null, currentHealthContext: string | null): string {
+function buildSystemPrompt(
+  profile: UserProfile | null,
+  currentHealthContext: string | null,
+  appContext?: AppContextForAPI | null
+): string {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
   
   let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의이자, **사용자의 실시간 대시보드 데이터를 분석하는 전문가**입니다.
@@ -208,6 +220,17 @@ function buildSystemPrompt(profile: UserProfile | null, currentHealthContext: st
 
   if (currentHealthContext) {
     systemPrompt += `\n## 최신 건강 상태 요약 (Current Health Context)\n아래는 **최근 7일간** 대시보드에 기록된 데이터의 요약입니다. 매 채팅 요청 시점마다 갱신되므로, 방금 기록한 식사·운동·수면·복약도 반영됩니다. 답변 시 이 데이터를 우선 참고하고, 특이점·상관관계가 있으면 먼저 언급하세요.\n\n\`\`\`\n${currentHealthContext}\n\`\`\`\n`
+  }
+
+  if (appContext?.recentActions?.length) {
+    const lines = appContext.recentActions.map(
+      (a) => `- ${a.label}${a.detail ? ` (${a.detail})` : ''}${a.path ? ` [${a.path}]` : ''}`
+    )
+    systemPrompt += `\n## 앱 내 최근 행동 (선생님이 방금 하신 일)\n아래는 선생님이 앱에서 방금 하신 행동입니다. 답변 시 이걸 반영해 주세요.\n예: 생년월일 수정 직후 "나 어때?"라고 물으면 → "방금 생년월일을 수정하셨네요! 바뀐 나이(OO세)에 맞춰 심박수 기준을 다시 설정했습니다."처럼 앱 내 활동을 즉시 언급하세요.\n\n${lines.join('\n')}\n\n`
+  }
+
+  if (appContext?.hesitationHint) {
+    systemPrompt += `\n## 프로액티브 제안\n선생님이 최근에 기록 없이 대시보드를 오래 보셨을 수 있습니다. 적절한 타이밍에 "기록에 어려움이 있으신가요? 제가 도와드릴까요?" 같은 배려 있는 제안을 할 수 있습니다.\n\n`
   }
 
   systemPrompt += `
@@ -315,10 +338,14 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null)
     if (!body) return NextResponse.json({ error: 'JSON 형식 오류' }, { status: 400 })
     
-    const { message } = body
+    const { message, recentActions, hesitationHint } = body
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ error: '메시지가 필요합니다' }, { status: 400 })
     }
+    const appContext: AppContextForAPI | null =
+      Array.isArray(recentActions) || typeof hesitationHint === 'boolean'
+        ? { recentActions: Array.isArray(recentActions) ? recentActions : [], hesitationHint: !!hesitationHint }
+        : null
 
     console.log(`💬 [${requestId}] 메시지: "${message.slice(0, 50)}${message.length > 50 ? '...' : ''}"`)
 
@@ -385,8 +412,8 @@ export async function POST(req: Request) {
     const selectedModel = selectModel(message)
     console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? 'Claude 3.5 Haiku (20241022)' : 'GPT-4o-mini'}`)
 
-    // 시스템 프롬프트 생성 (프로필 + 최신 건강 요약)
-    const systemPrompt = buildSystemPrompt(profile, currentHealthContext)
+    // 시스템 프롬프트 생성 (프로필 + 최신 건강 요약 + 앱 컨텍스트)
+    const systemPrompt = buildSystemPrompt(profile, currentHealthContext, appContext)
 
     // 🔑 API 키 검증 (상세)
     const apiKeys = validateApiKeys()

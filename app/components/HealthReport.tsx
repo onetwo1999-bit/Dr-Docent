@@ -58,6 +58,12 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
     fetchReportData()
   }, [profile, userId])
 
+  useEffect(() => {
+    const openModal = () => setIsModalOpen(true)
+    window.addEventListener('open-health-report-modal', openModal)
+    return () => window.removeEventListener('open-health-report-modal', openModal)
+  }, [])
+
   const fetchReportData = async () => {
     setIsLoading(true)
     try {

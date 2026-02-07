@@ -6,6 +6,8 @@ import MealLogModal from './MealLogModal'
 import ExerciseLogModal from './ExerciseLogModal'
 import MedicationLogModal from './MedicationLogModal'
 import SleepLogModal from './SleepLogModal'
+import { getInstantFeedbackMessage, type FeedbackPayload } from '@/lib/instant-feedback-messages'
+import { useAppContextStore } from '@/store/useAppContextStore'
 
 type CategoryType = 'meal' | 'exercise' | 'medication' | 'sleep'
 
@@ -151,7 +153,8 @@ export default function HealthLogButtons() {
     setOpenModal(category)
   }
 
-  const handleModalSuccess = (category: CategoryType) => {
+  const setLastHealthLogAt = useAppContextStore((s) => s.setLastHealthLogAt)
+  const handleModalSuccess = (category: CategoryType, payload?: FeedbackPayload) => {
     setError(null)
     setLastSuccessAction(editingLog ? 'edit' : 'add')
     setSuccessCategory(category)
@@ -160,8 +163,10 @@ export default function HealthLogButtons() {
       [category]: prev[category] + (editingLog ? 0 : 1)
     }))
     setEditingLog(null)
+    setLastHealthLogAt(Date.now())
     window.dispatchEvent(new CustomEvent('health-log-updated', { detail: { category } }))
     window.dispatchEvent(new CustomEvent('ranking-updated'))
+    window.dispatchEvent(new CustomEvent('ai-coach-toast', { detail: { message: getInstantFeedbackMessage(category, payload) } }))
     setTimeout(() => setSuccessCategory(null), 3000)
     fetchTodayStats()
   }
@@ -329,7 +334,7 @@ export default function HealthLogButtons() {
       <SleepLogModal
         isOpen={openModal === 'sleep'}
         onClose={handleCloseModal}
-        onSuccess={() => handleModalSuccess('sleep')}
+        onSuccess={(payload) => handleModalSuccess('sleep', payload)}
         initialData={openModal === 'sleep' ? editingLog : null}
       />
     </div>

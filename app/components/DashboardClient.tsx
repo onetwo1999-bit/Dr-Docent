@@ -3,6 +3,9 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import OnboardingModal from './OnboardingModal'
+import AIActiveStatusPanel from './AIActiveStatusPanel'
+import AICoachToast from './AICoachToast'
+import { useAppContextStore } from '@/store/useAppContextStore'
 
 interface Profile {
   birth_date: string | null
@@ -27,11 +30,17 @@ export default function DashboardClient({ userId, userName, profile, children }:
   // profile prop이 변경될 때마다 showOnboarding 상태 업데이트
   const [showOnboarding, setShowOnboarding] = useState(!profile?.height || !profile?.weight)
 
-  // profile prop이 변경되면 온보딩 표시 여부 업데이트
+  const setDashboardEnteredAt = useAppContextStore((s) => s.setDashboardEnteredAt)
+
   useEffect(() => {
     const hasCompleteProfile = profile?.height && profile?.weight
     setShowOnboarding(!hasCompleteProfile)
   }, [profile])
+
+  useEffect(() => {
+    setDashboardEnteredAt(Date.now())
+    return () => setDashboardEnteredAt(null)
+  }, [setDashboardEnteredAt])
 
   const handleOnboardingComplete = () => {
     // 모달을 즉시 닫기 (명시적 상태 업데이트)
@@ -45,6 +54,12 @@ export default function DashboardClient({ userId, userName, profile, children }:
   return (
     <>
       {children}
+
+      {/* AI 코치의 한마디 토스트 (상단) */}
+      <AICoachToast />
+
+      {/* 닥터 도슨트 AI 상태창 (우측 하단) */}
+      <AIActiveStatusPanel />
       
       {/* 온보딩 모달 */}
       {showOnboarding && (

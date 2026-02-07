@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save, User, Ruler, Pill } from 'lucide-react'
 import Link from 'next/link'
 import BirthDateWheelPicker from './BirthDateWheelPicker'
+import { useAppContextStore } from '@/store/useAppContextStore'
 
 interface Profile {
   birth_date: string | null
@@ -23,6 +24,7 @@ interface ProfileFormProps {
 
 export default function ProfileForm({ userId, userName, initialProfile }: ProfileFormProps) {
   const router = useRouter()
+  const pushAction = useAppContextStore((s) => s.pushAction)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [data, setData] = useState({
     birth_date: initialProfile?.birth_date || '',
@@ -63,11 +65,18 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
       if (response.ok && result.success) {
         // 성공 메시지 표시
         console.log('✅ 프로필 저장 성공:', result)
-        // 경고 메시지가 있으면 표시
-        if (result.warning) {
-          console.warn('⚠️', result.warning)
-        }
-        // 대시보드로 이동 및 새로고침
+        if (result.warning) console.warn('⚠️', result.warning)
+        // 앱 컨텍스트: AI가 "방금 수정하셨네요" 등 반영
+        const details: string[] = []
+        if ((data.birth_date || '') !== (initialProfile?.birth_date || '')) details.push('생년월일')
+        if (String(data.height || '') !== String(initialProfile?.height ?? '')) details.push('키')
+        if (String(data.weight || '') !== String(initialProfile?.weight ?? '')) details.push('몸무게')
+        if ((data.conditions || '') !== (initialProfile?.conditions || '')) details.push('기저 질환·복약')
+        pushAction({
+          type: 'profile_edit',
+          label: '프로필 수정',
+          detail: details.length ? details.join(', ') + ' 변경' : undefined
+        })
         router.push('/dashboard')
         router.refresh()
       } else {

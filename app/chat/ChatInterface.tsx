@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Send, Bot, User, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
+import { useAppContextStore } from '@/store/useAppContextStore'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -15,6 +16,8 @@ interface ChatInterfaceProps {
 }
 
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
+  const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
+  const getHesitationHint = useAppContextStore((s) => s.getHesitationHint)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -44,10 +47,20 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     try {
       console.log('🔄 [Chat] API 요청 시작:', userMessage)
       
+      const actions = getRecentActionsForAPI().map(({ type, label, detail, path }) => ({
+        type,
+        label,
+        ...(detail && { detail }),
+        ...(path && { path })
+      }))
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({
+          message: userMessage,
+          recentActions: actions,
+          hesitationHint: getHesitationHint()
+        }),
       })
 
       console.log('📡 [Chat] 응답 상태:', response.status)

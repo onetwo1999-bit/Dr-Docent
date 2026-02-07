@@ -8,7 +8,7 @@ import type { HealthLogItem } from './HealthLogButtons'
 interface SleepLogModalProps {
   isOpen: boolean
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (payload?: { sleep_duration_hours?: number }) => void
   initialData?: HealthLogItem | null
   defaultLoggedAt?: string | null
 }
@@ -94,7 +94,7 @@ export default function SleepLogModal({ isOpen, onClose, onSuccess, initialData,
           setHours(7)
           setNotes('')
         }
-        onSuccess()
+        onSuccess({ sleep_duration_hours: value })
         onClose()
       } else {
         showToast(result.error || '저장에 실패했습니다.', 'error')

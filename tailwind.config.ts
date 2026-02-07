@@ -11,6 +11,15 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      keyframes: {
+        'ai-pulse': {
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%': { opacity: '0.85', transform: 'scale(1.05)' },
+        },
+      },
+      animation: {
+        'ai-pulse': 'ai-pulse 2s ease-in-out infinite',
+      },
       colors: {
         primary: "#2DD4BF", // 닥터 도슨트 메인 컬러
       },
