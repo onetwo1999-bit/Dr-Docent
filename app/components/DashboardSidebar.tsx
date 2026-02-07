@@ -11,7 +11,7 @@ import {
   LogOut,
   Loader2,
 } from 'lucide-react'
-import { createClient } from '@/utils/supabase/client'
+import { signOut } from '@/app/actions/auth'
 
 export type SidebarMenuId = 'family-care' | 'briefing-note' | 'analysis-report' | 'health-notifications' | 'service-settings' | null
 
@@ -29,16 +29,6 @@ interface DashboardSidebarProps {
   isOpen: boolean
   onClose: () => void
   onSelectMenu: (id: SidebarMenuId) => void
-}
-
-function clearSupabaseCookies() {
-  if (typeof document === 'undefined') return
-  document.cookie.split(';').forEach((cookie) => {
-    const name = cookie.split('=')[0].trim()
-    if (name.startsWith('sb-') || name.includes('supabase')) {
-      document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`
-    }
-  })
 }
 
 export default function DashboardSidebar({ isOpen, onClose, onSelectMenu }: DashboardSidebarProps) {
@@ -60,14 +50,10 @@ export default function DashboardSidebar({ isOpen, onClose, onSelectMenu }: Dash
     if (isLoggingOut) return
     setIsLoggingOut(true)
     try {
-      const supabase = createClient()
-      await supabase.auth.signOut()
-      clearSupabaseCookies()
       onClose()
-      window.location.href = '/'
+      await signOut()
     } catch (e) {
       console.error('로그아웃 오류:', e)
-      clearSupabaseCookies()
       window.location.href = '/'
     } finally {
       setIsLoggingOut(false)
