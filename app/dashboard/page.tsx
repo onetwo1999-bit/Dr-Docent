@@ -9,7 +9,7 @@ import {
   Settings,
   Calendar
 } from 'lucide-react'
-import { getAgeFromBirthDate, getAgeGroupHealthGuide } from '@/utils/health'
+import { getAgeFromBirthDate } from '@/utils/health'
 import LogoutSection from '../components/LogoutSection'
 import DashboardClient from '../components/DashboardClient'
 import HealthRadarChart from '../components/HealthRadarChart'
@@ -185,7 +185,6 @@ export default async function DashboardPage() {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
   const healthScore = profile ? calculateHealthScore({ ...profile, age: currentAge }) : 0
   const hypertension = hasHypertension(profile?.conditions, profile?.chronic_diseases)
-  const ageGuide = getAgeGroupHealthGuide(currentAge)
 
   // 시간대별 인사말
   const hour = new Date().getHours()
@@ -258,11 +257,6 @@ export default async function DashboardPage() {
                     <span className="text-gray-600 font-medium">나이</span>
                     <span className="font-bold text-gray-900">{currentAge != null ? `${currentAge}세` : '-'}</span>
                   </div>
-                  {ageGuide && (
-                    <p className="text-xs text-[#2DD4BF]/90 bg-[#2DD4BF]/5 rounded-lg px-2.5 py-2 border border-[#2DD4BF]/20">
-                      💡 {ageGuide}
-                    </p>
-                  )}
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-gray-600 font-medium">키</span>
                     <span className="font-bold text-gray-900">{profile.height || '-'}cm</span>

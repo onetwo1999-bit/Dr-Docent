@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { FileText, TrendingUp, AlertTriangle, CheckCircle, Loader2, Heart, Activity, ArrowUpRight, X } from 'lucide-react'
+import { FileText, AlertTriangle, CheckCircle, Loader2, Activity, ArrowUpRight, X } from 'lucide-react'
+import { getAgeFromBirthDate, getAgeGroupHealthGuide } from '@/utils/health'
 
 interface Profile {
   birth_date: string | null
@@ -18,6 +19,8 @@ interface HealthLog {
   category: string
   logged_at: string
   note?: string
+  meal_description?: string | null
+  sleep_duration_hours?: number | null
 }
 
 interface HealthReportProps {
@@ -98,14 +101,20 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
     const mealLogs = logs.filter(l => l.category === 'meal')
     const exerciseLogs = logs.filter(l => l.category === 'exercise')
     const medicationLogs = logs.filter(l => l.category === 'medication')
+    const sleepLogs = logs.filter(l => l.category === 'sleep')
     
-    // 연속 복약 일수 계산
     const today = new Date().toISOString().split('T')[0]
+    const yesterday = new Date()
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayStr = yesterday.toISOString().split('T')[0]
+    
+    // 연속 복약 일수 + 오늘 복약 기록 여부
     const medicationDates = medicationLogs
       .map(l => l.logged_at.split('T')[0])
       .filter((date, index, self) => self.indexOf(date) === index)
       .sort()
       .reverse()
+    const hasMedicationToday = medicationDates.includes(today)
     
     let consecutiveDays = 0
     for (let i = 0; i < medicationDates.length; i++) {
@@ -118,6 +127,16 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
         break
       }
     }
+
+    // 수면: 평균 시간, 어제 기록 여부
+    const sleepDurations = sleepLogs
+      .map(l => l.sleep_duration_hours)
+      .filter((h): h is number => h != null && !Number.isNaN(Number(h)))
+    const avgSleepHours = sleepDurations.length > 0
+      ? sleepDurations.reduce((a, b) => a + b, 0) / sleepDurations.length
+      : 0
+    const sleepDates = sleepLogs.map(l => l.logged_at.split('T')[0])
+    const hasSleepYesterday = sleepDates.includes(yesterdayStr)
 
     // 상태 메시지 생성 (chronic_diseases 우선, 없으면 conditions 사용)
     const diseases = profile.chronic_diseases || profile.conditions
@@ -150,7 +169,7 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
       caution = '현재 상태를 유지하기 위해 꾸준한 관리가 필요합니다.'
     }
 
-    // 피드백 생성
+    // 피드백 생성 (기본 + 질환별 맞춤 + 데이터 누락 넛지 + 연령대 건강팁 + 멘탈 케어)
     let feedback = ''
     if (consecutiveDays >= 3) {
       feedback = `${consecutiveDays}일 연속 복약 성공! 꾸준한 습관이 선생님의 건강 자산입니다.`
@@ -163,6 +182,40 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
     } else {
       feedback = '건강 관리를 위해 식사, 운동, 복약 기록을 꾸준히 남겨보세요.'
     }
+
+    // 질환별 맞춤: 통풍 + 최근 식단에 단백질 언급 시 식이 가이드
+    const hasGout = diseases?.toLowerCase().includes('통풍')
+    const proteinKeywords = ['고기', '닭', '생선', '돈까스', '육회', '달걀', '계란', '두부', '콩', '단백질', '찜닭', '삼겹']
+    const recentMealText = mealLogs
+      .slice(0, 14)
+      .map(l => (l.meal_description || l.note || '').toLowerCase())
+      .join(' ')
+    const hasRecentProtein = hasGout && proteinKeywords.some(kw => recentMealText.includes(kw))
+    if (hasRecentProtein) {
+      feedback += ' 단백질 섭취 시 식이섬유(채소)를 함께 늘려보시는 건 어떨까요?'
+    }
+
+    // 데이터 입력 넛지: 오늘 복약 기록 없음
+    if (!hasMedicationToday && medicationLogs.length > 0) {
+      feedback += ' 오늘 약 복용 기록이 아직 없네요. 잊지 말고 챙겨주세요!'
+    } else if (!hasMedicationToday) {
+      feedback += ' 오늘 복약 기록이 아직 없어요. 복용하셨다면 기록해 주세요!'
+    }
+
+    // 데이터 입력 넛지: 평소 수면 기록하다 어제 비었을 때
+    if (avgSleepHours >= 6 && avgSleepHours <= 8 && sleepDurations.length >= 3 && !hasSleepYesterday) {
+      feedback += ' 어제 수면 기록이 빠졌어요. 트레이너님의 회복 패턴 분석을 위해 기록 부탁드려요!'
+    }
+
+    // 연령대별 건강 팁 (신체 카드에서 제거한 스트레스 관리 등 → AI 의견으로 통합)
+    const currentAge = getAgeFromBirthDate(profile.birth_date)
+    const ageTip = getAgeGroupHealthGuide(currentAge)
+    if (ageTip) {
+      feedback += ` ${ageTip}`
+    }
+
+    // 멘탈 케어: 따뜻한 격려 한마디
+    feedback += ' 기록을 남기는 것만으로도 이미 충분히 건강한 하루를 만들고 계십니다.'
 
     setReport({ status, caution, feedback })
   }
@@ -274,26 +327,6 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
                 <X className="w-5 h-5 text-gray-400" />
               </button>
             </div>
-
-            {/* BMI 요약 */}
-            {bmi && (
-              <div className="mb-6 p-4 bg-gray-50 rounded-xl">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm text-gray-600">BMI 지수</span>
-                  <span className="text-lg font-bold text-gray-900">{bmi.toFixed(1)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">분류</span>
-                  <span className={`text-sm font-medium ${
-                    bmiCategory === '정상' ? 'text-green-600' :
-                    bmiCategory === '과체중' ? 'text-yellow-600' :
-                    bmiCategory === '저체중' ? 'text-blue-600' : 'text-red-600'
-                  }`}>
-                    {bmiCategory}
-                  </span>
-                </div>
-              </div>
-            )}
 
             {/* 상태 */}
             {report && (
