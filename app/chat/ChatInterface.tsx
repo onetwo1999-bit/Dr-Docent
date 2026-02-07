@@ -15,6 +15,11 @@ interface ChatInterfaceProps {
   userName: string
 }
 
+const MIN_THINKING_MS = 3000
+const MIN_THINKING_LONG_MS = 5000
+const LONG_REPLY_LENGTH = 200
+const TYPEWRITER_INTERVAL_MS = 48
+
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
   const getHesitationHint = useAppContextStore((s) => s.getHesitationHint)
@@ -26,12 +31,15 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [pendingTypewriterContent, setPendingTypewriterContent] = useState<string | null>(null)
+  const [typewriterLength, setTypewriterLength] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const thinkingStartedAtRef = useRef<number>(0)
 
-  // 메시지가 추가될 때마다 스크롤
+  // 메시지가 추가될 때마다 스크롤 (타이핑 중에도 부드럽게)
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
+  }, [messages, typewriterLength])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,6 +51,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     // 유저 메시지 추가
     setMessages(prev => [...prev, { role: 'user', content: userMessage }])
     setIsLoading(true)
+    thinkingStartedAtRef.current = Date.now()
 
     try {
       console.log('🔄 [Chat] API 요청 시작:', userMessage)
@@ -65,46 +74,67 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
 
       console.log('📡 [Chat] 응답 상태:', response.status)
 
-      // 에러 상태 코드별 처리
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
         console.error('❌ [Chat] API 에러:', response.status, errorData)
-        
         let errorMessage = '일시적인 오류가 발생했습니다.'
-        
-        if (response.status === 401) {
-          errorMessage = '로그인이 만료되었습니다. 다시 로그인해주세요.'
-        } else if (response.status === 400) {
-          errorMessage = '메시지를 입력해주세요.'
-        } else if (response.status === 500) {
-          errorMessage = '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
-        }
-        
+        if (response.status === 401) errorMessage = '로그인이 만료되었습니다. 다시 로그인해주세요.'
+        else if (response.status === 400) errorMessage = '메시지를 입력해주세요.'
+        else if (response.status === 500) errorMessage = '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
         throw new Error(errorMessage)
       }
 
       const data = await response.json()
       console.log('✅ [Chat] 응답 수신 완료')
       
-      // AI 응답 추가
-      if (data.reply) {
-        setMessages(prev => [...prev, { role: 'assistant', content: data.reply }])
+      const reply = data.reply
+      if (!reply) throw new Error('응답 데이터가 없습니다.')
+
+      const minThinkingMs = reply.length > LONG_REPLY_LENGTH ? MIN_THINKING_LONG_MS : MIN_THINKING_MS
+      const elapsed = Date.now() - thinkingStartedAtRef.current
+      const waitMs = Math.max(0, minThinkingMs - elapsed)
+
+      const applyReply = () => {
+        setIsLoading(false)
+        setMessages(prev => [...prev, { role: 'assistant', content: '' }])
+        setPendingTypewriterContent(reply)
+        setTypewriterLength(0)
+      }
+
+      if (waitMs > 0) {
+        setTimeout(applyReply, waitMs)
       } else {
-        throw new Error('응답 데이터가 없습니다.')
+        applyReply()
       }
       
     } catch (error) {
       console.error('❌ [Chat] 에러:', error)
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
-      
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: `죄송합니다. ${errorMessage}\n다시 시도해주세요. 🙏` 
-      }])
-    } finally {
       setIsLoading(false)
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: `죄송합니다. ${errorMessage}\n다시 시도해주세요. 🙏`
+      }])
     }
   }
+
+  // 한 글자씩 타이핑 효과
+  useEffect(() => {
+    if (pendingTypewriterContent == null || typewriterLength >= pendingTypewriterContent.length) {
+      if (pendingTypewriterContent != null && typewriterLength >= pendingTypewriterContent.length) {
+        setMessages(prev => {
+          const next = [...prev]
+          const last = next[next.length - 1]
+          if (last?.role === 'assistant') next[next.length - 1] = { ...last, content: pendingTypewriterContent }
+          return next
+        })
+        setPendingTypewriterContent(null)
+      }
+      return
+    }
+    const t = setTimeout(() => setTypewriterLength(prev => prev + 1), TYPEWRITER_INTERVAL_MS)
+    return () => clearTimeout(t)
+  }, [pendingTypewriterContent, typewriterLength])
 
   return (
     <div className="min-h-screen bg-white flex flex-col">
@@ -127,7 +157,12 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
       {/* 채팅 영역 */}
       <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
         <div className="max-w-2xl mx-auto space-y-4">
-          {messages.map((message, index) => (
+          {messages.map((message, index) => {
+            const isLastAssistant = message.role === 'assistant' && index === messages.length - 1
+            const displayContent = isLastAssistant && pendingTypewriterContent != null
+              ? pendingTypewriterContent.slice(0, typewriterLength)
+              : message.content
+            return (
             <div
               key={index}
               className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -145,7 +180,10 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                 }`}
               >
                 <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {message.content}
+                  {displayContent}
+                  {isLastAssistant && pendingTypewriterContent != null && typewriterLength < pendingTypewriterContent.length && (
+                    <span className="inline-block w-2 h-4 ml-0.5 bg-[#2DD4BF] animate-pulse align-middle" />
+                  )}
                 </p>
                 {message.role === 'assistant' && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
@@ -159,7 +197,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                 </div>
               )}
             </div>
-          ))}
+          )})}
           
           {/* 로딩 인디케이터 */}
           {isLoading && (

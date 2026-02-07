@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Bot } from 'lucide-react'
 
-const DEFAULT_MESSAGE = '트레이너님의 건강 지표를 지켜보고 있습니다.'
+const DEFAULT_MESSAGE = '닥터도슨트AI 가 사용자님의 건강을 실시간으로 추적하고 있습니다.'
 
 const CATEGORY_MESSAGES: Record<string, string> = {
   meal: '영양 밸런스 분석 중...',
@@ -48,9 +48,9 @@ export default function AIActiveStatusPanel() {
       >
         <Bot className="w-5 h-5 text-[#2DD4BF]" />
       </div>
-      <div className="min-w-0">
+      <div className="min-w-0 max-w-[280px]">
         <p className="text-xs font-medium text-gray-500">닥터 도슨트 AI</p>
-        <p className="text-sm font-medium text-gray-800 truncate max-w-[200px]">{message}</p>
+        <p className="text-sm font-medium text-gray-800 leading-snug">{message}</p>
       </div>
     </div>
   )
