@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Save, User, Ruler, Pill } from 'lucide-react'
 import Link from 'next/link'
+import BirthDateWheelPicker from './BirthDateWheelPicker'
 
 interface Profile {
   birth_date: string | null
@@ -109,18 +110,18 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
             기본 정보
           </h3>
           
-          <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-4">
             <div>
               <label className="block text-sm text-gray-500 mb-2">생년월일</label>
-              <input
-                type="date"
+              <BirthDateWheelPicker
                 value={data.birth_date}
-                onChange={(e) => handleChange('birth_date', e.target.value)}
-                max={new Date().toISOString().split('T')[0]}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
+                onChange={(v) => handleChange('birth_date', v)}
+                maxDate={new Date().toISOString().split('T')[0]}
               />
             </div>
+          </div>
 
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm text-gray-500 mb-2">성별</label>
               <select

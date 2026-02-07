@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { User, Ruler, Pill, HeartPulse } from 'lucide-react'
 import Toast, { useToast } from './Toast'
+import BirthDateWheelPicker from './BirthDateWheelPicker'
 
 interface OnboardingModalProps {
   userId: string
@@ -140,12 +141,10 @@ export default function OnboardingModal({ userId, userName, onComplete }: Onboar
               
               <div>
                 <label className="block text-sm text-gray-500 mb-2">생년월일</label>
-                <input
-                  type="date"
+                <BirthDateWheelPicker
                   value={data.birth_date}
-                  onChange={(e) => handleChange('birth_date', e.target.value)}
-                  max={new Date().toISOString().split('T')[0]}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
+                  onChange={(v) => handleChange('birth_date', v)}
+                  maxDate={new Date().toISOString().split('T')[0]}
                 />
               </div>
 
