@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { generateText } from 'ai'
+import { streamText } from 'ai'
+import { smoothStream } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { openai } from '@ai-sdk/openai'
 import { getAgeFromBirthDate, getAgeContextForAI } from '@/utils/health'
@@ -159,10 +160,18 @@ function buildSystemPrompt(
 - 유저를 반드시 **'선생님'**이라고 호칭
 
 ### 답변 구조 (엄격히 준수)
-1. **[따뜻한 공감]**: 유저의 상황에 공감하며 시작 (예: "많이 불편하셨겠어요", "걱정되셨죠")
-2. **[데이터 기반 수치·최신 기록 분석]**: 프로필 + **아래 [최신 건강 상태 요약]** 데이터와 글로벌 의료 가이드라인 기반 분석. 특이점이 있으면 먼저 짚어 주세요.
-3. **[생활 처방]**: 구체적이고 실천 가능한 조언 제시
-4. **[따뜻한 응원]**: 긍정적 메시지로 마무리
+- **전체 답변은 반드시 800 토큰 이내**로 작성하세요. 핵심만 간결하게 전달하세요.
+- **맨 처음에 반드시 핵심 요약을 불릿 포인트(•)로 3~5개** 배치한 뒤, 이어서 본문을 작성하세요.
+  예시:
+  • 요약 1
+  • 요약 2
+  • 요약 3
+  (이후 본문: 공감 → 데이터 분석 → 생활 처방 → 응원)
+1. **[핵심 요약]**: 답변 맨 상단에 불릿(•)으로 핵심만 3~5개 나열
+2. **[따뜻한 공감]**: 유저의 상황에 공감하며 시작
+3. **[데이터 기반 수치·최신 기록 분석]**: 프로필 + [최신 건강 상태 요약] 데이터 기반 분석. 특이점이 있으면 짚어 주세요.
+4. **[생활 처방]**: 구체적이고 실천 가능한 조언 제시
+5. **[따뜻한 응원]**: 긍정적 메시지로 마무리
 
 ### 금기사항
 - '존스홉킨스' 또는 특정 병원 이름 절대 언급 금지
@@ -234,7 +243,11 @@ function buildSystemPrompt(
   }
 
   systemPrompt += `
-## 응답 예시
+## 응답 예시 (상단 불릿 요약 + 800 토큰 이내)
+
+• 무릎 부담은 체중 관리로 줄일 수 있어요
+• BMI 27.3, 적정 체중까지 5kg 감량 권장
+• 계단 대신 엘리베이터·수중 운동 추천
 
 선생님, 무릎이 많이 불편하시군요. 계단을 내려갈 때 특히 아프시다니 정말 힘드셨겠어요. 😔
 
@@ -422,11 +435,8 @@ export async function POST(req: Request) {
     console.log(`   - OPENAI_API_KEY: ${apiKeys.hasOpenAIKey ? '✅ ' + apiKeys.openAIKeyPreview : '❌ 없음'} (${apiKeys.openAIKeyRaw})`)
     console.log(`   - 환경: ${process.env.NODE_ENV || 'unknown'}`)
 
-    // AI 응답 생성
-    let reply: string
+    // AI 응답 생성 (스트리밍)
     let actualModel = selectedModel
-
-    // 모델 결정 로직
     if (apiKeys.hasClaudeKey && !apiKeys.hasOpenAIKey) {
       actualModel = 'claude'
       console.log(`📍 [${requestId}] Claude 전용 모드 (OpenAI 키 없음)`)
@@ -435,155 +445,55 @@ export async function POST(req: Request) {
       console.log(`📍 [${requestId}] OpenAI 전용 모드 (Claude 키 없음)`)
     } else if (!apiKeys.hasClaudeKey && !apiKeys.hasOpenAIKey) {
       console.error(`❌ [${requestId}] 치명적 오류: API 키가 설정되지 않았습니다!`)
-      console.error(`   환경 변수 확인 필요:`)
-      console.error(`   - ANTHROPIC_API_KEY: ${apiKeys.claudeKeyRaw}`)
-      console.error(`   - OPENAI_API_KEY: ${apiKeys.openAIKeyRaw}`)
-      console.error(`   `)
-      console.error(`   ⚠️ Vercel 배포 시 환경 변수 설정 필요:`)
-      console.error(`   1. Vercel 대시보드 → 프로젝트 선택`)
-      console.error(`   2. Settings → Environment Variables`)
-      console.error(`   3. ANTHROPIC_API_KEY, OPENAI_API_KEY 추가`)
-      console.error(`   4. Redeploy 실행`)
-      
       return NextResponse.json({ 
         error: 'AI 서비스 API 키가 설정되지 않았습니다.',
         details: 'Vercel 환경 변수에 ANTHROPIC_API_KEY 또는 OPENAI_API_KEY를 설정해주세요.',
-        hint: 'Vercel 대시보드 → Settings → Environment Variables → Add 후 Redeploy',
-        debug: {
-          claudeKey: apiKeys.claudeKeyRaw,
-          openAIKey: apiKeys.openAIKeyRaw,
-          env: process.env.NODE_ENV
-        }
       }, { status: 500 })
     }
 
-    try {
-      console.log(`🚀 [${requestId}] AI 호출 시작: ${actualModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
-      
-      if (actualModel === 'claude') {
-        // Claude 3.5 Haiku - 정확한 모델 버전 사용
-        const result = await generateText({
-          model: anthropic('claude-3-5-haiku-20241022'),
-          system: systemPrompt,
-          prompt: message,
-        })
-        reply = result.text
-        console.log(`✅ [${requestId}] Claude 응답 성공 (${result.text.length}자)`)
-      } else {
-        const result = await generateText({
-          model: openai('gpt-4o-mini'),
-          system: systemPrompt,
-          prompt: message,
-        })
-        reply = result.text
-        console.log(`✅ [${requestId}] OpenAI 응답 성공 (${result.text.length}자)`)
-      }
-    } catch (aiError: unknown) {
-      console.error(`❌ [${requestId}] AI 호출 실패!`)
-      console.error(`   - 사용 모델: ${actualModel === 'claude' ? 'claude-3-5-haiku-20241022' : 'gpt-4o-mini'}`)
-      console.error(`   - 전체 에러:`, aiError)
-      
-      if (aiError instanceof Error) {
-        console.error(`   - 에러 타입: ${aiError.name}`)
-        console.error(`   - 에러 메시지: ${aiError.message}`)
-        console.error(`   - 스택 트레이스:`, aiError.stack)
-        
-        // API 키 관련 에러 상세 분석
-        if (aiError.message.includes('API key') || 
-            aiError.message.includes('authentication') || 
-            aiError.message.includes('401') ||
-            aiError.message.includes('Unauthorized')) {
-          console.error(`   ⚠️ API 키 문제 감지!`)
-          console.error(`   - 현재 사용 모델: ${actualModel}`)
-          console.error(`   - 키 형식 확인: ${actualModel === 'claude' ? apiKeys.claudeKeyPreview : apiKeys.openAIKeyPreview}`)
-          
-          return NextResponse.json({ 
-            error: 'API 키가 유효하지 않습니다.',
-            details: `${actualModel === 'claude' ? 'ANTHROPIC_API_KEY' : 'OPENAI_API_KEY'}를 확인해주세요.`,
-            model: actualModel
-          }, { status: 401 })
-        }
-        
-        // Rate limit 에러
-        if (aiError.message.includes('rate') || aiError.message.includes('429')) {
-          console.error(`   ⚠️ Rate limit 초과!`)
-          return NextResponse.json({ 
-            error: 'AI 서비스 요청 한도에 도달했습니다. 잠시 후 다시 시도해주세요.',
-            retryAfter: 60
-          }, { status: 429 })
-        }
-        
-        // 네트워크 에러
-        if (aiError.message.includes('network') || aiError.message.includes('timeout')) {
-          console.error(`   ⚠️ 네트워크 에러!`)
-          return NextResponse.json({ 
-            error: 'AI 서비스 연결에 실패했습니다. 잠시 후 다시 시도해주세요.'
-          }, { status: 503 })
-        }
-      }
-      
-      // Fallback 응답 - 에러 정보 포함
-      const errorMsg = aiError instanceof Error ? aiError.message : String(aiError)
-      console.error(`   ⚠️ Fallback 응답 사용`)
-      
-      // 모델 폴백 시도: Claude 실패 시 OpenAI로, 반대의 경우도 시도
-      if (actualModel === 'claude' && apiKeys.hasOpenAIKey) {
-        console.log(`   🔄 Claude 실패 → OpenAI 폴백 시도`)
-        try {
-          const fallbackResult = await generateText({
-            model: openai('gpt-4o-mini'),
-            system: systemPrompt,
-            prompt: message,
-          })
-          reply = fallbackResult.text
-          console.log(`   ✅ OpenAI 폴백 성공 (${fallbackResult.text.length}자)`)
-        } catch (fallbackError) {
-          console.error(`   ❌ OpenAI 폴백도 실패:`, fallbackError)
-          reply = `선생님, 죄송해요. 지금 AI 시스템이 일시적으로 불안정해서 답변을 드리기 어려워요. 😔\n\n잠시 후 다시 시도해 주시겠어요?`
-        }
-      } else if (actualModel === 'gpt' && apiKeys.hasClaudeKey) {
-        console.log(`   🔄 OpenAI 실패 → Claude 폴백 시도`)
-        try {
-          const fallbackResult = await generateText({
-            model: anthropic('claude-3-5-haiku-20241022'),
-            system: systemPrompt,
-            prompt: message,
-          })
-          reply = fallbackResult.text
-          console.log(`   ✅ Claude 폴백 성공 (${fallbackResult.text.length}자)`)
-        } catch (fallbackError) {
-          console.error(`   ❌ Claude 폴백도 실패:`, fallbackError)
-          reply = `선생님, 죄송해요. 지금 AI 시스템이 일시적으로 불안정해서 답변을 드리기 어려워요. 😔\n\n잠시 후 다시 시도해 주시겠어요?`
-        }
-      } else {
-        reply = `선생님, 죄송해요. 지금 AI 시스템이 일시적으로 불안정해서 답변을 드리기 어려워요. 😔\n\n잠시 후 다시 시도해 주시겠어요?`
-      }
-    }
+    const model = actualModel === 'claude'
+      ? anthropic('claude-3-5-haiku-20241022')
+      : openai('gpt-4o-mini')
 
-    // 면책 조항 추가
-    reply += DISCLAIMER
+    console.log(`🚀 [${requestId}] AI 스트리밍 시작: ${actualModel === 'claude' ? 'Claude 3.5 Haiku' : 'GPT-4o-mini'}`)
 
-    // 사용량 증가
-    incrementUsage(supabase, user.id).catch(() => {})
-    
-    const elapsedTime = Date.now() - startTime
-    console.log(`✅ [${requestId}] 완료! (소요 시간: ${elapsedTime}ms)`)
-    console.log('🏥'.repeat(25) + '\n')
-    
-    return NextResponse.json({ 
-      reply,
-      model: actualModel === 'claude' ? 'claude-3-5-haiku-20241022' : 'gpt-4o-mini',
-      usage: { 
-        count: count + 1, 
-        limit: DAILY_LIMIT, 
-        remaining: DAILY_LIMIT - count - 1 
+    const result = streamText({
+      model,
+      system: systemPrompt,
+      prompt: message,
+      maxTokens: 800,
+      experimental_transform: smoothStream(),
+      onError({ error }) {
+        console.error(`❌ [${requestId}] 스트림 에러:`, error)
       },
-      debug: {
-        requestId,
-        elapsedMs: elapsedTime,
-        hasProfile: !!profile,
-        bmi: profile ? calculateBMI(profile.height, profile.weight)?.value : null
-      }
+      onFinish() {
+        incrementUsage(supabase, user.id).catch(() => {})
+        console.log(`✅ [${requestId}] 스트림 완료`)
+      },
+    })
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        const encoder = new TextEncoder()
+        try {
+          for await (const chunk of result.textStream) {
+            controller.enqueue(encoder.encode(chunk))
+          }
+          controller.enqueue(encoder.encode(DISCLAIMER))
+        } catch (err) {
+          console.error(`❌ [${requestId}] 스트림 읽기 오류:`, err)
+          controller.enqueue(encoder.encode('\n\n선생님, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'))
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
     })
     
   } catch (error) {

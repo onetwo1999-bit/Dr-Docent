@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Send, Bot, User, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
+import { motion } from 'framer-motion'
 import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
 import { useAppContextStore } from '@/store/useAppContextStore'
 
@@ -15,11 +16,7 @@ interface ChatInterfaceProps {
   userName: string
 }
 
-const MIN_THINKING_MS = 3000
-const MIN_THINKING_LONG_MS = 5000
-const LONG_REPLY_LENGTH = 200
-/** 전체 내용 기준 횡열 1줄씩 노출 간격. 11시→5시 굴림 느낌으로 조금 더 천천히 */
-const LINE_REVEAL_MS = 540
+const SCROLL_BOTTOM_THRESHOLD = 120
 
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
@@ -32,16 +29,36 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [pendingTypewriterContent, setPendingTypewriterContent] = useState<string | null>(null)
-  /** 노출된 줄 개수 (전체 내용 기준 횡열 1줄씩) */
-  const [revealedLineCount, setRevealedLineCount] = useState(0)
+  const chatScrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const thinkingStartedAtRef = useRef<number>(0)
+  const userScrolledUpRef = useRef(false)
 
-  // 메시지가 추가될 때마다 스크롤 (문단 노출 중에도 부드럽게)
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior })
+  }, [])
+
+  const isNearBottom = useCallback(() => {
+    const el = chatScrollRef.current
+    if (!el) return true
+    const { scrollTop, scrollHeight, clientHeight } = el
+    return scrollHeight - scrollTop - clientHeight < SCROLL_BOTTOM_THRESHOLD
+  }, [])
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, revealedLineCount])
+    if (!isLoading) return
+    if (!userScrolledUpRef.current) scrollToBottom()
+  }, [messages, isLoading, scrollToBottom])
+
+  const handleScroll = useCallback(() => {
+    const el = chatScrollRef.current
+    if (!el) return
+    const { scrollTop, scrollHeight, clientHeight } = el
+    if (scrollHeight - scrollTop - clientHeight > SCROLL_BOTTOM_THRESHOLD) {
+      userScrolledUpRef.current = true
+    } else {
+      userScrolledUpRef.current = false
+    }
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -49,15 +66,12 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
 
     const userMessage = input.trim()
     setInput('')
-    
-    // 유저 메시지 추가
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }])
+    userScrolledUpRef.current = false
     setIsLoading(true)
-    thinkingStartedAtRef.current = Date.now()
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }])
+    const assistantIndex = messages.length + 1
 
     try {
-      console.log('🔄 [Chat] API 요청 시작:', userMessage)
-      
       const actions = getRecentActionsForAPI().map(({ type, label, detail, path }) => ({
         type,
         label,
@@ -74,81 +88,67 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         }),
       })
 
-      console.log('📡 [Chat] 응답 상태:', response.status)
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
-        console.error('❌ [Chat] API 에러:', response.status, errorData)
         let errorMessage = '일시적인 오류가 발생했습니다.'
         if (response.status === 401) errorMessage = '로그인이 만료되었습니다. 다시 로그인해주세요.'
         else if (response.status === 400) errorMessage = '메시지를 입력해주세요.'
         else if (response.status === 500) errorMessage = '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
-        throw new Error(errorMessage)
+        throw new Error(errorData?.error || errorMessage)
       }
 
-      const data = await response.json()
-      console.log('✅ [Chat] 응답 수신 완료')
-      
-      const reply = data.reply
-      if (!reply) throw new Error('응답 데이터가 없습니다.')
-
-      const minThinkingMs = reply.length > LONG_REPLY_LENGTH ? MIN_THINKING_LONG_MS : MIN_THINKING_MS
-      const elapsed = Date.now() - thinkingStartedAtRef.current
-      const waitMs = Math.max(0, minThinkingMs - elapsed)
-
-      const applyReply = () => {
+      const contentType = response.headers.get('content-type') || ''
+      if (contentType.includes('application/json')) {
+        const data = await response.json()
+        if (data.error) throw new Error(data.error)
+        if (data.reply) {
+          setMessages(prev => {
+            const next = [...prev]
+            if (next[assistantIndex]?.role === 'assistant') next[assistantIndex] = { ...next[assistantIndex], content: data.reply }
+            return next
+          })
+        }
         setIsLoading(false)
-        setMessages(prev => [...prev, { role: 'assistant', content: '' }])
-        setPendingTypewriterContent(reply)
-        setRevealedLineCount(0)
+        return
       }
 
-      if (waitMs > 0) {
-        setTimeout(applyReply, waitMs)
-      } else {
-        applyReply()
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      if (!reader) {
+        setIsLoading(false)
+        throw new Error('스트림을 읽을 수 없습니다.')
       }
-      
+
+      let accumulated = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        accumulated += decoder.decode(value, { stream: true })
+        setMessages(prev => {
+          const next = [...prev]
+          if (next[assistantIndex]?.role === 'assistant') next[assistantIndex] = { ...next[assistantIndex], content: accumulated }
+          return next
+        })
+      }
+      scrollToBottom('auto')
     } catch (error) {
       console.error('❌ [Chat] 에러:', error)
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
+      setMessages(prev => {
+        const next = [...prev]
+        if (next[assistantIndex]?.role === 'assistant') next[assistantIndex] = { ...next[assistantIndex], content: `죄송합니다. ${errorMessage}\n다시 시도해주세요. 🙏` }
+        return next
+      })
+    } finally {
       setIsLoading(false)
-      setMessages(prev => [...prev, {
-        role: 'assistant',
-        content: `죄송합니다. ${errorMessage}\n다시 시도해주세요. 🙏`
-      }])
     }
   }
 
-  // 전체 내용 기준 횡열 1줄씩 노출 (줄바꿈 \n 기준)
-  const lines = pendingTypewriterContent != null ? pendingTypewriterContent.split('\n') : []
-
-  useEffect(() => {
-    if (pendingTypewriterContent == null) return
-    if (revealedLineCount >= lines.length) {
-      setMessages(prev => {
-        const next = [...prev]
-        const last = next[next.length - 1]
-        if (last?.role === 'assistant') next[next.length - 1] = { ...last, content: pendingTypewriterContent }
-        return next
-      })
-      setPendingTypewriterContent(null)
-      setRevealedLineCount(0)
-      return
-    }
-    const t = setTimeout(() => setRevealedLineCount(prev => prev + 1), LINE_REVEAL_MS)
-    return () => clearTimeout(t)
-  }, [pendingTypewriterContent, revealedLineCount, lines.length])
-
   return (
     <div className="min-h-screen bg-white flex flex-col">
-      {/* 헤더 */}
       <header className="bg-white border-b border-gray-100 p-4 shadow-sm">
         <div className="max-w-2xl mx-auto flex items-center gap-4">
-          <Link 
-            href="/dashboard" 
-            className="text-gray-400 hover:text-[#2DD4BF] transition-colors"
-          >
+          <Link href="/dashboard" className="text-gray-400 hover:text-[#2DD4BF] transition-colors">
             <ArrowLeft className="w-6 h-6" />
           </Link>
           <div>
@@ -158,71 +158,75 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         </div>
       </header>
 
-      {/* 채팅 영역 */}
-      <div className="flex-1 overflow-y-auto p-4 bg-gray-50">
+      <div
+        ref={chatScrollRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto overflow-x-hidden p-4 bg-gray-50"
+      >
         <div className="max-w-2xl mx-auto space-y-4">
           {messages.map((message, index) => {
             const isLastAssistant = message.role === 'assistant' && index === messages.length - 1
-            const displayLines = isLastAssistant && pendingTypewriterContent != null && lines.length > 0
-              ? lines.slice(0, revealedLineCount)
-              : null
-            const displayContent = displayLines != null
-              ? displayLines.join('\n')
-              : message.content
-            const isStillRevealing = isLastAssistant && pendingTypewriterContent != null && revealedLineCount < lines.length
+            const isStreaming = isLastAssistant && isLoading
+            const lines = message.content ? message.content.split('\n') : []
             return (
-            <div
-              key={index}
-              className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              {message.role === 'assistant' && (
-                <div className="w-8 h-8 rounded-full bg-[#2DD4BF] flex items-center justify-center flex-shrink-0">
-                  <Bot className="w-5 h-5 text-white" />
-                </div>
-              )}
               <div
-                className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                  message.role === 'user'
-                    ? 'bg-[#2DD4BF] text-white'
-                    : 'bg-white text-gray-800 border border-gray-100 shadow-sm'
-                }`}
+                key={index}
+                className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
               >
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {displayLines != null ? (
-                    <>
-                      {displayLines.map((line, li) => (
-                        <span
-                          key={li}
-                          className="block animate-chat-reveal-11-5 origin-top-left"
-                        >
-                          {line}
-                          {li < displayLines.length - 1 ? '\n' : null}
-                        </span>
-                      ))}
-                    </>
-                  ) : (
-                    displayContent
-                  )}
-                  {isStillRevealing && (
-                    <span className="inline-block w-2 h-4 ml-0.5 bg-[#2DD4BF] animate-pulse align-middle" />
-                  )}
-                </p>
                 {message.role === 'assistant' && (
-                  <div className="mt-3 pt-3 border-t border-gray-100">
-                    <MedicalDisclaimer variant="compact" />
+                  <div className="w-8 h-8 rounded-full bg-[#2DD4BF] flex items-center justify-center flex-shrink-0">
+                    <Bot className="w-5 h-5 text-white" />
+                  </div>
+                )}
+                <div
+                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+                    message.role === 'user'
+                      ? 'bg-[#2DD4BF] text-white'
+                      : 'bg-white text-gray-800 border border-gray-100 shadow-sm'
+                  }`}
+                >
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">
+                    {lines.length > 0 ? (
+                      <>
+                        {lines.map((line, li) => {
+                          const isLastLine = li === lines.length - 1
+                          return (
+                            <motion.span
+                              key={li}
+                              className="block"
+                              initial={isLastLine ? { opacity: 0, y: 8 } : false}
+                              animate={{ opacity: 1, y: 0 }}
+                              transition={{ duration: 0.4, ease: 'easeOut' }}
+                            >
+                              {line}
+                              {li < lines.length - 1 ? '\n' : null}
+                            </motion.span>
+                          )
+                        })}
+                      </>
+                    ) : (
+                      message.content
+                    )}
+                    {isStreaming && (
+                      <span className="inline-block w-2 h-4 ml-0.5 bg-[#2DD4BF] animate-pulse align-middle" />
+                    )}
+                  </p>
+                  {message.role === 'assistant' && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <MedicalDisclaimer variant="compact" />
+                    </div>
+                  )}
+                </div>
+                {message.role === 'user' && (
+                  <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
+                    <User className="w-5 h-5 text-gray-500" />
                   </div>
                 )}
               </div>
-              {message.role === 'user' && (
-                <div className="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
-                  <User className="w-5 h-5 text-gray-500" />
-                </div>
-              )}
-            </div>
-          )})}
-          
-          {/* 로딩 인디케이터 */}
-          {isLoading && (
+            )
+          })}
+
+          {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
             <div className="flex gap-3 justify-start">
               <div className="w-8 h-8 rounded-full bg-[#2DD4BF] flex items-center justify-center">
                 <Bot className="w-5 h-5 text-white" />
@@ -236,12 +240,11 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
               </div>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* 입력 영역 */}
       <div className="bg-white border-t border-gray-100 p-4">
         <form onSubmit={handleSubmit} className="max-w-2xl mx-auto flex gap-3">
           <input
