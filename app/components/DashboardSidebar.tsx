@@ -8,15 +8,16 @@ import {
   FileText,
   BarChart3,
   Settings,
-  ChevronLeft,
+  Bell,
 } from 'lucide-react'
 
-export type SidebarMenuId = 'family-care' | 'briefing-note' | 'analysis-report' | 'service-settings' | null
+export type SidebarMenuId = 'family-care' | 'briefing-note' | 'analysis-report' | 'health-notifications' | 'service-settings' | null
 
 const MENU_ITEMS: { id: SidebarMenuId; label: string; icon: React.ReactNode }[] = [
   { id: 'family-care', label: '가족/지인 케어', icon: <Users className="w-5 h-5" /> },
   { id: 'briefing-note', label: '진료 브리핑 노트', icon: <FileText className="w-5 h-5" /> },
   { id: 'analysis-report', label: '정밀 분석 리포트', icon: <BarChart3 className="w-5 h-5" /> },
+  { id: 'health-notifications', label: '건강알림', icon: <Bell className="w-5 h-5" /> },
   { id: 'service-settings', label: '서비스 설정', icon: <Settings className="w-5 h-5" /> },
 ]
 

@@ -8,11 +8,13 @@ import FamilyCareDetail from './detail-views/FamilyCareDetail'
 import BriefingNoteDetail from './detail-views/BriefingNoteDetail'
 import PrecisionAnalysisDetail from './detail-views/PrecisionAnalysisDetail'
 import ServiceSettingsDetail from './detail-views/ServiceSettingsDetail'
+import NotificationSettingsCard from './NotificationSettingsCard'
 
 const MENU_TITLES: Record<NonNullable<SidebarMenuId>, string> = {
   'family-care': '가족/지인 케어',
   'briefing-note': '진료 브리핑 노트',
   'analysis-report': '정밀 분석 리포트',
+  'health-notifications': '건강알림',
   'service-settings': '서비스 설정',
 }
 
@@ -33,6 +35,12 @@ export default function DashboardShell({ children, userId }: DashboardShellProps
         return <BriefingNoteDetail />
       case 'analysis-report':
         return <PrecisionAnalysisDetail />
+      case 'health-notifications':
+        return (
+          <div className="p-4">
+            <NotificationSettingsCard userId={userId} />
+          </div>
+        )
       case 'service-settings':
         return <ServiceSettingsDetail userId={userId} />
       default:

@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { User, ChevronRight } from 'lucide-react'
-import NotificationSettingsCard from '../NotificationSettingsCard'
 
 interface ServiceSettingsDetailProps {
   userId?: string
@@ -11,8 +10,6 @@ interface ServiceSettingsDetailProps {
 export default function ServiceSettingsDetail({ userId }: ServiceSettingsDetailProps) {
   return (
     <div className="p-4 space-y-6">
-      <NotificationSettingsCard userId={userId} />
-
       <div className="space-y-2">
         <Link
           href="/profile"
