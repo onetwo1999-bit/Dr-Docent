@@ -274,18 +274,6 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
             <span className="text-gray-500 text-sm">주의사항</span>
             <span className="text-sm font-medium text-amber-600 line-clamp-1">{report.caution}</span>
           </div>
-          {bmi && (
-            <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-              <span className="text-gray-500 text-sm">BMI</span>
-              <span className={`text-sm font-bold ${
-                bmiCategory === '정상' ? 'text-green-600' :
-                bmiCategory === '과체중' ? 'text-yellow-600' :
-                bmiCategory === '저체중' ? 'text-blue-600' : 'text-red-600'
-              }`}>
-                {bmi.toFixed(1)} ({bmiCategory})
-              </span>
-            </div>
-          )}
         </div>
       )}
     </div>
