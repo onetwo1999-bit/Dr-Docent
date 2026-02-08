@@ -19,6 +19,20 @@ interface ChatInterfaceProps {
 }
 
 const SCROLL_BOTTOM_THRESHOLD = 120
+const TYPEWRITER_INTERVAL_MS = 36
+
+/** API papers 배열을 Reference 형태로 정규화 (사이드바 카드 연동용) */
+function normalizePapers(papers: unknown): Reference[] {
+  if (!Array.isArray(papers)) return []
+  return papers.map((p: Record<string, unknown>) => ({
+    title: typeof p.title === 'string' ? p.title : '',
+    pmid: p.pmid != null ? String(p.pmid) : null,
+    url: typeof p.url === 'string' ? p.url : (p.pmid != null ? `https://pubmed.ncbi.nlm.nih.gov/${p.pmid}/` : undefined),
+    journal: typeof p.journal === 'string' ? p.journal : undefined,
+    authors: typeof p.authors === 'string' ? p.authors : undefined,
+    abstract: typeof p.abstract === 'string' ? p.abstract : undefined,
+  }))
+}
 
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
@@ -26,6 +40,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const [sidebarPapers, setSidebarPapers] = useState<Reference[]>([])
   const [referencesLoading, setReferencesLoading] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [sidebarExpanded, setSidebarExpanded] = useState(false)
   const [papersArrivedAlert, setPapersArrivedAlert] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -38,6 +53,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const userScrolledUpRef = useRef(false)
+  const [typewriterJob, setTypewriterJob] = useState<{ fullText: string; assistantIndex: number } | null>(null)
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior })
@@ -60,6 +76,28 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     const t = setTimeout(() => setPapersArrivedAlert(false), 4000)
     return () => clearTimeout(t)
   }, [papersArrivedAlert])
+
+  useEffect(() => {
+    if (!typewriterJob) return
+    const { fullText, assistantIndex: idx } = typewriterJob
+    let len = 0
+    const timer = setInterval(() => {
+      len += 1
+      setMessages(prev => {
+        const next = [...prev]
+        if (next[idx]?.role === 'assistant') {
+          next[idx] = { ...next[idx], content: fullText.slice(0, len) }
+        }
+        return next
+      })
+      scrollToBottom('auto')
+      if (len >= fullText.length) {
+        clearInterval(timer)
+        setTypewriterJob(null)
+      }
+    }, TYPEWRITER_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [typewriterJob, scrollToBottom])
 
   const handleScroll = useCallback(() => {
     const el = chatScrollRef.current
@@ -120,20 +158,26 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         throw new Error(errorMessage)
       }
 
-      const answer = data.answer ?? ''
-      const papers = Array.isArray(data.papers) ? data.papers : []
-      setMessages(prev => {
-        const next = [...prev]
-        if (next[assistantIndex]?.role === 'assistant') {
-          next[assistantIndex] = { ...next[assistantIndex], content: answer }
-        }
-        return next
-      })
+      const answer = String(data.answer ?? '')
+      const rawPapers = data.papers
+      const papers = normalizePapers(rawPapers)
+
       setReferencesLoading(false)
       setSidebarPapers(papers)
       if (papers.length > 0) {
         setSidebarOpen(true)
+        setSidebarExpanded(true)
         setPapersArrivedAlert(true)
+      }
+
+      if (answer.length > 0) {
+        setTypewriterJob({ fullText: answer, assistantIndex })
+      } else {
+        setMessages(prev => {
+          const next = [...prev]
+          if (next[assistantIndex]?.role === 'assistant') next[assistantIndex] = { ...next[assistantIndex], content: '' }
+          return next
+        })
       }
       scrollToBottom('auto')
     } catch (error) {
@@ -287,12 +331,18 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         </div>
       )}
 
-      {/* 데스크톱: md 이상에서 우측 사이드바 (sidebarPapers 구독) */}
-      {(sidebarPapers.length > 0 || referencesLoading) && (
-        <div className="hidden md:flex flex-shrink-0">
-          <ReferencesSidebar references={sidebarPapers} isLoading={referencesLoading} />
-        </div>
-      )}
+      {/* 데스크톱: md 이상에서 우측 사이드바 (sidebarPapers 구독, 논문 도착 시 부드럽게 펼침) */}
+      <div
+        className={`hidden md:flex flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-out ${
+          sidebarPapers.length > 0 || referencesLoading ? 'w-80 opacity-100' : 'w-0 opacity-0'
+        }`}
+      >
+        <ReferencesSidebar
+          key={`papers-${sidebarPapers.length}-${sidebarPapers[0]?.pmid ?? 'none'}`}
+          references={sidebarPapers}
+          isLoading={referencesLoading}
+        />
+      </div>
 
       {/* 모바일: 참고 논문 버튼 + 열면 보이는 사이드바 패널 */}
       {(sidebarPapers.length > 0 || referencesLoading) && (
