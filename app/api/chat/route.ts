@@ -15,7 +15,6 @@ export const dynamic = 'force-dynamic'
 // 🔧 설정 상수
 // ========================
 const DAILY_LIMIT = 10
-const DISCLAIMER = '\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ 본 서비스는 의학적 진단을 대신하지 않습니다. 정확한 진단은 전문의와 상담해 주세요.'
 
 // Claude 모델: claude-3-5-haiku-latest는 2025년 12월 deprecated, claude-haiku-4-5로 대체
 // 환경 변수 ANTHROPIC_MODEL로 오버라이드 가능 (예: claude-3-haiku-20240307)
@@ -492,7 +491,7 @@ export async function POST(req: Request) {
           for await (const chunk of result.textStream) {
             controller.enqueue(encoder.encode(chunk))
           }
-          controller.enqueue(encoder.encode(DISCLAIMER))
+          // 면책조항은 채팅창 하단 MedicalDisclaimer로만 표시 (중복 제거)
         } catch (err) {
           console.error(`❌ [${requestId}] 스트림 읽기 오류:`, err)
           controller.enqueue(encoder.encode('\n\n선생님, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'))
