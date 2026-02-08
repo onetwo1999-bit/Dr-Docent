@@ -5,6 +5,7 @@ import { Send, Bot, User, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
+import ReferencesSidebar, { type Reference } from './ReferencesSidebar'
 import { useAppContextStore } from '@/store/useAppContextStore'
 
 interface Message {
@@ -21,6 +22,8 @@ const SCROLL_BOTTOM_THRESHOLD = 120
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
   const getHesitationHint = useAppContextStore((s) => s.getHesitationHint)
+  const [references, setReferences] = useState<Reference[]>([])
+  const [referencesLoading, setReferencesLoading] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -68,10 +71,22 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     setInput('')
     userScrolledUpRef.current = false
     setIsLoading(true)
+    setReferencesLoading(true)
+    setReferences([])
     setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }])
     const assistantIndex = messages.length + 1
 
     try {
+      fetch(`/api/medical-papers/search?query=${encodeURIComponent(userMessage)}`, { credentials: 'include' })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data?.success && Array.isArray(data.references)) {
+            setReferences(data.references)
+          }
+        })
+        .catch(() => {})
+        .finally(() => setReferencesLoading(false))
+
       const actions = getRecentActionsForAPI().map(({ type, label, detail, path }) => ({
         type,
         label,
@@ -141,12 +156,13 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
       })
     } finally {
       setIsLoading(false)
+      setReferencesLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
-      <header className="bg-white border-b border-gray-100 p-4 shadow-sm">
+    <div className="min-h-screen bg-white flex flex-col md:flex-row">
+      <header className="md:hidden bg-white border-b border-gray-100 p-4 shadow-sm">
         <div className="max-w-2xl mx-auto flex items-center gap-4">
           <Link href="/dashboard" className="text-gray-400 hover:text-[#2DD4BF] transition-colors">
             <ArrowLeft className="w-6 h-6" />
@@ -158,6 +174,14 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         </div>
       </header>
 
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="hidden md:flex items-center gap-4 px-4 py-3 bg-white border-b border-gray-100">
+          <Link href="/dashboard" className="text-gray-400 hover:text-[#2DD4BF] transition-colors">
+            <ArrowLeft className="w-6 h-6" />
+          </Link>
+          <h1 className="text-gray-900 font-bold text-lg">닥터 도슨 AI</h1>
+          <p className="text-gray-500 text-sm">건강 상담 챗봇</p>
+        </div>
       <div
         ref={chatScrollRef}
         onScroll={handleScroll}
@@ -245,7 +269,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         </div>
       </div>
 
-      <div className="bg-white border-t border-gray-100 p-4">
+        <div className="bg-white border-t border-gray-100 p-4">
         <form onSubmit={handleSubmit} className="max-w-2xl mx-auto flex gap-3">
           <input
             type="text"
@@ -263,6 +287,11 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
             <Send className="w-5 h-5" />
           </button>
         </form>
+        </div>
+      </div>
+
+      <div className="hidden lg:flex">
+        <ReferencesSidebar references={references} isLoading={referencesLoading} />
       </div>
     </div>
   )

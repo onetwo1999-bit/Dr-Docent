@@ -18,7 +18,9 @@ export async function POST(req: Request) {
       )
     }
 
-    const result = await runFeedingPipeline(query)
+    const skipCache = body?.skipCache === true
+
+    const result = await runFeedingPipeline(query, { skipCache })
     return NextResponse.json({ success: true, ...result })
   } catch (e) {
     console.error('❌ [medical-papers/feed]', e)

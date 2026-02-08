@@ -1,5 +1,6 @@
 /**
  * 유저 질문 기반 실시간 논문 자동 피딩 파이프라인
+ * Smart Cache: DB에 이미 관련 논문이 있으면 API 호출 없이 즉시 반환
  */
 
 import OpenAI from 'openai'
@@ -12,20 +13,53 @@ const EMBEDDING_MODEL = 'text-embedding-3-small'
 const MIN_CITATION_COUNT = 3
 const MAX_PAPERS_TO_STORE = 10
 
+/** Smart Cache: 이 개수 이상의 관련 청크가 있으면 API 호출 스킵 */
+const CACHE_HIT_MIN_CHUNKS = 2
+/** Smart Cache: 유사도 이 값 이상이면 캐시 히트 */
+const CACHE_HIT_SIMILARITY_THRESHOLD = 0.6
+
 export type FeedingResult = {
   query: string
   pmidsFound: number
   papersStored: number
   chunksStored: number
+  cached?: boolean
   errors?: string[]
+}
+
+/** DB에 이미 관련 논문이 있는지 확인 (API 호출 절약) */
+async function checkSmartCache(
+  query: string,
+  openai: OpenAI,
+  supabase: ReturnType<typeof createAdminClient>
+): Promise<boolean> {
+  try {
+    const res = await openai.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: query.slice(0, 8000),
+    })
+    const embedding = res.data[0]?.embedding
+    if (!embedding) return false
+
+    const { data } = await supabase.rpc('match_medical_papers', {
+      query_embedding: embedding,
+      match_threshold: CACHE_HIT_SIMILARITY_THRESHOLD,
+      match_count: CACHE_HIT_MIN_CHUNKS,
+    })
+
+    return Array.isArray(data) && data.length >= CACHE_HIT_MIN_CHUNKS
+  } catch {
+    return false
+  }
 }
 
 export async function runFeedingPipeline(
   query: string,
-  options?: { minCitations?: number; maxPapers?: number }
+  options?: { minCitations?: number; maxPapers?: number; skipCache?: boolean }
 ): Promise<FeedingResult> {
   const minCitations = options?.minCitations ?? MIN_CITATION_COUNT
   const maxPapers = options?.maxPapers ?? MAX_PAPERS_TO_STORE
+  const skipCache = options?.skipCache ?? false
 
   const result: FeedingResult = {
     query,
@@ -33,6 +67,20 @@ export async function runFeedingPipeline(
     papersStored: 0,
     chunksStored: 0,
     errors: [],
+  }
+
+  // 0. Smart Cache: DB에 이미 관련 논문이 있으면 API 호출 없이 즉시 반환
+  if (!skipCache) {
+    const openaiKey = process.env.OPENAI_API_KEY
+    if (openaiKey) {
+      const openai = new OpenAI({ apiKey: openaiKey })
+      const supabase = createAdminClient()
+      const hit = await checkSmartCache(query, openai, supabase)
+      if (hit) {
+        result.cached = true
+        return result
+      }
+    }
   }
 
   // 1. PubMed 검색
