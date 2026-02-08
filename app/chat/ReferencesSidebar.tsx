@@ -5,8 +5,10 @@ import { ExternalLink, FileText } from 'lucide-react'
 export type Reference = {
   title: string
   pmid: string | null
-  citation_count: number
-  tldr: string | null
+  authors?: string
+  abstract?: string
+  citation_count?: number
+  tldr?: string | null
 }
 
 interface ReferencesSidebarProps {
@@ -30,6 +32,9 @@ export default function ReferencesSidebar({ references, isLoading }: ReferencesS
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {isLoading && references.length === 0 && (
           <div className="space-y-3">
+            <p className="text-sm text-[#2DD4BF] font-medium animate-pulse mb-3">
+              최신 논문을 분석 중입니다...
+            </p>
             {[1, 2, 3].map((i) => (
               <div
                 key={i}
@@ -52,20 +57,26 @@ export default function ReferencesSidebar({ references, isLoading }: ReferencesS
         )}
 
         {references.map((ref, idx) => {
+          const summary = ref.abstract || ref.tldr || ''
           const content = (
             <>
               <h3 className="font-medium text-gray-900 text-sm leading-snug line-clamp-2 mb-2">
                 {ref.title}
               </h3>
+              {ref.authors && (
+                <p className="text-xs text-gray-500 mb-1 line-clamp-1">{ref.authors}</p>
+              )}
               <div className="flex items-center justify-between gap-2 mb-2">
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-[#2DD4BF] bg-[#2DD4BF]/10 px-2 py-0.5 rounded-full">
-                  {ref.citation_count.toLocaleString()} citations
-                </span>
-                {ref.pmid && <ExternalLink className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />}
+                {typeof ref.citation_count === 'number' && ref.citation_count > 0 && (
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-[#2DD4BF] bg-[#2DD4BF]/10 px-2 py-0.5 rounded-full">
+                    {ref.citation_count.toLocaleString()} citations
+                  </span>
+                )}
+                {ref.pmid && <ExternalLink className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 ml-auto" />}
               </div>
-              {ref.tldr && (
+              {summary && (
                 <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">
-                  {ref.tldr}
+                  {summary}
                 </p>
               )}
             </>

@@ -30,9 +30,14 @@ export async function searchPubMed(
   return Array.isArray(ids) ? ids : []
 }
 
-export async function fetchAbstracts(pmids: string[]): Promise<
-  Array<{ pmid: string; title: string; abstract: string }>
-> {
+export type PubMedPaper = {
+  pmid: string
+  title: string
+  authors: string
+  abstract: string
+}
+
+export async function fetchAbstracts(pmids: string[]): Promise<PubMedPaper[]> {
   if (pmids.length === 0) return []
 
   const apiKey = process.env.PUBMED_API_KEY
@@ -51,7 +56,7 @@ export async function fetchAbstracts(pmids: string[]): Promise<
   })
 
   const result = res?.result ?? {}
-  const out: Array<{ pmid: string; title: string; abstract: string }> = []
+  const out: PubMedPaper[] = []
 
   for (const pmid of pmids) {
     const doc = result[pmid]
@@ -65,6 +70,20 @@ export async function fetchAbstracts(pmids: string[]): Promise<
           : article.articletitle?.[0] ?? '')
       : ''
 
+    let authors = ''
+    const authorList = article.authors?.author
+    if (Array.isArray(authorList) && authorList.length > 0) {
+      authors = authorList
+        .map((a: { LastName?: string; ForeName?: string; Initials?: string; collectivename?: string }) => {
+          if (a.collectivename) return a.collectivename
+          const last = a.LastName || ''
+          const init = a.Initials || a.ForeName || ''
+          return init ? `${last} ${init}`.trim() : last
+        })
+        .filter(Boolean)
+        .join(', ')
+    }
+
     let abstract = ''
     const absBlock = article.abstract?.abstracttext
     if (absBlock) {
@@ -74,9 +93,24 @@ export async function fetchAbstracts(pmids: string[]): Promise<
     }
 
     if (title || abstract) {
-      out.push({ pmid, title: title || 'Untitled', abstract })
+      out.push({
+        pmid,
+        title: title || 'Untitled',
+        authors,
+        abstract,
+      })
     }
   }
 
   return out
+}
+
+/** 건강 관련 질문 시 PubMed 직접 검색 → 제목/저자/초록/PMID JSON 반환 */
+export async function searchAndFetchPapers(
+  query: string,
+  maxResults = 10
+): Promise<PubMedPaper[]> {
+  const pmids = await searchPubMed(query, maxResults)
+  if (pmids.length === 0) return []
+  return fetchAbstracts(pmids)
 }
