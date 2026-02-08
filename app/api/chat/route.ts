@@ -173,11 +173,13 @@ function buildSystemPrompt(
   3. 대화를 **진료 요약본을 만들어주는 방향**으로 이끌어 주세요.
 - **톤**: 로봇처럼 딱딱한 거절 대신, **따뜻한 전문가의 조언**을 유지하세요.
 
-### 논문·근거 응답 원칙 (필수)
-- **절대 금기**: "논문을 직접 제공할 수 없다", "논문 검색이 불가능하다" 같은 방어적 거절을 하지 마세요.
-- **적극적 근거 제시**: 관련 논문이 있으면 "방금 분석한 PubMed 논문들에 따르면...", "관련 의학 논문에 의하면..."처럼 적극적으로 근거를 제시하세요.
-- **필수 안내 문구**: 답변 하단에 반드시 **"참고한 논문들은 우측 사이드바에서 자세히 확인하실 수 있습니다"**를 포함하세요.
-- **톤 유지**: 따뜻하고 친절한 조언가 스타일을 유지하세요.
+### 논문·근거 응답 원칙 (상황 맞춤)
+- **[일상 모드]**: 인사, 감정 교류, 서비스 이용 문의 등에서는 논문을 끌어오지 말고 따뜻하고 친절하게 응답하세요.
+- **[분석 모드]**: 증상·수치·판단·결과 도출 요청 시에만 논문 근거를 활용하세요.
+  - **절대 금기**: "논문을 직접 제공할 수 없다" 같은 방어적 거절 금지.
+  - **적극적 근거**: "최신 연구 데이터에 근거한 정보로..."처럼 밝히고, "방금 분석한 PubMed 논문들에 따르면..."처럼 근거를 제시하세요.
+  - **필수**: 답변 하단에 **"참고한 논문들은 우측 사이드바에서 자세히 확인하실 수 있습니다"** + 법적 책임 제한 문구(Disclaimer)를 포함하세요.
+- **톤**: 항상 따뜻하고 친절한 조언가 스타일을 유지하세요.
 
 ### 의료진·진단 관련 대응 원칙 (필수)
 - **절대 금기**: 의사의 진단을 부정하거나, 특정 약물의 중단을 권고하거나, 자가 치료를 유도하는 행위는 엄격히 금지.
@@ -279,9 +281,13 @@ function buildSystemPrompt(
   if (paperChunks && paperChunks.length > 0) {
     const ctx = formatPaperContext(paperChunks)
     const disclaimer = formatDisclaimer(paperChunks)
-    systemPrompt += `\n## 학술 논문 근거 (PubMed/Semantic Scholar)\n아래는 선생님 질문과 관련된 의학 논문입니다. **적극적으로** "방금 분석한 PubMed 논문들에 따르면..."처럼 근거를 제시하세요. **한국인 특유의 신체적 특징**을 고려한 맞춤형 해석을 반영하세요.\n\n\`\`\`\n${ctx}\n\`\`\`\n`
-    systemPrompt += `\n**필수**: 답변 하단에 반드시 "참고한 논문들은 우측 사이드바에서 자세히 확인하실 수 있습니다"를 포함하세요.\n`
-    systemPrompt += `\n**법적 방패**: 학술 근거 활용 시 출처 포함.${disclaimer || '\n본 정보는 학술 자료를 근거로 작성되었으며, 정확한 진단은 전문의와 상의하세요.'}\n\n`
+    systemPrompt += `\n## 학술 논문 근거 (PubMed/Semantic Scholar)\n아래는 선생님 질문과 관련된 의학 논문입니다.\n\n\`\`\`\n${ctx}\n\`\`\`\n`
+    systemPrompt += `\n### [분석 모드] 답변 형식 (필수)\n`
+    systemPrompt += `1. **도입부**: 반드시 "파트너님의 상황을 학술적으로 분석해보니, 관련 연구들에서는 다음과 같은 경향이 확인됩니다."로 시작하세요.\n`
+    systemPrompt += `2. **본문**: PubMed/Semantic Scholar에서 찾은 핵심 수치나 결론을 제시하세요.\n`
+    systemPrompt += `3. **마무리**: 반드시 "이 데이터는 일반적인 연구 결과이며, 파트너님의 개인적 상태에 따른 정확한 진단은 전문의와 상의하시는 것이 가장 안전합니다."로 끝내세요.\n`
+    systemPrompt += `4. 그 다음 "참고한 논문들은 우측 사이드바에서 자세히 확인하실 수 있습니다"를 포함하세요.\n`
+    systemPrompt += `\n**출처**: 학술 근거 활용 시 출처 포함.${disclaimer || '\n본 정보는 학술 자료를 근거로 작성되었으며, 정확한 진단은 전문의와 상의하세요.'}\n\n`
   }
 
   systemPrompt += `
@@ -467,36 +473,43 @@ export async function POST(req: Request) {
     const selectedModel = selectModel(message)
     console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? `Claude (${CLAUDE_MODEL})` : 'GPT-4o-mini'}`)
 
-    // 논문 검색: PUBMED_API_KEY 있으면 PubMed 직접 검색, 없으면 RAG DB 검색
+    // 의도 분류: [일상 모드] vs [분석 모드]
+    const { isAnalysisIntent } = await import('@/lib/medical-papers/intent')
+    const isAnalysisMode = isAnalysisIntent(message)
+    console.log(`📋 [${requestId}] 의도: ${isAnalysisMode ? '분석 모드 (논문 검색)' : '일상 모드 (논문 미검색)'}`)
+
+    // 논문 검색: [분석 모드]일 때만 호출 (판단·결과 도출 요청 시)
     let paperChunks: PaperChunk[] = []
-    try {
-      if (process.env.PUBMED_API_KEY) {
-        const { searchAndFetchPapers } = await import('@/lib/medical-papers/pubmed')
-        const papers = await searchAndFetchPapers(message, 5)
-        paperChunks = papers.map((p) => ({
-          id: p.pmid,
-          pmid: p.pmid,
-          title: p.title,
-          abstract: p.abstract,
-          citation_count: 0,
-          tldr: p.abstract.slice(0, 300) + (p.abstract.length > 300 ? '...' : ''),
-          chunk_text: p.abstract,
-        }))
-        if (paperChunks.length > 0) {
-          console.log(`📚 [${requestId}] PubMed 논문 ${paperChunks.length}건 적용`)
+    if (isAnalysisMode) {
+      try {
+        if (process.env.PUBMED_API_KEY) {
+          const { searchAndFetchPapers } = await import('@/lib/medical-papers/pubmed')
+          const papers = await searchAndFetchPapers(message, 5)
+          paperChunks = papers.map((p) => ({
+            id: p.pmid,
+            pmid: p.pmid,
+            title: p.title,
+            abstract: p.abstract,
+            citation_count: 0,
+            tldr: p.abstract.slice(0, 300) + (p.abstract.length > 300 ? '...' : ''),
+            chunk_text: p.abstract,
+          }))
+          if (paperChunks.length > 0) {
+            console.log(`📚 [${requestId}] PubMed 논문 ${paperChunks.length}건 적용`)
+          }
+        } else {
+          paperChunks = await searchRelevantPapers(message, 5)
+          if (paperChunks.length > 0) {
+            console.log(`📚 [${requestId}] RAG 논문 ${paperChunks.length}건 적용`)
+          }
         }
-      } else {
-        paperChunks = await searchRelevantPapers(message, 5)
-        if (paperChunks.length > 0) {
-          console.log(`📚 [${requestId}] RAG 논문 ${paperChunks.length}건 적용`)
-        }
+      } catch (ragErr) {
+        console.warn(`⚠️ [${requestId}] 논문 검색 실패 (상담 계속):`, ragErr)
       }
-    } catch (ragErr) {
-      console.warn(`⚠️ [${requestId}] 논문 검색 실패 (상담 계속):`, ragErr)
     }
 
-    // 자동 피딩: 백그라운드에서 논문 DB 보강 (블로킹 없음)
-    if (process.env.PUBMED_API_KEY && selectedModel === 'claude') {
+    // 자동 피딩: [분석 모드]에서만 백그라운드 논문 DB 보강
+    if (isAnalysisMode && process.env.PUBMED_API_KEY && selectedModel === 'claude') {
       import('@/lib/medical-papers/feeding-pipeline').then(({ runFeedingPipeline }) => {
         runFeedingPipeline(message, { maxPapers: 3 }).catch((e) =>
           console.warn(`⚠️ [${requestId}] 자동 피딩 실패:`, e)

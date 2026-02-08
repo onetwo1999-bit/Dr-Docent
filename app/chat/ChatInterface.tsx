@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
 import ReferencesSidebar, { type Reference } from './ReferencesSidebar'
+import { isAnalysisIntent } from '@/lib/medical-papers/intent'
 import { useAppContextStore } from '@/store/useAppContextStore'
 
 interface Message {
@@ -71,12 +72,13 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     setInput('')
     userScrolledUpRef.current = false
     setIsLoading(true)
-    setReferencesLoading(true)
-    setReferences([])
     setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }])
     const assistantIndex = messages.length + 1
 
-    try {
+    const isAnalysisMode = isAnalysisIntent(userMessage)
+    if (isAnalysisMode) {
+      setReferencesLoading(true)
+      setReferences([])
       fetch(`/api/medical-papers/search?query=${encodeURIComponent(userMessage)}`, { credentials: 'include' })
         .then((r) => r.json())
         .then((data) => {
@@ -86,6 +88,12 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         })
         .catch(() => {})
         .finally(() => setReferencesLoading(false))
+    } else {
+      setReferencesLoading(false)
+      setReferences([])
+    }
+
+    try {
 
       const actions = getRecentActionsForAPI().map(({ type, label, detail, path }) => ({
         type,
@@ -156,7 +164,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
       })
     } finally {
       setIsLoading(false)
-      setReferencesLoading(false)
+      if (isAnalysisMode) setReferencesLoading(false)
     }
   }
 
@@ -290,9 +298,11 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         </div>
       </div>
 
-      <div className="hidden lg:flex">
-        <ReferencesSidebar references={references} isLoading={referencesLoading} />
-      </div>
+      {(references.length > 0 || referencesLoading) && (
+        <div className="hidden lg:flex">
+          <ReferencesSidebar references={references} isLoading={referencesLoading} />
+        </div>
+      )}
     </div>
   )
 }
