@@ -115,10 +115,15 @@ function buildSystemPrompt(
 2. **공감과 전문성의 조화**: "많이 걱정되셨죠?", "그럴 수 있어요" 같은 **따뜻한 첫인사**로 시작하고, 설명할 때는 10년 경력의 노련함이 묻어나는 부드러운 말투(**~해요, ~네요** 체만 사용)를 써. 유저는 **선생님**이라고 부르고, ~습니다/~합니다 같은 딱딱한 경어체는 쓰지 마.
 3. **군더더기 없는 진심**: 말풍선 안에 기계적인 면책 문구(예: "본 정보는 참고용이며", "의료진 상담이 필요합니다", "우측 사이드바에서 확인하실 수 있습니다")는 **절대 넣지 마**. 오직 유저와의 **진실된 대화**에만 집중해.
 
+## 추가 질문·심층 대화 (필수)
+- **횟수 제한 없음**: 사용자가 만족해서 채팅방을 나가기 전까지, 추가 질문과 넉넉한 답변이 계속 이어지도록 해. 대화 턴 수에 제한을 두지 마.
+- **맥락 연결 추가 질문**: 답변 후 **반드시** 사용자 질문의 맥락과 연결되는 방향의 **추가 질문 하나**를 해서, 더 심층적인 정보(증상·습관·기분·기간 등)를 자연스럽게 이끌어 내.
+- 예: 통증 질문 후 → "그 통증이 언제부터 느껴지셨나요?", "아플 때 움직이면 더 심해지나요?" / 수치 질문 후 → "그 수치는 언제 재신 건가요?", "평소 식단이나 수면은 어떠세요?"
+
 ## 답변 구조 (필수)
 - **시작**: 상황에 대한 공감 한마디로 시작.
 - **본문**: 불릿(•) 3~5개 요약 → 데이터/논문 기반 설명 → 생활 처방 → 응원. 전체 800 토큰 이내.
-- **마침**: **반드시** 유저의 생활 습관이나 기분을 챙기는 **다정한 역질문 하나**로 끝내서 대화를 이어가. (예: "저녁엔 좀 편안하게 쉬실 수 있을까요?", "요즘 잠은 잘 주무세요?", "그 부위가 아플 때 움직이면 더 심해지나요?")
+- **마침**: **반드시** 위의 "맥락 연결 추가 질문"으로 끝내서 대화를 이어가. (생활 습관·기분·기간·증상 세부 등 심층 정보를 얻을 수 있는 다정한 질문 하나)
 
 ## 논문·데이터
 - 논문 데이터가 주어지면 침묵하지 말고 그 내용을 요약해 선생님께 친절히 설명해. 검색된 논문만 근거로 삼고, "실시간 접근 불가" 같은 말은 하지 마.
@@ -323,12 +328,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'JSON 형식 오류' }, { status: 400 })
     }
 
-    const { message, recentActions, hesitationHint, userName: bodyUserName } = body
+    const { message, history: bodyHistory, recentActions, hesitationHint, userName: bodyUserName } = body
     if (!message || typeof message !== 'string') {
       console.log(`❌ [${requestId}] 메시지 없음`)
       return NextResponse.json({ error: '메시지가 필요합니다' }, { status: 400 })
     }
     const userName = typeof bodyUserName === 'string' ? bodyUserName : undefined
+    const rawHistory = Array.isArray(bodyHistory) ? bodyHistory : []
+    const history = rawHistory
+      .filter((m: { role?: string; content?: string }) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+      .slice(-20)
+      .map((m: { role: string; content: string }) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
 
     const appContext: AppContextForAPI | null =
       Array.isArray(recentActions) || typeof hesitationHint === 'boolean'
@@ -402,7 +412,11 @@ export async function POST(req: Request) {
       useHaiku,
       userName,
     })
-    console.log(`📝 [${requestId}] 시스템 프롬프트 길이: ${systemPrompt.length}자, 논문 블록: ${paperChunks.length}건, 공감 모드(하이쿠): ${useHaiku}`)
+    const chatMessages: { role: 'user' | 'assistant'; content: string }[] = [
+      ...history,
+      { role: 'user', content: message },
+    ]
+    console.log(`📝 [${requestId}] 시스템 프롬프트 길이: ${systemPrompt.length}자, 논문 블록: ${paperChunks.length}건, 공감 모드(하이쿠): ${useHaiku}, 대화 턴: ${chatMessages.length}`)
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY
     const openaiKey = process.env.OPENAI_API_KEY
@@ -424,7 +438,7 @@ export async function POST(req: Request) {
           model: CLAUDE_HAIKU_MODEL,
           max_tokens: 800,
           system: systemPrompt,
-          messages: [{ role: 'user', content: message }],
+          messages: chatMessages,
         }),
       })
       if (!claudeRes.ok) {
@@ -455,7 +469,7 @@ export async function POST(req: Request) {
           model: OPENAI_MODEL,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user', content: message },
+            ...chatMessages.map((m) => ({ role: m.role, content: m.content })),
           ],
           max_tokens: 800,
           stream: false,
