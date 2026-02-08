@@ -8,7 +8,7 @@
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { streamText, tool } from 'ai'
+import { streamText, tool, stepCountIs } from 'ai'
 import { smoothStream } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { openai } from '@ai-sdk/openai'
@@ -608,6 +608,7 @@ export async function POST(req: Request) {
       maxOutputTokens: 800,
       tools: isAnalysisMode || forceSearch ? tools : undefined,
       toolChoice: isAnalysisMode || forceSearch ? toolChoice : undefined,
+      stopWhen: isAnalysisMode || forceSearch ? stepCountIs(5) : undefined,
       experimental_transform: smoothStream(),
       onError({ error }) {
         console.error(`❌ [${requestId}] 스트림 에러:`, error)
