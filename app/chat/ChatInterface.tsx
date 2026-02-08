@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, ArrowLeft } from 'lucide-react'
+import { Send, Bot, User, ArrowLeft, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
@@ -19,12 +19,17 @@ interface ChatInterfaceProps {
 }
 
 const SCROLL_BOTTOM_THRESHOLD = 120
+/** 스트리밍 시 한 번에 보여줄 글자 수 (작을수록 천천히) */
+const TYPEWRITER_CHUNK = 2
+/** 글자 추가 간격 (ms) — 값이 클수록 천천히 */
+const TYPEWRITER_INTERVAL_MS = 42
 
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
   const getHesitationHint = useAppContextStore((s) => s.getHesitationHint)
   const [references, setReferences] = useState<Reference[]>([])
   const [referencesLoading, setReferencesLoading] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -153,9 +158,34 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
       const PAPERS_PREFIX = '__DRDOCENT_PAPERS__'
       const PAPERS_SUFFIX = '__END__'
       let contentStartIndex = 0
+      const streamBufferRef = { current: '' }
+      const streamTotalLenRef = { current: 0 }
+      const streamVisibleLenRef = { current: 0 }
+      const streamDoneRef = { current: false }
+      const assistantIndexRef = { current: assistantIndex }
+      const typewriterTimerRef = { current: null as ReturnType<typeof setInterval> | null }
+
+      const stopTypewriterAndSetFinal = () => {
+        if (typewriterTimerRef.current) {
+          clearInterval(typewriterTimerRef.current)
+          typewriterTimerRef.current = null
+        }
+        const final = streamBufferRef.current
+        setMessages(prev => {
+          const next = [...prev]
+          if (next[assistantIndexRef.current]?.role === 'assistant') {
+            next[assistantIndexRef.current] = { ...next[assistantIndexRef.current], content: final }
+          }
+          return next
+        })
+      }
+
       while (true) {
         const { done, value } = await reader.read()
-        if (done) break
+        if (done) {
+          streamDoneRef.current = true
+          break
+        }
         accumulated += decoder.decode(value, { stream: true })
         if (contentStartIndex === 0 && accumulated.includes(PAPERS_PREFIX) && accumulated.includes(PAPERS_SUFFIX)) {
           const start = accumulated.indexOf(PAPERS_PREFIX) + PAPERS_PREFIX.length
@@ -166,16 +196,47 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
             if (Array.isArray(refs) && refs.length > 0) {
               setReferences(refs)
               setReferencesLoading(false)
+              setSidebarOpen(true)
             }
           } catch (_) {}
           contentStartIndex = accumulated.indexOf(PAPERS_SUFFIX) + PAPERS_SUFFIX.length
         }
-        const displayContent = contentStartIndex > 0 ? accumulated.slice(contentStartIndex).trimStart() : accumulated
-        setMessages(prev => {
-          const next = [...prev]
-          if (next[assistantIndex]?.role === 'assistant') next[assistantIndex] = { ...next[assistantIndex], content: displayContent }
-          return next
-        })
+        const contentPart = contentStartIndex > 0 ? accumulated.slice(contentStartIndex).trimStart() : accumulated
+        streamBufferRef.current = contentPart
+        streamTotalLenRef.current = contentPart.length
+
+        if (!typewriterTimerRef.current) {
+          typewriterTimerRef.current = setInterval(() => {
+            const target = streamTotalLenRef.current
+            let cur = streamVisibleLenRef.current
+            if (cur < target) {
+              cur = Math.min(cur + TYPEWRITER_CHUNK, target)
+              streamVisibleLenRef.current = cur
+              const displayContent = streamBufferRef.current.slice(0, cur)
+              setMessages(prev => {
+                const next = [...prev]
+                if (next[assistantIndexRef.current]?.role === 'assistant') {
+                  next[assistantIndexRef.current] = { ...next[assistantIndexRef.current], content: displayContent }
+                }
+                return next
+              })
+            }
+            if (streamDoneRef.current && streamVisibleLenRef.current >= streamTotalLenRef.current) {
+              stopTypewriterAndSetFinal()
+            }
+          }, TYPEWRITER_INTERVAL_MS)
+        }
+      }
+
+      if (streamVisibleLenRef.current >= streamTotalLenRef.current) {
+        stopTypewriterAndSetFinal()
+      } else {
+        const catchUpTimer = setInterval(() => {
+          if (streamVisibleLenRef.current >= streamTotalLenRef.current) {
+            clearInterval(catchUpTimer)
+            stopTypewriterAndSetFinal()
+          }
+        }, 50)
       }
       scrollToBottom('auto')
     } catch (error) {
@@ -321,10 +382,49 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         </div>
       </div>
 
+      {/* 데스크톱: md 이상에서 우측 사이드바 항상 표시 (논문 있을 때) */}
       {(references.length > 0 || referencesLoading) && (
-        <div className="hidden lg:flex">
+        <div className="hidden md:flex flex-shrink-0">
           <ReferencesSidebar references={references} isLoading={referencesLoading} />
         </div>
+      )}
+
+      {/* 모바일: 참고 논문 버튼 + 열면 보이는 사이드바 패널 */}
+      {(references.length > 0 || referencesLoading) && (
+        <div className="md:hidden fixed bottom-20 right-4 z-30">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((prev) => !prev)}
+            className="flex items-center gap-2 bg-[#2DD4BF] text-white px-4 py-2.5 rounded-full shadow-lg hover:bg-[#26b8a5] transition-colors"
+          >
+            <FileText className="w-4 h-4" />
+            <span>참고 논문 {references.length > 0 ? `(${references.length})` : ''}</span>
+          </button>
+        </div>
+      )}
+      {sidebarOpen && (references.length > 0 || referencesLoading) && (
+        <>
+          <div
+            className="md:hidden fixed inset-0 bg-black/40 z-40"
+            aria-hidden
+            onClick={() => setSidebarOpen(false)}
+          />
+          <div className="md:hidden fixed top-0 right-0 bottom-0 w-full max-w-sm bg-white shadow-xl z-50 flex flex-col transition-transform duration-200 ease-out">
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">참고 논문</h2>
+              <button
+                type="button"
+                onClick={() => setSidebarOpen(false)}
+                className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
+              >
+                닫기
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden">
+              <ReferencesSidebar references={references} isLoading={referencesLoading} />
+            </div>
+          </div>
+        </>
       )}
     </div>
   )
