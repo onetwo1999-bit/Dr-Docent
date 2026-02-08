@@ -26,6 +26,14 @@ const ANALYSIS_KEYWORDS = [
   '논문', '연구', '근거', '데이터', '결과',
 ]
 
+/** 강제 searchPapers 트리거: 수치, 논문, 연구, 근거, 혈당, BMI 등 — tool_choice 강제 */
+const FORCED_SEARCH_KEYWORDS = ['수치', '논문', '연구', '근거', '혈당', 'bmi', 'BMI']
+
+export function isForcedSearchTrigger(message: string): boolean {
+  const text = message.trim().toLowerCase()
+  return FORCED_SEARCH_KEYWORDS.some((kw) => text.includes(kw.toLowerCase()))
+}
+
 /**
  * 분석 모드 여부 (searchPapers 강제 호출 트리거)
  * - 증상 분석, 수치 해석, 질병 판단, 치료 결과 예측 등 결과 도출 요구 시 true
@@ -44,6 +52,7 @@ export function isAnalysisIntent(message: string): boolean {
   const dailyMatch = DAILY_KEYWORDS.some((kw) => text.includes(kw.toLowerCase()))
 
   if (analysisMatch) return true
+  if (isForcedSearchTrigger(message)) return true
   if (dailyMatch && !analysisMatch) return false
   return false
 }

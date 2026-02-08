@@ -47,6 +47,7 @@ export async function GET(req: Request) {
     }
 
     if (process.env.PUBMED_API_KEY) {
+      console.log('🔬 API Request Sent to PubMed (query:', query.slice(0, 60) + (query.length > 60 ? '...' : ''), ')')
       const papers = await searchAndFetchPapers(query, 10)
       const references = papers.map((p) => ({
         pmid: p.pmid,
@@ -59,6 +60,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ success: true, references, source: 'pubmed' })
     }
 
+    console.log('🔬 API Request Sent to PubMed (RAG fallback, query:', query.slice(0, 60) + (query.length > 60 ? '...' : ''), ')')
     const chunks = await searchRelevantPapers(query, 10)
     const seen = new Map<string, { title: string; pmid: string | null; authors: string; abstract: string; citation_count: number; tldr: string | null }>()
     for (const c of chunks) {

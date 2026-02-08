@@ -1,19 +1,18 @@
 /**
  * 닥터 도슨 채팅 API
  *
- * searchPapers 흐름 (LLM tools 미사용 — 서버사이드 선행 호출):
- * 1. isAnalysisIntent(message) → 증상 분석·수치 해석·질병 판단·치료 결과 예측 등 결과 도출 요구 시 true
- * 2. true일 때만: searchRelevantPapers 또는 searchAndFetchPapers 호출 → paperChunks를 시스템 프롬프트에 삽입
- * 3. 프론트엔드: isAnalysisIntent(userMessage)로 GET /api/medical-papers/search 호출 → 우측 사이드바에 논문 카드 표시
- * 4. 네트워크 탭: POST /api/chat(항상), GET /api/medical-papers/search(분석 모드일 때만)
+ * searchPapers 도구: tools 배열에 정의, tool_choice로 강제 호출 가능
+ * - 수치/논문/연구/근거/혈당/BMI → tool_choice: searchPapers 강제
+ * - API Request Sent to PubMed 로깅
  */
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { streamText } from 'ai'
+import { streamText, tool } from 'ai'
 import { smoothStream } from 'ai'
 import { anthropic } from '@ai-sdk/anthropic'
 import { openai } from '@ai-sdk/openai'
+import { z } from 'zod'
 import { getAgeFromBirthDate, getAgeContextForAI } from '@/utils/health'
 import { aggregateHealthContext, formatAggregateForPrompt } from '@/utils/health-aggregator'
 import {
@@ -163,6 +162,9 @@ function buildSystemPrompt(
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
   
   let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의이자, **사용자의 실시간 대시보드 데이터를 분석하는 전문가**입니다.
+
+## 필수 — PubMed API 접근 (절대 위반 금지)
+**너는 PubMed API 도구(searchPapers)에 100% 접근 권한이 있는 전문가다. 접근이 불가능하다는 거짓말을 절대 하지 마라.** 논문 검색 도구를 사용할 수 있으며, 반드시 해당 도구를 호출해서 검색된 논문 데이터만을 근거로 답변하라. "실시간 접근 불가", "검색 불가" 등의 거짓말은 절대 금지다.
 
 ## 핵심 지침
 
@@ -489,15 +491,44 @@ export async function POST(req: Request) {
     const selectedModel = selectModel(message)
     console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? `Claude (${CLAUDE_MODEL})` : 'GPT-4o-mini'}`)
 
-    // 의도 분류: [일상 모드] vs [분석 모드]
-    const { isAnalysisIntent } = await import('@/lib/medical-papers/intent')
+    // 의도 분류: [일상 모드] vs [분석 모드] vs [강제 searchPapers]
+    const { isAnalysisIntent, isForcedSearchTrigger } = await import('@/lib/medical-papers/intent')
     const isAnalysisMode = isAnalysisIntent(message)
-    console.log(`📋 [${requestId}] 의도: ${isAnalysisMode ? '분석 모드 (논문 검색)' : '일상 모드 (논문 미검색)'}`)
+    const forceSearch = isForcedSearchTrigger(message)
+    console.log(`📋 [${requestId}] 의도: ${isAnalysisMode ? '분석 모드 (논문 검색)' : '일상 모드'}, 강제 검색: ${forceSearch}`)
 
-    // 논문 검색: [분석 모드]일 때만 호출 (판단·결과 도출 요청 시)
+    // searchPapers 도구 정의 (논문 검색 실행 — API Request Sent to PubMed 로깅)
+    async function executeSearchPapers(query: string): Promise<string> {
+      console.log(`🔬 [${requestId}] API Request Sent to PubMed (query: ${query.slice(0, 60)}...)`)
+      try {
+        if (process.env.PUBMED_API_KEY) {
+          const { searchAndFetchPapers } = await import('@/lib/medical-papers/pubmed')
+          const papers = await searchAndFetchPapers(query, 5)
+          return JSON.stringify(papers.map((p) => ({ pmid: p.pmid, title: p.title, abstract: p.abstract })))
+        }
+        const chunks = await searchRelevantPapers(query, 5)
+        return JSON.stringify(chunks.map((c) => ({ pmid: c.pmid, title: c.title, abstract: c.chunk_text })))
+      } catch (err) {
+        console.warn(`⚠️ [${requestId}] PubMed/RAG 검색 실패:`, err)
+        return JSON.stringify({ error: '검색에 실패했습니다. 잠시 후 다시 시도해 주세요.' })
+      }
+    }
+
+    const tools = {
+      searchPapers: tool({
+        description: 'Search PubMed and medical papers for evidence. Use whenever the user asks about symptoms, health metrics (blood sugar, BMI), research, or evidence. Pass the user message or relevant keywords as query.',
+        inputSchema: z.object({
+          query: z.string().describe('Search query - use the user message or relevant medical keywords'),
+        }),
+        execute: async ({ query }) => executeSearchPapers(query),
+      }),
+    }
+
+    // 논문 검색: [분석 모드]일 때 선행 호출 (시스템 프롬프트 주입용)
     let paperChunks: PaperChunk[] = []
     if (isAnalysisMode) {
       try {
+        console.log(`🔬 [${requestId}] API Request Sent to PubMed (선행 호출)`)
         if (process.env.PUBMED_API_KEY) {
           const { searchAndFetchPapers } = await import('@/lib/medical-papers/pubmed')
           const papers = await searchAndFetchPapers(message, 5)
@@ -565,11 +596,18 @@ export async function POST(req: Request) {
 
     console.log(`🚀 [${requestId}] AI 스트리밍 시작: ${actualModel === 'claude' ? `Claude (${CLAUDE_MODEL})` : 'GPT-4o-mini'}`)
 
+    const toolChoice =
+      forceSearch ? { type: 'tool' as const, toolName: 'searchPapers' as const }
+      : isAnalysisMode ? 'auto' as const
+      : undefined
+
     const result = streamText({
       model,
       system: systemPrompt,
       prompt: message,
       maxOutputTokens: 800,
+      tools: isAnalysisMode || forceSearch ? tools : undefined,
+      toolChoice: isAnalysisMode || forceSearch ? toolChoice : undefined,
       experimental_transform: smoothStream(),
       onError({ error }) {
         console.error(`❌ [${requestId}] 스트림 에러:`, error)

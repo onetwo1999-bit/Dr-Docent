@@ -56,7 +56,7 @@ export default function ReferencesSidebar({ references, isLoading }: ReferencesS
           </div>
         )}
 
-        {references.map((ref, idx) => {
+        {references.length > 0 && references.map((ref, idx) => {
           const summary = ref.abstract || ref.tldr || ''
           const content = (
             <>

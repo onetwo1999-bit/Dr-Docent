@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { motion } from 'framer-motion'
 import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
 import ReferencesSidebar, { type Reference } from './ReferencesSidebar'
-import { isAnalysisIntent } from '@/lib/medical-papers/intent'
+import { isAnalysisIntent, isForcedSearchTrigger } from '@/lib/medical-papers/intent'
 import { useAppContextStore } from '@/store/useAppContextStore'
 
 interface Message {
@@ -76,17 +76,24 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     const assistantIndex = messages.length + 1
 
     const isAnalysisMode = isAnalysisIntent(userMessage)
-    if (isAnalysisMode) {
+    const forceSearch = isForcedSearchTrigger(userMessage)
+    const shouldFetchPapers = isAnalysisMode || forceSearch
+
+    if (shouldFetchPapers) {
       setReferencesLoading(true)
       setReferences([])
       fetch(`/api/medical-papers/search?query=${encodeURIComponent(userMessage)}`, { credentials: 'include' })
         .then((r) => r.json())
         .then((data) => {
-          if (data?.success && Array.isArray(data.references)) {
+          if (data?.success && Array.isArray(data.references) && data.references.length > 0) {
             setReferences(data.references)
+          } else if (data?.success && Array.isArray(data.references)) {
+            setReferences([])
           }
         })
-        .catch(() => {})
+        .catch((err) => {
+          console.warn('❌ [Chat] 논문 검색 실패:', err)
+        })
         .finally(() => setReferencesLoading(false))
     } else {
       setReferencesLoading(false)
@@ -164,7 +171,6 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
       })
     } finally {
       setIsLoading(false)
-      if (isAnalysisMode) setReferencesLoading(false)
     }
   }
 
