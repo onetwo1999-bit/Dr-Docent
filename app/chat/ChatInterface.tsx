@@ -145,7 +145,8 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         body: JSON.stringify({
           message: userMessage,
           recentActions: actions,
-          hesitationHint: getHesitationHint()
+          hesitationHint: getHesitationHint(),
+          userName: userName || undefined
         }),
       })
 

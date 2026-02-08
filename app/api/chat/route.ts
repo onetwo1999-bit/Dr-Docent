@@ -24,6 +24,25 @@ export const dynamic = 'force-dynamic'
 
 const DAILY_LIMIT = 10
 const OPENAI_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini'
+const CLAUDE_HAIKU_MODEL = 'claude-3-haiku-20240307'
+
+// 1. 신체적 통증·감각 (공감 필수)
+const KEYWORDS_PAIN = ['아파', '시려', '통증', '찌릿', '욱신', '부었어', '열나', '저려', '결려', '뻐근해', '따가워']
+// 2. 수치·검사 결과 (냉철한 분석)
+const KEYWORDS_NUMBERS = ['혈당', '혈압', '콜레스테롤', '수치', 'mg/dl', 'bmi', '요산', '당화혈색소', '단백뇨', '중성지방']
+// 3. 질환명·약물 (전문성)
+const KEYWORDS_DISEASE = ['통풍', '당뇨', '대사증후군', '고지혈증', '근감소증', '고혈압', '콜킨', '페북트정', '부작용', '처방']
+// 4. 생활습관·심리 (맥락)
+const KEYWORDS_LIFESTYLE = ['수면', '식단', '운동', '피로', '스트레스', '걱정', '불안', '우울', '영양제', '다이어트']
+
+const ALL_HAIKU_KEYWORDS = [...KEYWORDS_PAIN, ...KEYWORDS_NUMBERS, ...KEYWORDS_DISEASE, ...KEYWORDS_LIFESTYLE]
+
+/** 4가지 카테고리(통증/수치/질환/생활습관) 키워드가 하나라도 포함되면 공감 모드(하이쿠) 사용 */
+function shouldUseHaiku(userContent: string): boolean {
+  if (!userContent || typeof userContent !== 'string') return false
+  const lower = userContent.trim().toLowerCase()
+  return ALL_HAIKU_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()))
+}
 
 interface UserProfile {
   birth_date: string | null
@@ -79,9 +98,12 @@ function buildSystemPrompt(
   profile: UserProfile | null,
   currentHealthContext: string | null,
   appContext?: AppContextForAPI | null,
-  paperChunks?: PaperChunk[] | null
+  paperChunks?: PaperChunk[] | null,
+  options?: { useHaiku?: boolean; userName?: string }
 ): string {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
+  const useHaiku = options?.useHaiku ?? false
+  const displayName = options?.userName?.trim() || '선생님'
 
   let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의이자, **사용자의 실시간 대시보드 데이터를 분석하는 전문가**예요.
 
@@ -103,6 +125,13 @@ function buildSystemPrompt(
 - **답변 구조**: 공감 한마디 → 불릿(•) 3~5개 요약 → 데이터 분석 → 생활 처방 → 응원. 전체 800 토큰 이내.
 - 존스홉킨스 등 특정 병원명은 언급하지 마세요.
 `
+  if (useHaiku) {
+    systemPrompt += `
+## 공감 모드 (하이쿠 전용, 필수)
+- **답변 첫 문장은 반드시 "${displayName}님"을 부르며 시작하세요.** 예: "${displayName}님, 그동안 많이 불편하셨겠어요."
+- **답변 마지막에는 오늘 대화에서 다룬 주제(통증·수치·질환·생활습관)와 관련된 다정한 후속 질문 하나를 꼭 던지세요.** 예: "요즘 수면은 몇 시간 정도 주무세요?", "그 부위가 아플 때 움직이면 더 심해지나요?"
+`
+  }
 
   if (profile) {
     const age = getAgeFromBirthDate(profile.birth_date)
@@ -292,11 +321,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'JSON 형식 오류' }, { status: 400 })
     }
 
-    const { message, recentActions, hesitationHint } = body
+    const { message, recentActions, hesitationHint, userName: bodyUserName } = body
     if (!message || typeof message !== 'string') {
       console.log(`❌ [${requestId}] 메시지 없음`)
       return NextResponse.json({ error: '메시지가 필요합니다' }, { status: 400 })
     }
+    const userName = typeof bodyUserName === 'string' ? bodyUserName : undefined
 
     const appContext: AppContextForAPI | null =
       Array.isArray(recentActions) || typeof hesitationHint === 'boolean'
@@ -365,42 +395,84 @@ export async function POST(req: Request) {
       refsForSidebar = result.refsForSidebar
     }
 
-    const systemPrompt = buildSystemPrompt(profile, currentHealthContext, appContext, paperChunks)
-    console.log(`📝 [${requestId}] 시스템 프롬프트 길이: ${systemPrompt.length}자, 논문 블록: ${paperChunks.length}건`)
-
-    const openaiKey = process.env.OPENAI_API_KEY
-    if (!openaiKey || openaiKey.length < 10) {
-      console.error(`❌ [${requestId}] OPENAI_API_KEY 없음`)
-      return NextResponse.json({ error: 'AI 서비스 API 키가 설정되지 않았습니다. OPENAI_API_KEY를 설정해주세요.' }, { status: 500 })
-    }
-
-    console.log(`🚀 [${requestId}] OpenAI Chat Completions 호출 (stream: false, model: ${OPENAI_MODEL})`)
-    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${openaiKey}`,
-      },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: message },
-        ],
-        max_tokens: 800,
-        stream: false,
-      }),
+    const useHaiku = shouldUseHaiku(message)
+    const systemPrompt = buildSystemPrompt(profile, currentHealthContext, appContext, paperChunks, {
+      useHaiku,
+      userName,
     })
+    console.log(`📝 [${requestId}] 시스템 프롬프트 길이: ${systemPrompt.length}자, 논문 블록: ${paperChunks.length}건, 공감 모드(하이쿠): ${useHaiku}`)
 
-    if (!openaiRes.ok) {
-      const errText = await openaiRes.text()
-      console.error(`❌ [${requestId}] OpenAI API 오류: ${openaiRes.status}`, errText.slice(0, 300))
-      return NextResponse.json({ error: 'AI 응답 생성에 실패했습니다.' }, { status: 502 })
+    const anthropicKey = process.env.ANTHROPIC_API_KEY
+    const openaiKey = process.env.OPENAI_API_KEY
+    const hasClaude = anthropicKey && anthropicKey.length > 10
+    const hasOpenAI = openaiKey && openaiKey.length > 10
+
+    let answer = ''
+
+    if (useHaiku && hasClaude) {
+      console.log(`🚀 [${requestId}] Claude(하이쿠) 호출 (공감 모드, model: ${CLAUDE_HAIKU_MODEL})`)
+      const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: CLAUDE_HAIKU_MODEL,
+          max_tokens: 800,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: message }],
+        }),
+      })
+      if (!claudeRes.ok) {
+        const errText = await claudeRes.text()
+        console.error(`❌ [${requestId}] Claude API 오류: ${claudeRes.status}`, errText.slice(0, 300))
+        if (hasOpenAI) {
+          console.log(`🔄 [${requestId}] OpenAI로 폴백`)
+        } else {
+          return NextResponse.json({ error: 'AI 응답 생성에 실패했습니다.' }, { status: 502 })
+        }
+      } else {
+        const claudeData = await claudeRes.json().catch(() => null)
+        const textBlock = claudeData?.content?.find((b: { type: string }) => b.type === 'text')
+        answer = textBlock?.text ?? ''
+        console.log(`✅ [${requestId}] Claude 응답 수신 (${answer.length}자)`)
+      }
     }
 
-    const openaiData = await openaiRes.json().catch(() => null)
-    const answer = openaiData?.choices?.[0]?.message?.content ?? ''
-    console.log(`✅ [${requestId}] OpenAI 응답 수신 (${answer.length}자)`)
+    if (answer === '' && hasOpenAI) {
+      console.log(`🚀 [${requestId}] OpenAI Chat Completions 호출 (stream: false, model: ${OPENAI_MODEL})`)
+      const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: OPENAI_MODEL,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: message },
+          ],
+          max_tokens: 800,
+          stream: false,
+        }),
+      })
+      if (!openaiRes.ok) {
+        const errText = await openaiRes.text()
+        console.error(`❌ [${requestId}] OpenAI API 오류: ${openaiRes.status}`, errText.slice(0, 300))
+        return NextResponse.json({ error: 'AI 응답 생성에 실패했습니다.' }, { status: 502 })
+      }
+      const openaiData = await openaiRes.json().catch(() => null)
+      answer = openaiData?.choices?.[0]?.message?.content ?? ''
+      console.log(`✅ [${requestId}] OpenAI 응답 수신 (${answer.length}자)`)
+    }
+
+    if (!answer && !hasOpenAI && !hasClaude) {
+      console.error(`❌ [${requestId}] API 키 없음`)
+      return NextResponse.json({ error: 'AI 서비스 API 키가 설정되지 않았습니다. OPENAI_API_KEY 또는 ANTHROPIC_API_KEY를 설정해주세요.' }, { status: 500 })
+    }
 
     await incrementUsage(supabase, user.id)
     console.log(`✅ [${requestId}] 사용량 증가 완료`)
