@@ -125,7 +125,7 @@ export async function aggregateHealthContext(
     ? allScores.filter((r) => r.chart_number === myChartNumber)
     : []
   const scoresByDate = new Map(myScores.map((r) => [r.score_date, Number(r.score)]))
-  const chartMasked = myChartNumber ? myChartNumber.slice(0, 3) + '***' : null
+  const chartMasked = myChartNumber != null ? String(myChartNumber).slice(0, 3) + '***' : null
 
   const logs = (logsRes.data ?? []) as RawHealthLog[]
   const schedules = schedulesRes.data ?? []
@@ -198,7 +198,7 @@ export async function aggregateHealthContext(
 
     const mealLogs = dayLogs.filter((l) => l.category === 'meal')
     const descriptions = mealLogs.map(
-      (l) => (l.meal_description || l.notes || l.note || '식사 기록').slice(0, 200)
+      (l) => String(l.meal_description ?? l.notes ?? l.note ?? '식사 기록').slice(0, 200)
     )
     const photoCount = mealLogs.filter((l) => l.image_url).length
     dailyMeals.push({ date: dateStr, descriptions, photo_count: photoCount })
@@ -207,7 +207,7 @@ export async function aggregateHealthContext(
     dailyMeds.push({
       date: dateStr,
       count: medLogs.length,
-      items: medLogs.map((l) => (l.medication_name || l.notes || l.note || '복약').slice(0, 80)),
+      items: medLogs.map((l) => String(l.medication_name ?? l.notes ?? l.note ?? '복약').slice(0, 80)),
     })
   }
 
@@ -262,7 +262,7 @@ export async function aggregateHealthContext(
       daily: dailyMeals,
       total_meals: totalMeals,
       days_with_photo: daysWithPhoto,
-      summary_text: summary_text.slice(0, 1500),
+      summary_text: String(summary_text).slice(0, 1500),
     },
     medication: {
       daily: dailyMeds,
@@ -307,7 +307,7 @@ export function formatAggregateForPrompt(summary: HealthAggregateSummary): strin
     if (summary.exercise.high_intensity_days > 0) {
       lines.push(`  - 고강도 운동 기록일: ${summary.exercise.high_intensity_days}일`)
     }
-    summary.exercise.daily.slice(-5).forEach((e) => {
+    (Array.isArray(summary.exercise.daily) ? summary.exercise.daily.slice(-5) : []).forEach((e) => {
       if (e.type) {
         const part = [e.date, e.type, e.duration_minutes != null ? `${e.duration_minutes}분` : null, e.intensity_summary].filter(Boolean).join(' ')
         lines.push(`  - ${part}`)
@@ -319,7 +319,8 @@ export function formatAggregateForPrompt(summary: HealthAggregateSummary): strin
 
   lines.push(`- 식단: 총 ${summary.diet.total_meals}회 식사 기록, 사진 ${summary.diet.days_with_photo}일분`)
   if (summary.diet.summary_text && summary.diet.summary_text !== '최근 7일 식단 기록 없음.') {
-    lines.push(`  요약: ${summary.diet.summary_text.slice(0, 500)}${summary.diet.summary_text.length > 500 ? '…' : ''}`)
+    const st = String(summary.diet.summary_text)
+    lines.push(`  요약: ${st.slice(0, 500)}${st.length > 500 ? '…' : ''}`)
   }
 
   lines.push(
