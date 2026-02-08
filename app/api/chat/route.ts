@@ -17,6 +17,10 @@ export const dynamic = 'force-dynamic'
 const DAILY_LIMIT = 10
 const DISCLAIMER = '\n\n━━━━━━━━━━━━━━━━━━━━\n⚠️ 본 서비스는 의학적 진단을 대신하지 않습니다. 정확한 진단은 전문의와 상담해 주세요.'
 
+// Claude 모델: claude-3-5-haiku-latest는 2025년 12월 deprecated, claude-haiku-4-5로 대체
+// 환경 변수 ANTHROPIC_MODEL로 오버라이드 가능 (예: claude-3-haiku-20240307)
+const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001'
+
 // ========================
 // 📊 유저 프로필 타입
 // ========================
@@ -432,7 +436,7 @@ export async function POST(req: Request) {
 
     // 스마트 모델 라우팅
     const selectedModel = selectModel(message)
-    console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? 'Claude 3.5 Haiku (20241022)' : 'GPT-4o-mini'}`)
+    console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? `Claude (${CLAUDE_MODEL})` : 'GPT-4o-mini'}`)
 
     // 시스템 프롬프트 생성 (프로필 + 최신 건강 요약 + 앱 컨텍스트)
     const systemPrompt = buildSystemPrompt(profile, currentHealthContext, appContext)
@@ -461,10 +465,10 @@ export async function POST(req: Request) {
     }
 
     const model = actualModel === 'claude'
-      ? anthropic('claude-3-5-haiku-latest')
+      ? anthropic(CLAUDE_MODEL)
       : openai('gpt-4o-mini')
 
-    console.log(`🚀 [${requestId}] AI 스트리밍 시작: ${actualModel === 'claude' ? 'Claude 3.5 Haiku (latest)' : 'GPT-4o-mini'}`)
+    console.log(`🚀 [${requestId}] AI 스트리밍 시작: ${actualModel === 'claude' ? `Claude (${CLAUDE_MODEL})` : 'GPT-4o-mini'}`)
 
     const result = streamText({
       model,

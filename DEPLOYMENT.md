@@ -16,6 +16,7 @@
 
 #### 선택적 환경 변수
 - `NEXT_PUBLIC_APP_URL` - 앱 URL (기본값: `https://dr-docent.vercel.app`)
+- `ANTHROPIC_MODEL` - Claude 모델 ID (기본값: `claude-haiku-4-5-20251001`). `claude-3-5-haiku-latest`는 deprecated되어 404 발생 시 이 값을 확인하세요.
 
 ### 2. 환경 변수 체크
 
