@@ -1,17 +1,26 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, ArrowLeft, FileText } from 'lucide-react'
+import { Send, Bot, User, ArrowLeft, ExternalLink } from 'lucide-react'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
 import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
-import ReferencesSidebar, { type Reference } from './ReferencesSidebar'
 import { isAnalysisIntent, isForcedSearchTrigger } from '@/lib/medical-papers/intent'
 import { useAppContextStore } from '@/store/useAppContextStore'
+
+export interface Reference {
+  title: string
+  pmid: string | null
+  url?: string
+  journal?: string
+  authors?: string
+  abstract?: string
+}
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
+  papers?: Reference[]
 }
 
 interface ChatInterfaceProps {
@@ -21,7 +30,7 @@ interface ChatInterfaceProps {
 const SCROLL_BOTTOM_THRESHOLD = 120
 const TYPEWRITER_INTERVAL_MS = 36
 
-/** API papers 배열을 Reference 형태로 정규화 (사이드바 카드 연동용) */
+/** API papers 배열을 Reference 형태로 정규화 (말풍선 하단 출처용) */
 function normalizePapers(papers: unknown): Reference[] {
   if (!Array.isArray(papers)) return []
   return papers.map((p: Record<string, unknown>) => ({
@@ -37,11 +46,6 @@ function normalizePapers(papers: unknown): Reference[] {
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
   const getHesitationHint = useAppContextStore((s) => s.getHesitationHint)
-  const [sidebarPapers, setSidebarPapers] = useState<Reference[]>([])
-  const [referencesLoading, setReferencesLoading] = useState(false)
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [sidebarExpanded, setSidebarExpanded] = useState(false)
-  const [papersArrivedAlert, setPapersArrivedAlert] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -70,12 +74,6 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     if (!isLoading) return
     if (!userScrolledUpRef.current) scrollToBottom()
   }, [messages, isLoading, scrollToBottom])
-
-  useEffect(() => {
-    if (!papersArrivedAlert) return
-    const t = setTimeout(() => setPapersArrivedAlert(false), 4000)
-    return () => clearTimeout(t)
-  }, [papersArrivedAlert])
 
   useEffect(() => {
     if (!typewriterJob) return
@@ -121,17 +119,6 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }])
     const assistantIndex = messages.length + 1
 
-    const isAnalysisMode = isAnalysisIntent(userMessage)
-    const forceSearch = isForcedSearchTrigger(userMessage)
-    const shouldFetchPapers = isAnalysisMode || forceSearch
-    if (shouldFetchPapers) {
-      setReferencesLoading(true)
-      setSidebarPapers([])
-    } else {
-      setReferencesLoading(false)
-      setSidebarPapers([])
-    }
-
     try {
       const actions = getRecentActionsForAPI().map(({ type, label, detail, path }) => ({
         type,
@@ -160,16 +147,15 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
       }
 
       const answer = String(data.answer ?? '')
-      const rawPapers = data.papers
-      const papers = normalizePapers(rawPapers)
+      const papers = normalizePapers(data.papers)
 
-      setReferencesLoading(false)
-      setSidebarPapers(papers)
-      if (papers.length > 0) {
-        setSidebarOpen(true)
-        setSidebarExpanded(true)
-        setPapersArrivedAlert(true)
-      }
+      setMessages(prev => {
+        const next = [...prev]
+        if (next[assistantIndex]?.role === 'assistant') {
+          next[assistantIndex] = { ...next[assistantIndex], papers: papers.length > 0 ? papers : undefined }
+        }
+        return next
+      })
 
       if (answer.length > 0) {
         setTypewriterJob({ fullText: answer, assistantIndex })
@@ -269,6 +255,43 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                       <span className="inline-block w-2 h-4 ml-0.5 bg-[#2DD4BF] animate-pulse align-middle" />
                     )}
                   </p>
+                  {message.role === 'assistant' && message.papers && message.papers.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <p className="text-xs font-medium text-gray-500 mb-2">📎 출처 · 논문</p>
+                      <ul className="space-y-2">
+                        {message.papers.map((ref, i) => {
+                          const href = ref.url || (ref.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/` : null)
+                          const excerpt = ref.abstract ? (ref.abstract.slice(0, 80) + (ref.abstract.length > 80 ? '…' : '')) : null
+                          return (
+                            <li key={i} className="text-xs">
+                              {href ? (
+                                <a
+                                  href={href}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-[#2DD4BF] hover:underline flex items-start gap-1.5"
+                                >
+                                  <ExternalLink className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                                  <span>
+                                    {ref.title}
+                                    {ref.journal && <span className="text-gray-500"> · {ref.journal}</span>}
+                                    {ref.pmid && <span className="text-gray-400"> (PMID: {ref.pmid})</span>}
+                                  </span>
+                                </a>
+                              ) : (
+                                <span className="text-gray-600">
+                                  {ref.title}
+                                  {ref.journal && <span className="text-gray-500"> · {ref.journal}</span>}
+                                  {ref.pmid && <span className="text-gray-400"> (PMID: {ref.pmid})</span>}
+                                </span>
+                              )}
+                              {excerpt && <p className="text-gray-500 mt-0.5 pl-4 line-clamp-2">{excerpt}</p>}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    </div>
+                  )}
                   {message.role === 'assistant' && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       <MedicalDisclaimer variant="compact" />
@@ -323,65 +346,6 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         </form>
         </div>
       </div>
-
-      {/* 논문 도착 알림 */}
-      {papersArrivedAlert && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-[#2DD4BF] text-white text-sm font-medium rounded-full shadow-lg flex items-center gap-2">
-          <FileText className="w-4 h-4 flex-shrink-0" />
-          새로운 근거가 도착했습니다
-        </div>
-      )}
-
-      {/* 데스크톱: md 이상에서 우측 사이드바 (sidebarPapers 구독, 논문 도착 시 부드럽게 펼침) */}
-      <div
-        className={`hidden md:flex flex-shrink-0 overflow-hidden transition-[width] duration-300 ease-out ${
-          sidebarPapers.length > 0 || referencesLoading ? 'w-80 opacity-100' : 'w-0 opacity-0'
-        }`}
-      >
-        <ReferencesSidebar
-          key={`papers-${sidebarPapers.length}-${sidebarPapers[0]?.pmid ?? 'none'}`}
-          references={sidebarPapers}
-          isLoading={referencesLoading}
-        />
-      </div>
-
-      {/* 모바일: 참고 논문 버튼 + 열면 보이는 사이드바 패널 */}
-      {(sidebarPapers.length > 0 || referencesLoading) && (
-        <div className="md:hidden fixed bottom-20 right-4 z-30">
-          <button
-            type="button"
-            onClick={() => setSidebarOpen((prev) => !prev)}
-            className="flex items-center gap-2 bg-[#2DD4BF] text-white px-4 py-2.5 rounded-full shadow-lg hover:bg-[#26b8a5] transition-colors"
-          >
-            <FileText className="w-4 h-4" />
-            <span>참고 논문 {sidebarPapers.length > 0 ? `(${sidebarPapers.length})` : ''}</span>
-          </button>
-        </div>
-      )}
-      {sidebarOpen && (sidebarPapers.length > 0 || referencesLoading) && (
-        <>
-          <div
-            className="md:hidden fixed inset-0 bg-black/40 z-40"
-            aria-hidden
-            onClick={() => setSidebarOpen(false)}
-          />
-          <div className="md:hidden fixed top-0 right-0 bottom-0 w-full max-w-sm bg-white shadow-xl z-50 flex flex-col transition-transform duration-200 ease-out">
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">참고 논문</h2>
-              <button
-                type="button"
-                onClick={() => setSidebarOpen(false)}
-                className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg"
-              >
-                닫기
-              </button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <ReferencesSidebar references={sidebarPapers} isLoading={referencesLoading} />
-            </div>
-          </div>
-        </>
-      )}
     </div>
   )
 }
