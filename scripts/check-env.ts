@@ -21,6 +21,8 @@ const REQUIRED_ENV_VARS = {
 
 const OPTIONAL_ENV_VARS = {
   NEXT_PUBLIC_APP_URL: '앱 URL (기본값: https://dr-docent.vercel.app)',
+  PUBMED_API_KEY: 'PubMed E-utilities API Key (논문 검색용)',
+  SEMANTIC_SCHOLAR_API_KEY: 'Semantic Scholar API Key (인용·TLDR 수집용)',
 }
 
 const PRODUCTION_DOMAIN = 'dr-docent.vercel.app'

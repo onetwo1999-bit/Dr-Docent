@@ -7,6 +7,12 @@ import { anthropic } from '@ai-sdk/anthropic'
 import { openai } from '@ai-sdk/openai'
 import { getAgeFromBirthDate, getAgeContextForAI } from '@/utils/health'
 import { aggregateHealthContext, formatAggregateForPrompt } from '@/utils/health-aggregator'
+import {
+  searchRelevantPapers,
+  formatPaperContext,
+  formatDisclaimer,
+  type PaperChunk,
+} from '@/lib/medical-papers/rag-search'
 
 // 매 요청마다 최신 DB 조회 (대시보드 기록 반영). 캐시 사용 안 함.
 export const dynamic = 'force-dynamic'
@@ -142,7 +148,8 @@ interface AppContextForAPI {
 function buildSystemPrompt(
   profile: UserProfile | null,
   currentHealthContext: string | null,
-  appContext?: AppContextForAPI | null
+  appContext?: AppContextForAPI | null,
+  paperChunks?: PaperChunk[] | null
 ): string {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
   
@@ -261,6 +268,13 @@ function buildSystemPrompt(
 
   if (appContext?.hesitationHint) {
     systemPrompt += `\n## 프로액티브 제안\n선생님이 최근에 기록 없이 대시보드를 오래 보셨을 수 있습니다. 적절한 타이밍에 "기록에 어려움이 있으신가요? 제가 도와드릴까요?" 같은 배려 있는 제안을 할 수 있습니다.\n\n`
+  }
+
+  if (paperChunks && paperChunks.length > 0) {
+    const ctx = formatPaperContext(paperChunks)
+    const disclaimer = formatDisclaimer(paperChunks)
+    systemPrompt += `\n## 학술 논문 근거 (RAG)\n아래는 선생님 질문과 관련된 의학 논문 발췌입니다. **한국인 특유의 신체적 특징**(췌장 크기, 대사 능력, 체질 등)을 고려한 맞춤형 해석을 최우선으로 반영하세요.\n\n\`\`\`\n${ctx}\n\`\`\`\n`
+    systemPrompt += `\n**법적 방패**: 답변에 학술 근거를 활용했을 경우, 반드시 다음 문구와 출처를 포함하세요.${disclaimer || '\n본 정보는 학술 자료를 근거로 작성되었으며, 정확한 진단은 전문의와 상의하세요.'}\n\n`
   }
 
   systemPrompt += `
@@ -446,8 +460,28 @@ export async function POST(req: Request) {
     const selectedModel = selectModel(message)
     console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? `Claude (${CLAUDE_MODEL})` : 'GPT-4o-mini'}`)
 
-    // 시스템 프롬프트 생성 (프로필 + 최신 건강 요약 + 앱 컨텍스트)
-    const systemPrompt = buildSystemPrompt(profile, currentHealthContext, appContext)
+    // RAG: 관련 논문 검색 (비동기, 논문이 있으면 컨텍스트에 포함)
+    let paperChunks: PaperChunk[] = []
+    try {
+      paperChunks = await searchRelevantPapers(message, 5)
+      if (paperChunks.length > 0) {
+        console.log(`📚 [${requestId}] RAG 논문 ${paperChunks.length}건 적용`)
+      }
+    } catch (ragErr) {
+      console.warn(`⚠️ [${requestId}] RAG 검색 실패 (상담 계속):`, ragErr)
+    }
+
+    // 자동 피딩: 백그라운드에서 논문 DB 보강 (블로킹 없음)
+    if (process.env.PUBMED_API_KEY && selectedModel === 'claude') {
+      import('@/lib/medical-papers/feeding-pipeline').then(({ runFeedingPipeline }) => {
+        runFeedingPipeline(message, { maxPapers: 3 }).catch((e) =>
+          console.warn(`⚠️ [${requestId}] 자동 피딩 실패:`, e)
+        )
+      })
+    }
+
+    // 시스템 프롬프트 생성 (프로필 + 최신 건강 요약 + 앱 컨텍스트 + RAG 논문)
+    const systemPrompt = buildSystemPrompt(profile, currentHealthContext, appContext, paperChunks)
 
     // 🔑 API 키 검증 (상세)
     const apiKeys = validateApiKeys()
