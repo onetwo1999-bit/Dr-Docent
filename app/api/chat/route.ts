@@ -665,14 +665,14 @@ export async function POST(req: Request) {
       stopWhen: isAnalysisMode || forceSearch ? stepCountIs(10) : undefined,
       experimental_transform: smoothStream(),
       onStepFinish({ content }) {
-        const toolCalls = content.filter((c: { type: string }) => c.type === 'tool-call')
-        const toolResults = content.filter((c: { type: string }) => c.type === 'tool-result')
+        const toolCalls = content.filter((c) => c.type === 'tool-call') as Array<{ toolName?: string }>
+        const toolResults = content.filter((c) => c.type === 'tool-result') as Array<{ toolName?: string; output?: unknown }>
         if (toolCalls.length > 0) {
-          console.log(`📌 [${requestId}] onStepFinish — 도구 호출:`, toolCalls.map((t: { toolName?: string }) => t.toolName))
+          console.log(`📌 [${requestId}] onStepFinish — 도구 호출:`, toolCalls.map((t) => t.toolName))
         }
         if (toolResults.length > 0) {
-          toolResults.forEach((tr: { toolName?: string; output?: unknown }) => {
-            const out = typeof tr.output === 'string' ? tr.output.slice(0, 200) : JSON.stringify(tr.output).slice(0, 200)
+          toolResults.forEach((tr) => {
+            const out = typeof tr.output === 'string' ? tr.output.slice(0, 200) : JSON.stringify(tr.output ?? '').slice(0, 200)
             console.log(`📌 [${requestId}] onStepFinish — 도구 결과 (${tr.toolName}):`, out + (out.length >= 200 ? '...' : ''))
           })
         }
