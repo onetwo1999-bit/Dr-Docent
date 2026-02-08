@@ -172,19 +172,28 @@ function logEnvVariables(requestId: string): void {
   console.log(`   - NODE_ENV: ${process.env.NODE_ENV || 'unknown'}`)
 }
 
-/** test-api.js와 동일: esearch → esummary (fetch만 사용) */
+/** 사이드바 카드용 논문 정보 (title, pmid, url, journal, abstract) */
+export type SidebarPaper = {
+  title: string
+  pmid: string
+  url: string
+  journal: string
+  abstract: string
+}
+
+/** test-api.js와 동일: esearch → esummary (fetch만 사용). refsForSidebar에 journal/url 포함 */
 async function searchPubMedPapers(
   requestId: string,
   query: string,
   retmax: number = 5
-): Promise<{ papers: PaperChunk[]; refsForSidebar: { pmid: string; title: string; authors: string; abstract: string }[] }> {
+): Promise<{ papers: PaperChunk[]; refsForSidebar: SidebarPaper[] }> {
   let apiKey = process.env.PUBMED_API_KEY
   if (apiKey === undefined || apiKey === '') {
     dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
     apiKey = process.env.PUBMED_API_KEY ?? ''
   }
   console.log(`🔬 [${requestId}] 1단계: PubMed esearch 호출 (query: ${query.slice(0, 60)}...)`)
-  const refsForSidebar: { pmid: string; title: string; authors: string; abstract: string }[] = []
+  const refsForSidebar: SidebarPaper[] = []
 
   if (!apiKey || apiKey.length === 0) {
     console.log(`⚠️ [${requestId}] PUBMED_API_KEY 없음 → RAG fallback`)
@@ -199,7 +208,15 @@ async function searchPubMedPapers(
         tldr: c.tldr,
         chunk_text: c.chunk_text ?? '',
       }))
-      refsForSidebar.push(...papers.map((p) => ({ pmid: p.pmid ?? '', title: p.title, authors: '', abstract: p.abstract ?? '' })))
+      refsForSidebar.push(
+        ...papers.map((p) => ({
+          title: p.title,
+          pmid: p.pmid ?? '',
+          url: p.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${p.pmid}/` : '',
+          journal: '',
+          abstract: p.abstract ?? '',
+        }))
+      )
       return { papers, refsForSidebar }
     } catch (err) {
       console.warn(`⚠️ [${requestId}] RAG 검색 실패:`, err)
@@ -231,6 +248,7 @@ async function searchPubMedPapers(
       const item = summaryData?.result?.[pmid]
       const title = item?.title ?? 'Untitled'
       const abstract = typeof item?.abstract === 'string' ? item.abstract : ''
+      const journal = typeof item?.source === 'string' ? item.source : (item?.fulljournalname ?? '') || ''
       papers.push({
         id: pmid,
         pmid,
@@ -240,7 +258,13 @@ async function searchPubMedPapers(
         tldr: abstract ? abstract.slice(0, 300) + (abstract.length > 300 ? '...' : '') : null,
         chunk_text: abstract || title,
       })
-      refsForSidebar.push({ pmid, title, authors: '', abstract })
+      refsForSidebar.push({
+        title,
+        pmid,
+        url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
+        journal,
+        abstract,
+      })
     }
     console.log(`📚 [${requestId}] PubMed 논문 ${papers.length}건 수집 완료`)
     return { papers, refsForSidebar }
@@ -328,7 +352,7 @@ export async function POST(req: Request) {
     console.log(`📋 [${requestId}] 의학 키워드/분석 의도: ${needSearch ? '예 → PubMed 검색 수행' : '아니오'}`)
 
     let paperChunks: PaperChunk[] = []
-    let refsForSidebar: { pmid: string; title: string; authors: string; abstract: string }[] = []
+    let refsForSidebar: SidebarPaper[] = []
 
     if (needSearch) {
       const result = await searchPubMedPapers(requestId, message, 5)
@@ -345,7 +369,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'AI 서비스 API 키가 설정되지 않았습니다. OPENAI_API_KEY를 설정해주세요.' }, { status: 500 })
     }
 
-    console.log(`🚀 [${requestId}] OpenAI Chat Completions 호출 (stream: true, model: ${OPENAI_MODEL})`)
+    console.log(`🚀 [${requestId}] OpenAI Chat Completions 호출 (stream: false, model: ${OPENAI_MODEL})`)
     const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -359,7 +383,7 @@ export async function POST(req: Request) {
           { role: 'user', content: message },
         ],
         max_tokens: 800,
-        stream: true,
+        stream: false,
       }),
     })
 
@@ -369,69 +393,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'AI 응답 생성에 실패했습니다.' }, { status: 502 })
     }
 
+    const openaiData = await openaiRes.json().catch(() => null)
+    const answer = openaiData?.choices?.[0]?.message?.content ?? ''
+    console.log(`✅ [${requestId}] OpenAI 응답 수신 (${answer.length}자)`)
+
     await incrementUsage(supabase, user.id)
     console.log(`✅ [${requestId}] 사용량 증가 완료`)
 
-    // 스트림: 먼저 __DRDOCENT_PAPERS__ (UI 호환), 이어서 OpenAI 스트림 전달
-    const encoder = new TextEncoder()
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          if (refsForSidebar.length > 0) {
-            const prefix = `__DRDOCENT_PAPERS__${JSON.stringify(refsForSidebar.map((r) => ({ pmid: r.pmid, title: r.title, authors: r.authors, abstract: r.abstract })))}__END__\n\n`
-            controller.enqueue(encoder.encode(prefix))
-            console.log(`📤 [${requestId}] 논문 메타데이터 스트림 전송 (${refsForSidebar.length}건)`)
-          }
-
-          const reader = openaiRes.body?.getReader()
-          const decoder = new TextDecoder()
-          if (!reader) {
-            controller.close()
-            return
-          }
-
-          let buffer = ''
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            buffer += decoder.decode(value, { stream: true })
-            const lines = buffer.split('\n')
-            buffer = lines.pop() ?? ''
-            for (const line of lines) {
-              if (line.startsWith('data: ')) {
-                const data = line.slice(6).trim()
-                if (data === '[DONE]') continue
-                try {
-                  const parsed = JSON.parse(data)
-                  const content = parsed?.choices?.[0]?.delta?.content
-                  if (typeof content === 'string' && content) {
-                    controller.enqueue(encoder.encode(content))
-                  }
-                } catch (_) {
-                  // ignore parse error per line
-                }
-              }
-            }
-          }
-          if (refsForSidebar.length > 0) {
-            controller.enqueue(encoder.encode('\n\n---\n본 내용은 검색된 학술 논문을 기반으로 한 참고 정보이며, 정확한 진단과 치료는 반드시 의료진과 상담하시기 바랍니다. 참고한 논문은 우측 사이드바에서 확인하실 수 있습니다.'))
-          }
-          console.log(`✅ [${requestId}] 스트림 완료`)
-        } catch (err) {
-          console.error(`❌ [${requestId}] 스트림 처리 오류:`, err)
-          controller.enqueue(encoder.encode('\n\n선생님, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'))
-        } finally {
-          controller.close()
-        }
-      },
-    })
-
-    return new Response(stream, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Cache-Control': 'no-store',
-      },
-    })
+    // JSON 응답: { answer, papers } — 프론트에서 답변 표시 + 사이드바 카드 연동
+    const papers = refsForSidebar.map((r) => ({
+      title: r.title,
+      pmid: r.pmid,
+      url: r.url,
+      journal: r.journal,
+      abstract: r.abstract,
+    }))
+    console.log(`📤 [${requestId}] 응답 전송: answer ${answer.length}자, papers ${papers.length}건`)
+    return NextResponse.json({ answer, papers })
   } catch (error) {
     console.error(`❌ [${requestId}] 예외:`, error)
     return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })

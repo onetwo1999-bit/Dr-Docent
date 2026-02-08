@@ -19,17 +19,14 @@ interface ChatInterfaceProps {
 }
 
 const SCROLL_BOTTOM_THRESHOLD = 120
-/** 스트리밍 시 한 번에 보여줄 글자 수 (작을수록 천천히) */
-const TYPEWRITER_CHUNK = 2
-/** 글자 추가 간격 (ms) — 값이 클수록 천천히 */
-const TYPEWRITER_INTERVAL_MS = 42
 
 export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
   const getHesitationHint = useAppContextStore((s) => s.getHesitationHint)
-  const [references, setReferences] = useState<Reference[]>([])
+  const [sidebarPapers, setSidebarPapers] = useState<Reference[]>([])
   const [referencesLoading, setReferencesLoading] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [papersArrivedAlert, setPapersArrivedAlert] = useState(false)
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -58,6 +55,12 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     if (!userScrolledUpRef.current) scrollToBottom()
   }, [messages, isLoading, scrollToBottom])
 
+  useEffect(() => {
+    if (!papersArrivedAlert) return
+    const t = setTimeout(() => setPapersArrivedAlert(false), 4000)
+    return () => clearTimeout(t)
+  }, [papersArrivedAlert])
+
   const handleScroll = useCallback(() => {
     const el = chatScrollRef.current
     if (!el) return
@@ -83,30 +86,15 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     const isAnalysisMode = isAnalysisIntent(userMessage)
     const forceSearch = isForcedSearchTrigger(userMessage)
     const shouldFetchPapers = isAnalysisMode || forceSearch
-
     if (shouldFetchPapers) {
       setReferencesLoading(true)
-      setReferences([])
-      fetch(`/api/medical-papers/search?query=${encodeURIComponent(userMessage)}`, { credentials: 'include' })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data?.success && Array.isArray(data.references) && data.references.length > 0) {
-            setReferences(data.references)
-          } else if (data?.success && Array.isArray(data.references)) {
-            setReferences([])
-          }
-        })
-        .catch((err) => {
-          console.warn('❌ [Chat] 논문 검색 실패:', err)
-        })
-        .finally(() => setReferencesLoading(false))
+      setSidebarPapers([])
     } else {
       setReferencesLoading(false)
-      setReferences([])
+      setSidebarPapers([])
     }
 
     try {
-
       const actions = getRecentActionsForAPI().map(({ type, label, detail, path }) => ({
         type,
         label,
@@ -123,120 +111,29 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         }),
       })
 
+      const data = await response.json().catch(() => ({}))
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
-        let errorMessage = '일시적인 오류가 발생했습니다.'
+        let errorMessage = data?.error || '일시적인 오류가 발생했습니다.'
         if (response.status === 401) errorMessage = '로그인이 만료되었습니다. 다시 로그인해주세요.'
         else if (response.status === 400) errorMessage = '메시지를 입력해주세요.'
         else if (response.status === 500) errorMessage = '서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
-        throw new Error(errorData?.error || errorMessage)
+        throw new Error(errorMessage)
       }
 
-      const contentType = response.headers.get('content-type') || ''
-      if (contentType.includes('application/json')) {
-        const data = await response.json()
-        if (data.error) throw new Error(data.error)
-        if (data.reply) {
-          setMessages(prev => {
-            const next = [...prev]
-            if (next[assistantIndex]?.role === 'assistant') next[assistantIndex] = { ...next[assistantIndex], content: data.reply }
-            return next
-          })
+      const answer = data.answer ?? ''
+      const papers = Array.isArray(data.papers) ? data.papers : []
+      setMessages(prev => {
+        const next = [...prev]
+        if (next[assistantIndex]?.role === 'assistant') {
+          next[assistantIndex] = { ...next[assistantIndex], content: answer }
         }
-        setIsLoading(false)
-        return
-      }
-
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      if (!reader) {
-        setIsLoading(false)
-        throw new Error('스트림을 읽을 수 없습니다.')
-      }
-
-      let accumulated = ''
-      const PAPERS_PREFIX = '__DRDOCENT_PAPERS__'
-      const PAPERS_SUFFIX = '__END__'
-      let contentStartIndex = 0
-      const streamBufferRef = { current: '' }
-      const streamTotalLenRef = { current: 0 }
-      const streamVisibleLenRef = { current: 0 }
-      const streamDoneRef = { current: false }
-      const assistantIndexRef = { current: assistantIndex }
-      const typewriterTimerRef = { current: null as ReturnType<typeof setInterval> | null }
-
-      const stopTypewriterAndSetFinal = () => {
-        if (typewriterTimerRef.current) {
-          clearInterval(typewriterTimerRef.current)
-          typewriterTimerRef.current = null
-        }
-        const final = streamBufferRef.current
-        setMessages(prev => {
-          const next = [...prev]
-          if (next[assistantIndexRef.current]?.role === 'assistant') {
-            next[assistantIndexRef.current] = { ...next[assistantIndexRef.current], content: final }
-          }
-          return next
-        })
-      }
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) {
-          streamDoneRef.current = true
-          break
-        }
-        accumulated += decoder.decode(value, { stream: true })
-        if (contentStartIndex === 0 && accumulated.includes(PAPERS_PREFIX) && accumulated.includes(PAPERS_SUFFIX)) {
-          const start = accumulated.indexOf(PAPERS_PREFIX) + PAPERS_PREFIX.length
-          const end = accumulated.indexOf(PAPERS_SUFFIX)
-          try {
-            const json = accumulated.slice(start, end)
-            const refs = JSON.parse(json)
-            if (Array.isArray(refs) && refs.length > 0) {
-              setReferences(refs)
-              setReferencesLoading(false)
-              setSidebarOpen(true)
-            }
-          } catch (_) {}
-          contentStartIndex = accumulated.indexOf(PAPERS_SUFFIX) + PAPERS_SUFFIX.length
-        }
-        const contentPart = contentStartIndex > 0 ? accumulated.slice(contentStartIndex).trimStart() : accumulated
-        streamBufferRef.current = contentPart
-        streamTotalLenRef.current = contentPart.length
-
-        if (!typewriterTimerRef.current) {
-          typewriterTimerRef.current = setInterval(() => {
-            const target = streamTotalLenRef.current
-            let cur = streamVisibleLenRef.current
-            if (cur < target) {
-              cur = Math.min(cur + TYPEWRITER_CHUNK, target)
-              streamVisibleLenRef.current = cur
-              const displayContent = streamBufferRef.current.slice(0, cur)
-              setMessages(prev => {
-                const next = [...prev]
-                if (next[assistantIndexRef.current]?.role === 'assistant') {
-                  next[assistantIndexRef.current] = { ...next[assistantIndexRef.current], content: displayContent }
-                }
-                return next
-              })
-            }
-            if (streamDoneRef.current && streamVisibleLenRef.current >= streamTotalLenRef.current) {
-              stopTypewriterAndSetFinal()
-            }
-          }, TYPEWRITER_INTERVAL_MS)
-        }
-      }
-
-      if (streamVisibleLenRef.current >= streamTotalLenRef.current) {
-        stopTypewriterAndSetFinal()
-      } else {
-        const catchUpTimer = setInterval(() => {
-          if (streamVisibleLenRef.current >= streamTotalLenRef.current) {
-            clearInterval(catchUpTimer)
-            stopTypewriterAndSetFinal()
-          }
-        }, 50)
+        return next
+      })
+      setReferencesLoading(false)
+      setSidebarPapers(papers)
+      if (papers.length > 0) {
+        setSidebarOpen(true)
+        setPapersArrivedAlert(true)
       }
       scrollToBottom('auto')
     } catch (error) {
@@ -382,15 +279,23 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         </div>
       </div>
 
-      {/* 데스크톱: md 이상에서 우측 사이드바 항상 표시 (논문 있을 때) */}
-      {(references.length > 0 || referencesLoading) && (
+      {/* 논문 도착 알림 */}
+      {papersArrivedAlert && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 bg-[#2DD4BF] text-white text-sm font-medium rounded-full shadow-lg flex items-center gap-2">
+          <FileText className="w-4 h-4 flex-shrink-0" />
+          새로운 근거가 도착했습니다
+        </div>
+      )}
+
+      {/* 데스크톱: md 이상에서 우측 사이드바 (sidebarPapers 구독) */}
+      {(sidebarPapers.length > 0 || referencesLoading) && (
         <div className="hidden md:flex flex-shrink-0">
-          <ReferencesSidebar references={references} isLoading={referencesLoading} />
+          <ReferencesSidebar references={sidebarPapers} isLoading={referencesLoading} />
         </div>
       )}
 
       {/* 모바일: 참고 논문 버튼 + 열면 보이는 사이드바 패널 */}
-      {(references.length > 0 || referencesLoading) && (
+      {(sidebarPapers.length > 0 || referencesLoading) && (
         <div className="md:hidden fixed bottom-20 right-4 z-30">
           <button
             type="button"
@@ -398,11 +303,11 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
             className="flex items-center gap-2 bg-[#2DD4BF] text-white px-4 py-2.5 rounded-full shadow-lg hover:bg-[#26b8a5] transition-colors"
           >
             <FileText className="w-4 h-4" />
-            <span>참고 논문 {references.length > 0 ? `(${references.length})` : ''}</span>
+            <span>참고 논문 {sidebarPapers.length > 0 ? `(${sidebarPapers.length})` : ''}</span>
           </button>
         </div>
       )}
-      {sidebarOpen && (references.length > 0 || referencesLoading) && (
+      {sidebarOpen && (sidebarPapers.length > 0 || referencesLoading) && (
         <>
           <div
             className="md:hidden fixed inset-0 bg-black/40 z-40"
@@ -421,7 +326,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
               </button>
             </div>
             <div className="flex-1 overflow-hidden">
-              <ReferencesSidebar references={references} isLoading={referencesLoading} />
+              <ReferencesSidebar references={sidebarPapers} isLoading={referencesLoading} />
             </div>
           </div>
         </>
