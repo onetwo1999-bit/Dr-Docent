@@ -1,9 +1,8 @@
 /**
- * 닥터 도슨 채팅 API
+ * 닥터 도슨 채팅 API (표준 OpenAI API 호출 방식)
  *
- * searchPapers 도구: tools 배열에 정의, tool_choice로 강제 호출 가능
- * - 수치/논문/연구/근거/혈당/BMI → tool_choice: searchPapers 강제
- * - API Request Sent to PubMed 로깅
+ * 순차 로직: 유저 질문 → (의학 키워드 시) PubMed 검색 → 프롬프트에 결과 합침 → OpenAI 답변 생성
+ * Tool Calling 없이, 코드에서 검색 후 AI에 데이터 전달.
  */
 import dotenv from 'dotenv'
 import path from 'path'
@@ -12,11 +11,6 @@ dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
-import { streamText, tool, stepCountIs } from 'ai'
-import { smoothStream } from 'ai'
-import { anthropic } from '@ai-sdk/anthropic'
-import { openai } from '@ai-sdk/openai'
-import { z } from 'zod'
 import { getAgeFromBirthDate, getAgeContextForAI } from '@/utils/health'
 import { aggregateHealthContext, formatAggregateForPrompt } from '@/utils/health-aggregator'
 import {
@@ -25,22 +19,13 @@ import {
   formatDisclaimer,
   type PaperChunk,
 } from '@/lib/medical-papers/rag-search'
+import { isAnalysisIntent } from '@/lib/medical-papers/intent'
 
-// 매 요청마다 최신 DB 조회 (대시보드 기록 반영). 캐시 사용 안 함.
 export const dynamic = 'force-dynamic'
 
-// ========================
-// 🔧 설정 상수
-// ========================
 const DAILY_LIMIT = 10
+const OPENAI_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini'
 
-// Claude 모델: claude-3-5-haiku-latest는 2025년 12월 deprecated, claude-haiku-4-5로 대체
-// 환경 변수 ANTHROPIC_MODEL로 오버라이드 가능 (예: claude-3-haiku-20240307)
-const CLAUDE_MODEL = process.env.ANTHROPIC_MODEL || 'claude-haiku-4-5-20251001'
-
-// ========================
-// 📊 유저 프로필 타입
-// ========================
 interface UserProfile {
   birth_date: string | null
   gender: string | null
@@ -50,113 +35,47 @@ interface UserProfile {
   medications: string | null
 }
 
-// ========================
-// 🧮 BMI 계산
-// ========================
 function calculateBMI(height: number | null, weight: number | null): { value: number; category: string } | null {
   if (!height || !weight || height <= 0) return null
   const heightM = height / 100
   const bmi = weight / (heightM * heightM)
   const bmiRounded = Math.round(bmi * 10) / 10
-  
   let category = '정상'
   if (bmi < 18.5) category = '저체중'
   else if (bmi < 23) category = '정상'
   else if (bmi < 25) category = '과체중'
   else if (bmi < 30) category = '비만 1단계'
   else category = '비만 2단계'
-  
   return { value: bmiRounded, category }
 }
 
-// ========================
-// 🔀 스마트 모델 라우터
-// ========================
-function selectModel(message: string): 'claude' | 'gpt' {
-  const medicalKeywords = [
-    '통증', '분석', '증상', '수치', 'bmi', 'BMI', '치료', '처방', '약', '병원',
-    '아프', '아파', '두통', '소화', '피로', '무릎', '허리', '어깨', '관절',
-    '질환', '질병', '진단', '검사', '혈압', '당뇨', '콜레스테롤', '건강',
-    '운동', '다이어트', '체중', '비만', '영양', '식단', '수면', '스트레스',
-    '호전', '악화', '만성', '급성', '염증', '감염', '알레르기'
-  ]
-  
-  const lowerMessage = message.toLowerCase()
-  const isMedicalQuery = medicalKeywords.some(keyword => 
-    lowerMessage.includes(keyword.toLowerCase())
-  )
-  
-  return isMedicalQuery ? 'claude' : 'gpt'
-}
-
-// ========================
-// 📋 건강 데이터 로깅
-// ========================
 function logHealthProfile(profile: UserProfile | null, userId: string): void {
   console.log('\n' + '='.repeat(50))
   console.log('📊 [건강 데이터 로깅] 사용자:', userId.slice(0, 8) + '...')
   console.log('='.repeat(50))
-  
   if (!profile) {
     console.log('⚠️ 프로필 없음 - 기본 상담 모드')
     return
   }
-  
   const bmi = calculateBMI(profile.height, profile.weight)
   const age = getAgeFromBirthDate(profile.birth_date)
-  
   console.log('👤 나이:', age != null ? `${age}세` : '미입력')
   console.log('⚧️ 성별:', profile.gender === 'male' ? '남성' : profile.gender === 'female' ? '여성' : '미입력')
   console.log('📏 신장:', profile.height ? `${profile.height}cm` : '미입력')
   console.log('⚖️ 체중:', profile.weight ? `${profile.weight}kg` : '미입력')
-  
-  if (bmi) {
-    console.log(`📈 BMI: ${bmi.value} (${bmi.category})`)
-    
-    // 비만 경고
-    if (bmi.value >= 25) {
-      const idealWeight = Math.round(23 * Math.pow((profile.height || 170) / 100, 2))
-      const excess = (profile.weight || 0) - idealWeight
-      console.log(`⚠️ 과체중 경고: 적정 체중보다 ${excess}kg 초과`)
-      console.log(`   - 관절 부하 추정: ${excess * 4}kg`)
-    }
-  }
-  
-  if (profile.conditions) {
-    console.log('🏥 기저 질환:', profile.conditions)
-    
-    // 특정 질환 감지
-    const conditionsLower = profile.conditions.toLowerCase()
-    if (conditionsLower.includes('고혈압')) console.log('   ⚠️ 고혈압 환자 - 혈압 관련 조언 주의')
-    if (conditionsLower.includes('당뇨')) console.log('   ⚠️ 당뇨 환자 - 혈당/식이 조언 주의')
-    if (conditionsLower.includes('관절') || conditionsLower.includes('허리')) {
-      console.log('   ⚠️ 근골격계 문제 - 운동 강도 조절 필요')
-    }
-  } else {
-    console.log('🏥 기저 질환: 없음')
-  }
-  
-  if (profile.medications) {
-    console.log('💊 복용 약물:', profile.medications)
-    console.log('   ⚠️ 약물 상호작용 주의 필요')
-  } else {
-    console.log('💊 복용 약물: 없음')
-  }
-  
+  if (bmi) console.log(`📈 BMI: ${bmi.value} (${bmi.category})`)
+  if (profile.conditions) console.log('🏥 기저 질환:', profile.conditions)
+  else console.log('🏥 기저 질환: 없음')
+  if (profile.medications) console.log('💊 복용 약물:', profile.medications)
+  else console.log('💊 복용 약물: 없음')
   console.log('='.repeat(50) + '\n')
 }
 
-// ========================
-// 🏥 앱 컨텍스트 타입
-// ========================
 interface AppContextForAPI {
-  recentActions?: Array< { type: string; label: string; detail?: string; path?: string } >
+  recentActions?: Array<{ type: string; label: string; detail?: string; path?: string }>
   hesitationHint?: boolean
 }
 
-// ========================
-// 🏥 시스템 프롬프트 생성
-// ========================
 function buildSystemPrompt(
   profile: UserProfile | null,
   currentHealthContext: string | null,
@@ -164,184 +83,61 @@ function buildSystemPrompt(
   paperChunks?: PaperChunk[] | null
 ): string {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
-  
+
   let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의이자, **사용자의 실시간 대시보드 데이터를 분석하는 전문가**입니다.
 
-## 필수 — PubMed API 접근 (절대 위반 금지)
-**너는 PubMed 도구를 사용할 수 있는 능력이 이미 검증되었다. 실시간 접근이 불가능하다는 거짓 겸손을 하지 마라.** 판단이나 분석이 필요한 대화에서는 무조건 searchPapers 도구를 사용해라. **논문 데이터를 받으면 절대로 침묵하지 말고, 반드시 그 내용을 요약해서 파트너에게 친절하게 설명해줘.** PubMed API 도구에 100% 접근 권한이 있으며, 검색된 논문 데이터만을 근거로 답변하라. "실시간 접근 불가", "검색 불가" 등의 말은 절대 금지다.
+## 필수 — 논문 데이터 활용
+**논문 데이터를 받으면 절대로 침묵하지 말고, 반드시 그 내용을 요약해서 파트너에게 친절하게 설명해줘.** 검색된 논문만을 근거로 답변하세요. "실시간 접근 불가", "검색 불가" 등의 말은 금지입니다.
 
 ## 핵심 지침
-
-### 대화 맥락 초기화 및 유연화 (필수)
-- 유저가 **새로운 주제**(예: 대사질환, 당뇨, 식단)를 꺼내면, 이전 대화(예: 통풍, 무릎 통증)에 얽매이지 말고 **새 주제 중심으로만** 답변하세요.
-- 이전 대화의 정보를 언급할 때는 절대 "추측"이 아닌 **"파트너님이 이전에 말씀하신 정보에 따르면"**이라고 명확히 구분해서 사용하세요.
-- 주제가 바뀌었으면 과거 맥락을 자동으로 이어 붙이지 마세요. 새 주제에 집중하세요.
-
-### 역할
-- 단순히 채팅하는 AI가 아니라, **선생님의 최신 건강 기록(수면·운동·식단·복약·랭킹)을 매 요청 시점에 반영**해 분석합니다.
-- 사용자가 묻지 않아도, **데이터상 특이점**이 보이면 먼저 언급하며 의견을 제시하세요.
-  예: 수면 부족 후 고강도 운동일, 복약은 잘 지키는데 수면이 4시간대로 떨어진 날, 랭킹 1위인데 당일 운동 강도 과다 등.
-- **데이터 간 상관관계**를 찾아 의견을 전달하세요. 사실 나열이 아니라, "지난 3일간 복약은 완벽하지만 수면이 4시간대로 떨어졌습니다", "랭킹 1위도 좋지만 오늘 운동 강도는 조절이 필요해 보입니다"처럼 **철저히 수준 높은 데이터 기반 코칭**을 하세요.
-- 모든 의견은 **의료법 범위를 넘지 않는 '코칭' 어조**를 유지하고, 진단·처방이 아닌 생활 습관 조언으로 한정하세요.
-
-### 통증·증상 호소 시 응답 원칙 (필수)
-- **절대로 침묵하지 마세요.** 사용자가 통증이나 증상을 호소할 때 "진단이 불가합니다" 같은 딱딱한 거절로 끝내지 마세요.
-- **'진단하지 마라'의 올바른 해석**: "확정적인 병명을 내리지 마라"입니다. "대화하지 마라"가 아닙니다.
-- **대신 이렇게 하세요**:
-  1. 통증에 **깊이 공감**하세요.
-  2. 관련된 **일반적인 건강 정보**를 풍부하게 제공하세요.
-  3. 대화를 **진료 요약본을 만들어주는 방향**으로 이끌어 주세요.
-- **톤**: 로봇처럼 딱딱한 거절 대신, **따뜻한 전문가의 조언**을 유지하세요.
-
-### 논문·근거 응답 원칙 (상황 맞춤)
-- **[일상 모드]**: 인사, 감정 교류, 서비스 이용 문의 등에서는 논문을 끌어오지 말고 따뜻하고 친절하게 응답하세요.
-- **[분석 모드]**: 증상 분석·수치 해석·질병 판단·치료 결과 예측 등 **결과 도출** 요청 시에만 논문 근거를 활용하세요.
-  - **법적 회색지대 방어**: AI의 사견이 아닌 **검색된 논문의 데이터만**을 근거로 답변하세요. 논문에 없는 내용은 추론·가정하지 마세요.
-  - **절대 금기**: "논문을 직접 제공할 수 없다" 같은 방어적 거절 금지.
-  - **필수 방패 문구**: 답변 하단에 반드시 **"본 정보는 검색된 학술 논문을 기반으로 한 참고용이며, 정확한 진단과 치료는 반드시 의료진과 상담하시기 바랍니다."**를 포함하세요.
-  - **필수**: **"참고한 논문들은 우측 사이드바에서 자세히 확인하실 수 있습니다"**를 포함하고, 해당 논문 카드가 우측 사이드바에 표시되도록 안내하세요.
-- **톤**: 항상 따뜻하고 친절한 조언가 스타일을 유지하세요.
-
-### 의료진·진단 관련 대응 원칙 (필수)
-- **절대 금기**: 의사의 진단을 부정하거나, 특정 약물의 중단을 권고하거나, 자가 치료를 유도하는 행위는 엄격히 금지.
-- **핵심 역할**: 유저의 감정을 공감하고, 의료진이 해당 판단을 내린 '의학적 근거(데이터)'를 설명하며, 의사와 더 깊이 소통할 수 있는 **질문 리스트**를 생성하세요.
-- **상황별 프로토콜**:
-  - "진단이 틀린 것 같아" → 불안 공감 + 진단 과정의 복잡성 설명 (예: "진단 결과가 예상과 달라 당황스러우시죠? 의학적 진단은 검사 수치와 임상적 경험이 결합된 결정입니다.")
-  - "수술/약이 싫어" → 처방이 왜 나왔는지 데이터 관점에서 유추 설명
-  - "의사가 불친절해" → 감정 케어 후, 다음 진료 시 물어볼 **핵심 질문 3가지**를 정리해 제공
-- **세컨드 오피니언**: 유저의 불신이 깊으면 직접 판단하지 말고, 상급 병원 전문의 소견·이전 진료 기록 준비·**진료 브리핑 노트 지참**을 안내하세요.
-
-### 페르소나
-- 따뜻하고 공감 능력이 뛰어난 의사
-- 부드러운 '해요체' 사용 (예: ~이에요, ~있어요, ~해보세요)
-- 유저를 반드시 **'선생님'**이라고 호칭
-
-### 답변 구조 (엄격히 준수)
-- **전체 답변은 반드시 800 토큰 이내**로 작성하세요. 핵심만 간결하게 전달하세요.
-- **맨 처음에 반드시 핵심 요약을 불릿 포인트(•)로 3~5개** 배치한 뒤, 이어서 본문을 작성하세요.
-  예시:
-  • 요약 1
-  • 요약 2
-  • 요약 3
-  (이후 본문: 공감 → 데이터 분석 → 생활 처방 → 응원)
-1. **[핵심 요약]**: 답변 맨 상단에 불릿(•)으로 핵심만 3~5개 나열
-2. **[따뜻한 공감]**: 유저의 상황에 공감하며 시작
-3. **[데이터 기반 수치·최신 기록 분석]**: 프로필 + [최신 건강 상태 요약] 데이터 기반 분석. 특이점이 있으면 짚어 주세요.
-4. **[생활 처방]**: 구체적이고 실천 가능한 조언 제시
-5. **[따뜻한 응원]**: 긍정적 메시지로 마무리
-
-### 금기사항
-- '존스홉킨스' 또는 특정 병원 이름 절대 언급 금지
-- 대신 **'글로벌 의료 가이드라인'**에 근거한다고 명시
-- 유저의 말을 그대로 반복하지 않기
-- 고정된 예시 질문 리스트 붙이지 않기
-
-### 대화 기법
-- 유저의 키워드를 **인용**하며 대화 연결
-- 상황에 맞는 **심화 질문** 하나로 마무리
-- 프로필 전체를 매번 나열하지 않고, 관련된 데이터만 언급
-
+- 유저가 **새로운 주제**를 꺼내면 이전 대화에 얽매이지 말고 **새 주제 중심으로만** 답변하세요.
+- **절대로 침묵하지 마세요.** 통증·증상 호소 시 "진단이 불가합니다"로 끝내지 말고, 공감 + 일반적 건강 정보 + 진료 요약 방향으로 이끌어 주세요.
+- **역할**: 선생님의 최신 건강 기록(수면·운동·식단·복약)을 반영해 분석하고, 데이터상 특이점이 보이면 먼저 언급하세요.
+- **톤**: 따뜻하고 공감 능력 있는 의사, '해요체', 유저를 **'선생님'**으로 호칭.
+- **답변 구조**: 맨 처음 불릿(•) 3~5개 요약 → 공감 → 데이터 분석 → 생활 처방 → 응원. 전체 800 토큰 이내.
+- **금기**: 존스홉킨스 등 특정 병원명 금지. 논문 근거 활용 시 답변 하단에 "본 정보는 검색된 학술 논문을 기반으로 한 참고용이며, 정확한 진단과 치료는 반드시 의료진과 상담하시기 바랍니다." 및 "참고한 논문들은 우측 사이드바에서 자세히 확인하실 수 있습니다" 포함.
 `
 
-  // 유저 프로필 데이터 주입
   if (profile) {
     const age = getAgeFromBirthDate(profile.birth_date)
     const ageContext = getAgeContextForAI(age, profile.birth_date)
-    
     systemPrompt += `\n## 현재 상담 중인 선생님의 건강 프로필\n`
-    
-    if (ageContext) {
-      systemPrompt += `- ${ageContext}\n`
-      systemPrompt += `- 답변 시 예: "올해 OO세가 되셨으니, 혈압 관리에 조금 더 주의가 필요합니다"처럼 나이와 연령대를 인지한 맞춤 조언을 해주세요.\n`
-    }
-    if (age != null) {
-      systemPrompt += `- 연령: ${age}세 (생년월일 기반 만 나이, 매년 자동 갱신)\n`
-    }
-    if (profile.gender) {
-      systemPrompt += `- 성별: ${profile.gender === 'male' ? '남성' : '여성'}\n`
-    }
+    if (ageContext) systemPrompt += `- ${ageContext}\n`
+    if (age != null) systemPrompt += `- 연령: ${age}세\n`
+    if (profile.gender) systemPrompt += `- 성별: ${profile.gender === 'male' ? '남성' : '여성'}\n`
     if (profile.height && profile.weight) {
       systemPrompt += `- 신체: ${profile.height}cm / ${profile.weight}kg\n`
-      if (bmi) {
-        systemPrompt += `- BMI: ${bmi.value} (${bmi.category})\n`
-        
-        if (bmi.value >= 25) {
-          const idealWeight = Math.round(23 * Math.pow(profile.height / 100, 2))
-          const excess = profile.weight - idealWeight
-          systemPrompt += `- 참고: 적정 체중보다 약 ${excess}kg 높음. 무릎 등 하체 관절에 추가 부하 ${excess * 4}kg 추정\n`
-        }
-      }
+      if (bmi) systemPrompt += `- BMI: ${bmi.value} (${bmi.category})\n`
     }
-    if (profile.conditions) {
-      systemPrompt += `- 기저 질환: ${profile.conditions}\n`
-      systemPrompt += `  (⚠️ 이 정보를 반드시 고려하여 조언할 것)\n`
-    }
-    if (profile.medications) {
-      systemPrompt += `- 복용 약물: ${profile.medications}\n`
-      systemPrompt += `  (⚠️ 약물 상호작용 및 부작용 가능성 고려할 것)\n`
-    }
+    if (profile.conditions) systemPrompt += `- 기저 질환: ${profile.conditions}\n`
+    if (profile.medications) systemPrompt += `- 복용 약물: ${profile.medications}\n`
   } else {
-    systemPrompt += `\n## 건강 프로필\n아직 등록된 건강 프로필이 없습니다. 맞춤 상담을 위해 프로필 등록을 권유하세요.\n`
+    systemPrompt += `\n## 건강 프로필\n아직 등록된 건강 프로필이 없습니다.\n`
   }
 
   if (currentHealthContext) {
-    systemPrompt += `\n## 최신 건강 상태 요약 (Current Health Context)\n아래는 **최근 7일간** 대시보드에 기록된 데이터의 요약입니다. 매 채팅 요청 시점마다 갱신되므로, 방금 기록한 식사·운동·수면·복약도 반영됩니다. 답변 시 이 데이터를 우선 참고하고, 특이점·상관관계가 있으면 먼저 언급하세요.\n\n\`\`\`\n${currentHealthContext}\n\`\`\`\n`
+    systemPrompt += `\n## 최신 건강 상태 요약 (최근 7일)\n\`\`\`\n${currentHealthContext}\n\`\`\`\n`
   }
 
   if (appContext?.recentActions?.length) {
-    const lines = appContext.recentActions.map(
-      (a) => `- ${a.label}${a.detail ? ` (${a.detail})` : ''}${a.path ? ` [${a.path}]` : ''}`
-    )
-    systemPrompt += `\n## 앱 내 최근 행동 (선생님이 방금 하신 일)\n아래는 선생님이 앱에서 방금 하신 행동입니다. 답변 시 이걸 반영해 주세요.\n예: 생년월일 수정 직후 "나 어때?"라고 물으면 → "방금 생년월일을 수정하셨네요! 바뀐 나이(OO세)에 맞춰 심박수 기준을 다시 설정했습니다."처럼 앱 내 활동을 즉시 언급하세요.\n\n${lines.join('\n')}\n\n`
+    const lines = appContext.recentActions.map((a) => `- ${a.label}${a.detail ? ` (${a.detail})` : ''}`)
+    systemPrompt += `\n## 앱 내 최근 행동\n${lines.join('\n')}\n\n`
   }
 
   if (appContext?.hesitationHint) {
-    systemPrompt += `\n## 프로액티브 제안\n선생님이 최근에 기록 없이 대시보드를 오래 보셨을 수 있습니다. 적절한 타이밍에 "기록에 어려움이 있으신가요? 제가 도와드릴까요?" 같은 배려 있는 제안을 할 수 있습니다.\n\n`
+    systemPrompt += `\n선생님이 최근 기록 없이 대시보드를 오래 보셨을 수 있습니다. "기록에 어려움이 있으신가요?" 같은 제안을 할 수 있습니다.\n\n`
   }
 
   if (paperChunks && paperChunks.length > 0) {
     const ctx = formatPaperContext(paperChunks)
     const disclaimer = formatDisclaimer(paperChunks)
-    systemPrompt += `\n## 학술 논문 근거 (PubMed/Semantic Scholar) — 검색된 논문만 근거로 사용\n`
-    systemPrompt += `아래는 선생님 질문과 관련된 **실제 검색된 의학 논문**입니다. 아래 논문 데이터만을 근거로 답변하세요. 논문에 없는 내용은 AI 사견으로 추론하지 마세요.\n\n\`\`\`\n${ctx}\n\`\`\`\n`
-    systemPrompt += `\n### [분석 모드] 답변 형식 (필수)\n`
-    systemPrompt += `1. **도입부**: "파트너님의 상황을 학술적으로 분석해보니, 검색된 관련 연구들에서는 다음과 같은 경향이 확인됩니다."로 시작하세요.\n`
-    systemPrompt += `2. **본문**: 위 논문에 명시된 핵심 수치·결론만을 제시하세요. 논문에 없는 추측·가정은 금지.\n`
-    systemPrompt += `3. **마무리**: 반드시 다음 방패 문구를 포함하세요 — "본 정보는 검색된 학술 논문을 기반으로 한 참고용이며, 정확한 진단과 치료는 반드시 의료진과 상담하시기 바랍니다."\n`
-    systemPrompt += `4. 그 다음 "참고한 논문들은 우측 사이드바에서 자세히 확인하실 수 있습니다."를 포함하세요.\n`
-    systemPrompt += `\n**출처**: 학술 근거 활용 시 출처 포함.${disclaimer || '\n본 정보는 학술 자료를 근거로 작성되었으며, 정확한 진단은 전문의와 상의하세요.'}\n\n`
+    systemPrompt += `\n## 학술 논문 근거 (검색된 논문만 근거로 사용)\n\`\`\`\n${ctx}\n\`\`\`\n`
+    systemPrompt += `위 논문 데이터만을 근거로 답변하세요.${disclaimer || ''}\n\n`
   }
-
-  systemPrompt += `
-## 응답 예시 (상단 불릿 요약 + 800 토큰 이내)
-
-• 무릎 부담은 체중 관리로 줄일 수 있어요
-• BMI 27.3, 적정 체중까지 5kg 감량 권장
-• 계단 대신 엘리베이터·수중 운동 추천
-
-선생님, 무릎이 많이 불편하시군요. 계단을 내려갈 때 특히 아프시다니 정말 힘드셨겠어요. 😔
-
-**[데이터 분석]**
-선생님의 BMI 27.3은 과체중 범위예요. 글로벌 의료 가이드라인에 따르면, 체중 1kg 증가 시 무릎에 가해지는 부하는 약 4kg 증가해요. 현재 무릎에 약 28kg의 추가 부담이 가고 있을 수 있어요.
-
-**[생활 처방]**
-1. 체중 관리가 가장 효과적인 치료예요. 5kg만 빼셔도 무릎 부담이 20kg 줄어들어요.
-2. 계단 대신 엘리베이터를 이용해 주세요.
-3. 수영이나 아쿠아로빅 같은 수중 운동이 관절에 부담 없이 좋아요.
-
-**[응원]**
-선생님, 지금처럼 건강에 관심을 가지시는 것만으로도 정말 잘하고 계신 거예요. 조금씩 실천하시면 분명 좋아지실 거예요! 💪
-
----
-🤔 혹시 아침에 일어나실 때 무릎이 뻣뻣한 느낌이 있으세요?
-`
 
   return systemPrompt
 }
 
-// ========================
-// 🔢 일일 사용량 체크
-// ========================
 async function checkDailyLimit(supabase: ReturnType<typeof createServerClient>, userId: string): Promise<{ allowed: boolean; count: number }> {
   const today = new Date().toISOString().split('T')[0]
   const { data, error } = await supabase
@@ -350,14 +146,10 @@ async function checkDailyLimit(supabase: ReturnType<typeof createServerClient>, 
     .eq('user_id', userId)
     .eq('date', today)
     .single()
-  
   if (error && error.code !== 'PGRST116') return { allowed: true, count: 0 }
   return { allowed: (data?.count || 0) < DAILY_LIMIT, count: data?.count || 0 }
 }
 
-// ========================
-// 📈 사용량 증가
-// ========================
 async function incrementUsage(supabase: ReturnType<typeof createServerClient>, userId: string): Promise<void> {
   const today = new Date().toISOString().split('T')[0]
   try {
@@ -368,92 +160,123 @@ async function incrementUsage(supabase: ReturnType<typeof createServerClient>, u
       await supabase.from('chat_usage').insert({ user_id: userId, date: today, count: 1 })
     }
   } catch {
-    // 테이블 없으면 무시
+    // ignore
   }
 }
 
-// ========================
-// 🔧 .env 변수 로드 확인 (백엔드에서 불러오는지 검증)
-// ========================
 function logEnvVariables(requestId: string): void {
-  const mask = (v: string | undefined, len = 8) =>
-    v && v.length > 0 ? `${v.slice(0, len)}...(${v.length}자)` : '(없음/빈값)'
-
-  console.log(`\n🔧 [${requestId}] .env 변수 로드 확인:`)
-  console.log(`   - NEXT_PUBLIC_SUPABASE_URL: ${mask(process.env.NEXT_PUBLIC_SUPABASE_URL, 30)}`)
-  console.log(`   - NEXT_PUBLIC_SUPABASE_ANON_KEY: ${mask(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, 20)}`)
+  const mask = (v: string | undefined, len = 8) => (v && v.length > 0 ? `${v.slice(0, len)}...(${v.length}자)` : '(없음/빈값)')
+  console.log(`\n🔧 [${requestId}] .env 로드:`)
   console.log(`   - OPENAI_API_KEY: ${mask(process.env.OPENAI_API_KEY, 15)}`)
-  console.log(`   - ANTHROPIC_API_KEY: ${mask(process.env.ANTHROPIC_API_KEY, 15)}`)
   console.log(`   - PUBMED_API_KEY: ${mask(process.env.PUBMED_API_KEY, 10)}`)
-  console.log(`   - ANTHROPIC_MODEL: ${process.env.ANTHROPIC_MODEL || '(기본값 사용)'}`)
   console.log(`   - NODE_ENV: ${process.env.NODE_ENV || 'unknown'}`)
-  console.log(`   - VAPID_PRIVATE_KEY: ${process.env.VAPID_PRIVATE_KEY ? `설정됨(${process.env.VAPID_PRIVATE_KEY.length}자)` : '(없음)'}`)
-  console.log(`   - NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${mask(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, 20)}`)
 }
 
-// ========================
-// 🔑 API 키 검증
-// ========================
-function validateApiKeys(): { 
-  hasClaudeKey: boolean; 
-  hasOpenAIKey: boolean; 
-  claudeKeyPreview: string;
-  openAIKeyPreview: string;
-  claudeKeyRaw: string;
-  openAIKeyRaw: string;
-} {
-  const claudeKey = process.env.ANTHROPIC_API_KEY || ''
-  const openAIKey = process.env.OPENAI_API_KEY || ''
-  
-  // OpenAI는 sk- 또는 sk-svcacct- (서비스 계정) 형식 지원
-  const isValidOpenAIKey = openAIKey.length > 10 && (
-    openAIKey.startsWith('sk-') || 
-    openAIKey.startsWith('sk-svcacct-') ||
-    openAIKey.startsWith('sk-proj-')
-  )
-  
-  // Anthropic은 sk-ant- 형식
-  const isValidClaudeKey = claudeKey.length > 10 && claudeKey.startsWith('sk-ant-')
-  
-  return {
-    hasClaudeKey: isValidClaudeKey,
-    hasOpenAIKey: isValidOpenAIKey,
-    claudeKeyPreview: claudeKey ? `${claudeKey.slice(0, 10)}...${claudeKey.slice(-4)}` : '(없음)',
-    openAIKeyPreview: openAIKey ? `${openAIKey.slice(0, 10)}...${openAIKey.slice(-4)}` : '(없음)',
-    claudeKeyRaw: claudeKey.length > 0 ? `길이=${claudeKey.length}` : '빈 문자열',
-    openAIKeyRaw: openAIKey.length > 0 ? `길이=${openAIKey.length}` : '빈 문자열',
+/** test-api.js와 동일: esearch → esummary (fetch만 사용) */
+async function searchPubMedPapers(
+  requestId: string,
+  query: string,
+  retmax: number = 5
+): Promise<{ papers: PaperChunk[]; refsForSidebar: { pmid: string; title: string; authors: string; abstract: string }[] }> {
+  let apiKey = process.env.PUBMED_API_KEY
+  if (apiKey === undefined || apiKey === '') {
+    dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
+    apiKey = process.env.PUBMED_API_KEY ?? ''
+  }
+  console.log(`🔬 [${requestId}] 1단계: PubMed esearch 호출 (query: ${query.slice(0, 60)}...)`)
+  const refsForSidebar: { pmid: string; title: string; authors: string; abstract: string }[] = []
+
+  if (!apiKey || apiKey.length === 0) {
+    console.log(`⚠️ [${requestId}] PUBMED_API_KEY 없음 → RAG fallback`)
+    try {
+      const chunks = await searchRelevantPapers(query, retmax)
+      const papers: PaperChunk[] = chunks.map((c) => ({
+        id: c.id,
+        pmid: c.pmid,
+        title: c.title,
+        abstract: c.abstract,
+        citation_count: c.citation_count ?? 0,
+        tldr: c.tldr,
+        chunk_text: c.chunk_text ?? '',
+      }))
+      refsForSidebar.push(...papers.map((p) => ({ pmid: p.pmid ?? '', title: p.title, authors: '', abstract: p.abstract ?? '' })))
+      return { papers, refsForSidebar }
+    } catch (err) {
+      console.warn(`⚠️ [${requestId}] RAG 검색 실패:`, err)
+      return { papers: [], refsForSidebar: [] }
+    }
+  }
+
+  const BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils'
+  const searchUrl = `${BASE}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${retmax}&retmode=json&api_key=${apiKey}`
+
+  try {
+    const searchRes = await fetch(searchUrl)
+    console.log(`🔬 [${requestId}] esearch 응답 상태: ${searchRes.status}`)
+    if (!searchRes.ok) throw new Error(`PubMed esearch failed: ${searchRes.status}`)
+    const searchData = await searchRes.json()
+    const idlist: string[] = searchData?.esearchresult?.idlist ?? []
+    if (!Array.isArray(idlist) || idlist.length === 0) {
+      console.log(`📭 [${requestId}] PubMed 검색 결과 0건`)
+      return { papers: [], refsForSidebar: [] }
+    }
+    console.log(`🔬 [${requestId}] 2단계: esummary 호출 (${idlist.length}건)`)
+
+    const papers: PaperChunk[] = []
+    for (const pmid of idlist) {
+      const summaryUrl = `${BASE}/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json&api_key=${apiKey}`
+      const summaryRes = await fetch(summaryUrl)
+      if (!summaryRes.ok) continue
+      const summaryData = await summaryRes.json()
+      const item = summaryData?.result?.[pmid]
+      const title = item?.title ?? 'Untitled'
+      const abstract = typeof item?.abstract === 'string' ? item.abstract : ''
+      papers.push({
+        id: pmid,
+        pmid,
+        title,
+        abstract: abstract || null,
+        citation_count: 0,
+        tldr: abstract ? abstract.slice(0, 300) + (abstract.length > 300 ? '...' : '') : null,
+        chunk_text: abstract || title,
+      })
+      refsForSidebar.push({ pmid, title, authors: '', abstract })
+    }
+    console.log(`📚 [${requestId}] PubMed 논문 ${papers.length}건 수집 완료`)
+    return { papers, refsForSidebar }
+  } catch (err) {
+    console.warn(`⚠️ [${requestId}] PubMed 검색 실패:`, err)
+    return { papers: [], refsForSidebar: [] }
   }
 }
 
-// ========================
-// 🚀 메인 API 핸들러
-// ========================
 export async function POST(req: Request) {
   const requestId = Math.random().toString(36).slice(2, 8).toUpperCase()
-  const startTime = Date.now()
-  
   console.log('\n' + '🏥'.repeat(25))
   console.log(`📩 [Chat API] 요청 시작 (ID: ${requestId})`)
   console.log('🏥'.repeat(25))
-  
+
   try {
     const body = await req.json().catch(() => null)
-    if (!body) return NextResponse.json({ error: 'JSON 형식 오류' }, { status: 400 })
-    
+    if (!body) {
+      console.log(`❌ [${requestId}] body JSON 오류`)
+      return NextResponse.json({ error: 'JSON 형식 오류' }, { status: 400 })
+    }
+
     const { message, recentActions, hesitationHint } = body
     if (!message || typeof message !== 'string') {
+      console.log(`❌ [${requestId}] 메시지 없음`)
       return NextResponse.json({ error: '메시지가 필요합니다' }, { status: 400 })
     }
+
     const appContext: AppContextForAPI | null =
       Array.isArray(recentActions) || typeof hesitationHint === 'boolean'
         ? { recentActions: Array.isArray(recentActions) ? recentActions : [], hesitationHint: !!hesitationHint }
         : null
 
-    console.log(`💬 [${requestId}] 메시지: "${message.slice(0, 50)}${message.length > 50 ? '...' : ''}"`)
-
+    console.log(`💬 [${requestId}] 메시지: "${message.slice(0, 80)}${message.length > 80 ? '...' : ''}"`)
     logEnvVariables(requestId)
 
-    // Supabase 클라이언트 생성
     const cookieStore = await cookies()
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -468,250 +291,134 @@ export async function POST(req: Request) {
       }
     )
 
-    // 인증 확인
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       console.log(`❌ [${requestId}] 인증 실패:`, authError?.message || '유저 없음')
       return NextResponse.json({ error: '로그인이 필요합니다' }, { status: 401 })
     }
-    
     console.log(`👤 [${requestId}] 사용자: ${user.email}`)
 
-    // 일일 사용량 체크
     const { allowed, count } = await checkDailyLimit(supabase, user.id)
     if (!allowed) {
       console.log(`⛔ [${requestId}] 일일 한도 초과: ${count}/${DAILY_LIMIT}`)
-      return NextResponse.json({ 
-        error: `일일 사용 제한(${DAILY_LIMIT}회)을 초과했습니다.`, 
-        dailyLimit: true, 
-        count 
-      }, { status: 429 })
+      return NextResponse.json({ error: `일일 사용 제한(${DAILY_LIMIT}회)을 초과했습니다.`, dailyLimit: true, count }, { status: 429 })
     }
 
-    // 프로필 로드
     const { data: profile, error: profileError } = await supabase
       .from('profiles')
       .select('birth_date, gender, height, weight, conditions, medications')
       .eq('id', user.id)
       .single()
-    
     if (profileError && profileError.code !== 'PGRST116') {
       console.log(`⚠️ [${requestId}] 프로필 로드 에러:`, profileError.message)
     }
-
-    // 🔍 건강 데이터 로깅 (상세)
     logHealthProfile(profile, user.id)
 
-    // 최근 7일 데이터 집계 (캐시 없음, 매 요청마다 최신 반영)
     let currentHealthContext: string | null = null
     try {
       const aggregate = await aggregateHealthContext(supabase, user.id)
       currentHealthContext = formatAggregateForPrompt(aggregate)
-      console.log(`📊 [${requestId}] 건강 컨텍스트 집계 완료 (${aggregate.period.start} ~ ${aggregate.period.end})`)
+      console.log(`📊 [${requestId}] 건강 컨텍스트 집계 완료`)
     } catch (aggErr) {
-      console.warn(`⚠️ [${requestId}] 건강 집계 실패 (상담은 계속 진행):`, aggErr)
+      console.warn(`⚠️ [${requestId}] 건강 집계 실패:`, aggErr)
     }
 
-    // 스마트 모델 라우팅
-    const selectedModel = selectModel(message)
-    console.log(`🤖 [${requestId}] 선택된 모델: ${selectedModel === 'claude' ? `Claude (${CLAUDE_MODEL})` : 'GPT-4o-mini'}`)
+    // 의학 관련 키워드 있으면 코드에서 먼저 PubMed 검색 (Tool Calling 없음)
+    const needSearch = isAnalysisIntent(message)
+    console.log(`📋 [${requestId}] 의학 키워드/분석 의도: ${needSearch ? '예 → PubMed 검색 수행' : '아니오'}`)
 
-    // 의도 분류: [일상 모드] vs [분석 모드] vs [강제 searchPapers]
-    const { isAnalysisIntent, isForcedSearchTrigger } = await import('@/lib/medical-papers/intent')
-    const isAnalysisMode = isAnalysisIntent(message)
-    const forceSearch = isForcedSearchTrigger(message)
-    console.log(`📋 [${requestId}] 의도: ${isAnalysisMode ? '분석 모드 (논문 검색)' : '일상 모드'}, 강제 검색: ${forceSearch}`)
-
-    // searchPapers 도구 execute — test-api.js와 동일한 PubMed API 호출 (esearch → esummary)
-    // AI가 읽기 쉬운 텍스트로 반환하고, 사이드바용은 lastSearchPapersRef에 저장
-    const lastSearchPapersRef: { pmid: string; title: string; abstract: string }[] = []
-    async function executeSearchPapers(query: string): Promise<string> {
-      let apiKey = process.env.PUBMED_API_KEY
-      if (apiKey === undefined || apiKey === '') {
-        dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
-        apiKey = process.env.PUBMED_API_KEY ?? ''
-      }
-      console.log(`🔬 [${requestId}] API Request Sent to PubMed (query: ${query.slice(0, 60)}...)`)
-      lastSearchPapersRef.length = 0
-      try {
-        if (apiKey && apiKey.length > 0) {
-          const BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils'
-          const searchUrl = `${BASE}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=5&retmode=json&api_key=${apiKey}`
-          const searchRes = await fetch(searchUrl)
-          if (!searchRes.ok) throw new Error(`PubMed esearch failed: ${searchRes.status}`)
-          const searchData = await searchRes.json()
-          const idlist = searchData?.esearchresult?.idlist ?? []
-          if (!Array.isArray(idlist) || idlist.length === 0) {
-            return '검색된 논문이 없습니다.'
-          }
-          const papers: { pmid: string; title: string; abstract: string }[] = []
-          for (const pmid of idlist) {
-            const summaryUrl = `${BASE}/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json&api_key=${apiKey}`
-            const summaryRes = await fetch(summaryUrl)
-            if (!summaryRes.ok) continue
-            const summaryData = await summaryRes.json()
-            const item = summaryData?.result?.[pmid]
-            const title = item?.title ?? 'Untitled'
-            papers.push({ pmid, title, abstract: '' })
-          }
-          lastSearchPapersRef.push(...papers)
-          return papers.map((p) => `제목: ${p.title} (PMID: ${p.pmid})`).join('\n')
-        }
-        const chunks = await searchRelevantPapers(query, 5)
-        const papers = chunks.map((c) => ({ pmid: c.pmid ?? '', title: c.title, abstract: c.chunk_text ?? '' }))
-        lastSearchPapersRef.push(...papers)
-        return papers.map((p) => `제목: ${p.title} (PMID: ${p.pmid})`).join('\n')
-      } catch (err) {
-        console.warn(`⚠️ [${requestId}] PubMed 검색 실패:`, err)
-        return '검색에 실패했습니다. 잠시 후 다시 시도해 주세요.'
-      }
-    }
-
-    const tools = {
-      searchPapers: tool({
-        description: 'Search PubMed and medical papers for evidence. Use whenever the user asks about symptoms, health metrics (blood sugar, BMI), research, or evidence. Pass the user message or relevant keywords as query.',
-        inputSchema: z.object({
-          query: z.string().describe('Search query - use the user message or relevant medical keywords'),
-        }),
-        execute: async ({ query }) => executeSearchPapers(query),
-      }),
-    }
-
-    // 논문 검색: [분석 모드]일 때 선행 호출 (시스템 프롬프트 주입용)
     let paperChunks: PaperChunk[] = []
-    if (isAnalysisMode) {
-      try {
-        console.log(`🔬 [${requestId}] API Request Sent to PubMed (선행 호출)`)
-        if (process.env.PUBMED_API_KEY) {
-          const { searchAndFetchPapers } = await import('@/lib/medical-papers/pubmed')
-          const papers = await searchAndFetchPapers(message, 5)
-          paperChunks = papers.map((p) => ({
-            id: p.pmid,
-            pmid: p.pmid,
-            title: p.title,
-            abstract: p.abstract,
-            citation_count: 0,
-            tldr: p.abstract.slice(0, 300) + (p.abstract.length > 300 ? '...' : ''),
-            chunk_text: p.abstract,
-          }))
-          if (paperChunks.length > 0) {
-            console.log(`📚 [${requestId}] PubMed 논문 ${paperChunks.length}건 적용`)
-          }
-        } else {
-          paperChunks = await searchRelevantPapers(message, 5)
-          if (paperChunks.length > 0) {
-            console.log(`📚 [${requestId}] RAG 논문 ${paperChunks.length}건 적용`)
-          }
-        }
-      } catch (ragErr) {
-        console.warn(`⚠️ [${requestId}] 논문 검색 실패 (상담 계속):`, ragErr)
-      }
+    let refsForSidebar: { pmid: string; title: string; authors: string; abstract: string }[] = []
+
+    if (needSearch) {
+      const result = await searchPubMedPapers(requestId, message, 5)
+      paperChunks = result.papers
+      refsForSidebar = result.refsForSidebar
     }
 
-    // 자동 피딩: [분석 모드]에서만 백그라운드 논문 DB 보강
-    if (isAnalysisMode && process.env.PUBMED_API_KEY && selectedModel === 'claude') {
-      import('@/lib/medical-papers/feeding-pipeline').then(({ runFeedingPipeline }) => {
-        runFeedingPipeline(message, { maxPapers: 3 }).catch((e) =>
-          console.warn(`⚠️ [${requestId}] 자동 피딩 실패:`, e)
-        )
-      })
-    }
-
-    // 시스템 프롬프트 생성 (프로필 + 최신 건강 요약 + 앱 컨텍스트 + RAG 논문)
     const systemPrompt = buildSystemPrompt(profile, currentHealthContext, appContext, paperChunks)
+    console.log(`📝 [${requestId}] 시스템 프롬프트 길이: ${systemPrompt.length}자, 논문 블록: ${paperChunks.length}건`)
 
-    // 🔑 API 키 검증 (상세)
-    const apiKeys = validateApiKeys()
-    console.log(`🔑 [${requestId}] API 키 상태:`)
-    console.log(`   - ANTHROPIC_API_KEY: ${apiKeys.hasClaudeKey ? '✅ ' + apiKeys.claudeKeyPreview : '❌ 없음'} (${apiKeys.claudeKeyRaw})`)
-    console.log(`   - OPENAI_API_KEY: ${apiKeys.hasOpenAIKey ? '✅ ' + apiKeys.openAIKeyPreview : '❌ 없음'} (${apiKeys.openAIKeyRaw})`)
-    console.log(`   - 환경: ${process.env.NODE_ENV || 'unknown'}`)
-
-    // AI 응답 생성 (스트리밍)
-    let actualModel = selectedModel
-    if (apiKeys.hasClaudeKey && !apiKeys.hasOpenAIKey) {
-      actualModel = 'claude'
-      console.log(`📍 [${requestId}] Claude 전용 모드 (OpenAI 키 없음)`)
-    } else if (!apiKeys.hasClaudeKey && apiKeys.hasOpenAIKey) {
-      actualModel = 'gpt'
-      console.log(`📍 [${requestId}] OpenAI 전용 모드 (Claude 키 없음)`)
-    } else if (!apiKeys.hasClaudeKey && !apiKeys.hasOpenAIKey) {
-      console.error(`❌ [${requestId}] 치명적 오류: API 키가 설정되지 않았습니다!`)
-      return NextResponse.json({ 
-        error: 'AI 서비스 API 키가 설정되지 않았습니다.',
-        details: 'Vercel 환경 변수에 ANTHROPIC_API_KEY 또는 OPENAI_API_KEY를 설정해주세요.',
-      }, { status: 500 })
+    const openaiKey = process.env.OPENAI_API_KEY
+    if (!openaiKey || openaiKey.length < 10) {
+      console.error(`❌ [${requestId}] OPENAI_API_KEY 없음`)
+      return NextResponse.json({ error: 'AI 서비스 API 키가 설정되지 않았습니다. OPENAI_API_KEY를 설정해주세요.' }, { status: 500 })
     }
 
-    const model = actualModel === 'claude'
-      ? anthropic(CLAUDE_MODEL)
-      : openai('gpt-4o-mini')
-
-    console.log(`🚀 [${requestId}] AI 스트리밍 시작: ${actualModel === 'claude' ? `Claude (${CLAUDE_MODEL})` : 'GPT-4o-mini'}`)
-
-    const toolChoice =
-      forceSearch ? { type: 'tool' as const, toolName: 'searchPapers' as const }
-      : isAnalysisMode ? 'auto' as const
-      : undefined
-
-    // maxSteps 10: 논문 검색 후 그 결과를 분석해 답변하는 단계 보장
-    const result = streamText({
-      model,
-      system: systemPrompt,
-      prompt: message,
-      maxOutputTokens: 800,
-      tools: isAnalysisMode || forceSearch ? tools : undefined,
-      toolChoice: isAnalysisMode || forceSearch ? toolChoice : undefined,
-      stopWhen: isAnalysisMode || forceSearch ? stepCountIs(10) : undefined,
-      experimental_transform: smoothStream(),
-      onStepFinish({ content }) {
-        const toolCalls = content.filter((c) => c.type === 'tool-call') as Array<{ toolName?: string }>
-        const toolResults = content.filter((c) => c.type === 'tool-result') as Array<{ toolName?: string; output?: unknown }>
-        if (toolCalls.length > 0) {
-          console.log(`📌 [${requestId}] onStepFinish — 도구 호출:`, toolCalls.map((t) => t.toolName))
-        }
-        if (toolResults.length > 0) {
-          toolResults.forEach((tr) => {
-            const out = typeof tr.output === 'string' ? tr.output.slice(0, 200) : JSON.stringify(tr.output ?? '').slice(0, 200)
-            console.log(`📌 [${requestId}] onStepFinish — 도구 결과 (${tr.toolName}):`, out + (out.length >= 200 ? '...' : ''))
-          })
-        }
+    console.log(`🚀 [${requestId}] OpenAI Chat Completions 호출 (stream: true, model: ${OPENAI_MODEL})`)
+    const openaiRes = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${openaiKey}`,
       },
-      onError({ error }) {
-        console.error(`❌ [${requestId}] 스트림 에러:`, error)
-      },
-      onFinish() {
-        incrementUsage(supabase, user.id).catch(() => {})
-        console.log(`✅ [${requestId}] 스트림 완료`)
-      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: message },
+        ],
+        max_tokens: 800,
+        stream: true,
+      }),
     })
 
+    if (!openaiRes.ok) {
+      const errText = await openaiRes.text()
+      console.error(`❌ [${requestId}] OpenAI API 오류: ${openaiRes.status}`, errText.slice(0, 300))
+      return NextResponse.json({ error: 'AI 응답 생성에 실패했습니다.' }, { status: 502 })
+    }
+
+    await incrementUsage(supabase, user.id)
+    console.log(`✅ [${requestId}] 사용량 증가 완료`)
+
+    // 스트림: 먼저 __DRDOCENT_PAPERS__ (UI 호환), 이어서 OpenAI 스트림 전달
+    const encoder = new TextEncoder()
     const stream = new ReadableStream({
       async start(controller) {
-        const encoder = new TextEncoder()
-        let papersSent = false
         try {
-          for await (const part of result.fullStream) {
-            if (part.type === 'tool-result' && part.toolName === 'searchPapers' && !papersSent) {
-              const refs = lastSearchPapersRef.length > 0
-                ? lastSearchPapersRef.map((p) => ({ pmid: p.pmid, title: p.title, authors: '', abstract: p.abstract }))
-                : []
-              if (refs.length > 0) {
-                const prefix = `__DRDOCENT_PAPERS__${JSON.stringify(refs)}__END__\n\n`
-                controller.enqueue(encoder.encode(prefix))
-                papersSent = true
+          if (refsForSidebar.length > 0) {
+            const prefix = `__DRDOCENT_PAPERS__${JSON.stringify(refsForSidebar.map((r) => ({ pmid: r.pmid, title: r.title, authors: r.authors, abstract: r.abstract })))}__END__\n\n`
+            controller.enqueue(encoder.encode(prefix))
+            console.log(`📤 [${requestId}] 논문 메타데이터 스트림 전송 (${refsForSidebar.length}건)`)
+          }
+
+          const reader = openaiRes.body?.getReader()
+          const decoder = new TextDecoder()
+          if (!reader) {
+            controller.close()
+            return
+          }
+
+          let buffer = ''
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() ?? ''
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const data = line.slice(6).trim()
+                if (data === '[DONE]') continue
+                try {
+                  const parsed = JSON.parse(data)
+                  const content = parsed?.choices?.[0]?.delta?.content
+                  if (typeof content === 'string' && content) {
+                    controller.enqueue(encoder.encode(content))
+                  }
+                } catch (_) {
+                  // ignore parse error per line
+                }
               }
             }
-            if (part.type === 'text-delta' && part.text) {
-              controller.enqueue(encoder.encode(part.text))
-            }
           }
-          if (papersSent) {
-            const disclaimer = '\n\n---\n본 내용은 검색된 학술 논문을 기반으로 한 참고 정보이며, 정확한 진단과 치료는 반드시 의료진과 상담하시기 바랍니다. 참고한 논문은 우측 사이드바에서 확인하실 수 있습니다.'
-            controller.enqueue(encoder.encode(disclaimer))
+          if (refsForSidebar.length > 0) {
+            controller.enqueue(encoder.encode('\n\n---\n본 내용은 검색된 학술 논문을 기반으로 한 참고 정보이며, 정확한 진단과 치료는 반드시 의료진과 상담하시기 바랍니다. 참고한 논문은 우측 사이드바에서 확인하실 수 있습니다.'))
           }
+          console.log(`✅ [${requestId}] 스트림 완료`)
         } catch (err) {
-          console.error(`❌ [${requestId}] 스트림 읽기 오류:`, err)
+          console.error(`❌ [${requestId}] 스트림 처리 오류:`, err)
           controller.enqueue(encoder.encode('\n\n선생님, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'))
         } finally {
           controller.close()
@@ -725,9 +432,8 @@ export async function POST(req: Request) {
         'Cache-Control': 'no-store',
       },
     })
-    
   } catch (error) {
-    console.error(`❌ [${requestId}] 예외 발생:`, error)
+    console.error(`❌ [${requestId}] 예외:`, error)
     return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
   }
 }
