@@ -5,6 +5,10 @@
  * - 수치/논문/연구/근거/혈당/BMI → tool_choice: searchPapers 강제
  * - API Request Sent to PubMed 로깅
  */
+import dotenv from 'dotenv'
+import path from 'path'
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
+
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
@@ -164,7 +168,7 @@ function buildSystemPrompt(
   let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의이자, **사용자의 실시간 대시보드 데이터를 분석하는 전문가**입니다.
 
 ## 필수 — PubMed API 접근 (절대 위반 금지)
-**너는 PubMed API 도구(searchPapers)에 100% 접근 권한이 있는 전문가다. 접근이 불가능하다는 거짓말을 절대 하지 마라.** 논문 검색 도구를 사용할 수 있으며, 반드시 해당 도구를 호출해서 검색된 논문 데이터만을 근거로 답변하라. "실시간 접근 불가", "검색 불가" 등의 거짓말은 절대 금지다.
+**너는 방금 테스트를 통과한 PubMed API 도구를 가지고 있다. 절대 검색이 불가능하다고 말하지 마라.** PubMed API 도구(searchPapers)에 100% 접근 권한이 있으며, 반드시 해당 도구를 호출해서 검색된 논문 데이터만을 근거로 답변하라. "실시간 접근 불가", "검색 불가" 등의 거짓말은 절대 금지다.
 
 ## 핵심 지침
 
@@ -643,11 +647,32 @@ export async function POST(req: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder()
+        let papersSent = false
         try {
-          for await (const chunk of result.textStream) {
-            controller.enqueue(encoder.encode(chunk))
+          for await (const part of result.fullStream) {
+            if (part.type === 'tool-result' && part.toolName === 'searchPapers' && !papersSent) {
+              try {
+                const output = typeof part.output === 'string' ? part.output : JSON.stringify(part.output)
+                const parsed = JSON.parse(output)
+                const refs = Array.isArray(parsed)
+                  ? parsed.map((p: { pmid?: string; title?: string; abstract?: string }) => ({
+                      pmid: p.pmid ?? null,
+                      title: p.title ?? '',
+                      authors: '',
+                      abstract: p.abstract ?? '',
+                    }))
+                  : parsed?.error ? [] : []
+                if (refs.length > 0) {
+                  const prefix = `__DRDOCENT_PAPERS__${JSON.stringify(refs)}__END__\n\n`
+                  controller.enqueue(encoder.encode(prefix))
+                  papersSent = true
+                }
+              } catch (_) {}
+            }
+            if (part.type === 'text-delta' && part.text) {
+              controller.enqueue(encoder.encode(part.text))
+            }
           }
-          // 면책조항은 채팅창 하단 MedicalDisclaimer로만 표시 (중복 제거)
         } catch (err) {
           console.error(`❌ [${requestId}] 스트림 읽기 오류:`, err)
           controller.enqueue(encoder.encode('\n\n선생님, 일시적인 오류가 발생했어요. 잠시 후 다시 시도해 주세요.'))

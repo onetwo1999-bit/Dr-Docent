@@ -150,13 +150,27 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
       }
 
       let accumulated = ''
+      const PAPERS_PREFIX = '__DRDOCENT_PAPERS__'
+      const PAPERS_SUFFIX = '__END__'
+      let contentStartIndex = 0
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         accumulated += decoder.decode(value, { stream: true })
+        if (contentStartIndex === 0 && accumulated.includes(PAPERS_PREFIX) && accumulated.includes(PAPERS_SUFFIX)) {
+          const start = accumulated.indexOf(PAPERS_PREFIX) + PAPERS_PREFIX.length
+          const end = accumulated.indexOf(PAPERS_SUFFIX)
+          try {
+            const json = accumulated.slice(start, end)
+            const refs = JSON.parse(json)
+            if (Array.isArray(refs) && refs.length > 0) setReferences(refs)
+          } catch (_) {}
+          contentStartIndex = accumulated.indexOf(PAPERS_SUFFIX) + PAPERS_SUFFIX.length
+        }
+        const displayContent = contentStartIndex > 0 ? accumulated.slice(contentStartIndex).trimStart() : accumulated
         setMessages(prev => {
           const next = [...prev]
-          if (next[assistantIndex]?.role === 'assistant') next[assistantIndex] = { ...next[assistantIndex], content: accumulated }
+          if (next[assistantIndex]?.role === 'assistant') next[assistantIndex] = { ...next[assistantIndex], content: displayContent }
           return next
         })
       }
