@@ -369,6 +369,25 @@ async function incrementUsage(supabase: ReturnType<typeof createServerClient>, u
 }
 
 // ========================
+// 🔧 .env 변수 로드 확인 (백엔드에서 불러오는지 검증)
+// ========================
+function logEnvVariables(requestId: string): void {
+  const mask = (v: string | undefined, len = 8) =>
+    v && v.length > 0 ? `${v.slice(0, len)}...(${v.length}자)` : '(없음/빈값)'
+
+  console.log(`\n🔧 [${requestId}] .env 변수 로드 확인:`)
+  console.log(`   - NEXT_PUBLIC_SUPABASE_URL: ${mask(process.env.NEXT_PUBLIC_SUPABASE_URL, 30)}`)
+  console.log(`   - NEXT_PUBLIC_SUPABASE_ANON_KEY: ${mask(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, 20)}`)
+  console.log(`   - OPENAI_API_KEY: ${mask(process.env.OPENAI_API_KEY, 15)}`)
+  console.log(`   - ANTHROPIC_API_KEY: ${mask(process.env.ANTHROPIC_API_KEY, 15)}`)
+  console.log(`   - PUBMED_API_KEY: ${mask(process.env.PUBMED_API_KEY, 10)}`)
+  console.log(`   - ANTHROPIC_MODEL: ${process.env.ANTHROPIC_MODEL || '(기본값 사용)'}`)
+  console.log(`   - NODE_ENV: ${process.env.NODE_ENV || 'unknown'}`)
+  console.log(`   - VAPID_PRIVATE_KEY: ${process.env.VAPID_PRIVATE_KEY ? `설정됨(${process.env.VAPID_PRIVATE_KEY.length}자)` : '(없음)'}`)
+  console.log(`   - NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${mask(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY, 20)}`)
+}
+
+// ========================
 // 🔑 API 키 검증
 // ========================
 function validateApiKeys(): { 
@@ -427,6 +446,8 @@ export async function POST(req: Request) {
         : null
 
     console.log(`💬 [${requestId}] 메시지: "${message.slice(0, 50)}${message.length > 50 ? '...' : ''}"`)
+
+    logEnvVariables(requestId)
 
     // Supabase 클라이언트 생성
     const cookieStore = await cookies()
