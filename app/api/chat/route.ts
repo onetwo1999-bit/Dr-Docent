@@ -168,7 +168,7 @@ function buildSystemPrompt(
   let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의이자, **사용자의 실시간 대시보드 데이터를 분석하는 전문가**입니다.
 
 ## 필수 — PubMed API 접근 (절대 위반 금지)
-**너는 PubMed 도구를 사용할 수 있는 능력이 이미 검증되었다. 실시간 접근이 불가능하다는 거짓 겸손을 하지 마라.** 판단이나 분석이 필요한 대화에서는 무조건 searchPapers 도구를 사용해라. PubMed API 도구에 100% 접근 권한이 있으며, 검색된 논문 데이터만을 근거로 답변하라. "실시간 접근 불가", "검색 불가" 등의 말은 절대 금지다.
+**너는 PubMed 도구를 사용할 수 있는 능력이 이미 검증되었다. 실시간 접근이 불가능하다는 거짓 겸손을 하지 마라.** 판단이나 분석이 필요한 대화에서는 무조건 searchPapers 도구를 사용해라. **논문 데이터를 받으면 절대로 침묵하지 말고, 반드시 그 내용을 요약해서 파트너에게 친절하게 설명해줘.** PubMed API 도구에 100% 접근 권한이 있으며, 검색된 논문 데이터만을 근거로 답변하라. "실시간 접근 불가", "검색 불가" 등의 말은 절대 금지다.
 
 ## 핵심 지침
 
@@ -523,6 +523,8 @@ export async function POST(req: Request) {
     console.log(`📋 [${requestId}] 의도: ${isAnalysisMode ? '분석 모드 (논문 검색)' : '일상 모드'}, 강제 검색: ${forceSearch}`)
 
     // searchPapers 도구 execute — test-api.js와 동일한 PubMed API 호출 (esearch → esummary)
+    // AI가 읽기 쉬운 텍스트로 반환하고, 사이드바용은 lastSearchPapersRef에 저장
+    const lastSearchPapersRef: { pmid: string; title: string; abstract: string }[] = []
     async function executeSearchPapers(query: string): Promise<string> {
       let apiKey = process.env.PUBMED_API_KEY
       if (apiKey === undefined || apiKey === '') {
@@ -530,6 +532,7 @@ export async function POST(req: Request) {
         apiKey = process.env.PUBMED_API_KEY ?? ''
       }
       console.log(`🔬 [${requestId}] API Request Sent to PubMed (query: ${query.slice(0, 60)}...)`)
+      lastSearchPapersRef.length = 0
       try {
         if (apiKey && apiKey.length > 0) {
           const BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils'
@@ -539,7 +542,7 @@ export async function POST(req: Request) {
           const searchData = await searchRes.json()
           const idlist = searchData?.esearchresult?.idlist ?? []
           if (!Array.isArray(idlist) || idlist.length === 0) {
-            return JSON.stringify([])
+            return '검색된 논문이 없습니다.'
           }
           const papers: { pmid: string; title: string; abstract: string }[] = []
           for (const pmid of idlist) {
@@ -551,13 +554,16 @@ export async function POST(req: Request) {
             const title = item?.title ?? 'Untitled'
             papers.push({ pmid, title, abstract: '' })
           }
-          return JSON.stringify(papers)
+          lastSearchPapersRef.push(...papers)
+          return papers.map((p) => `제목: ${p.title} (PMID: ${p.pmid})`).join('\n')
         }
         const chunks = await searchRelevantPapers(query, 5)
-        return JSON.stringify(chunks.map((c) => ({ pmid: c.pmid, title: c.title, abstract: c.chunk_text ?? '' })))
+        const papers = chunks.map((c) => ({ pmid: c.pmid ?? '', title: c.title, abstract: c.chunk_text ?? '' }))
+        lastSearchPapersRef.push(...papers)
+        return papers.map((p) => `제목: ${p.title} (PMID: ${p.pmid})`).join('\n')
       } catch (err) {
         console.warn(`⚠️ [${requestId}] PubMed 검색 실패:`, err)
-        return JSON.stringify({ error: '검색에 실패했습니다. 잠시 후 다시 시도해 주세요.' })
+        return '검색에 실패했습니다. 잠시 후 다시 시도해 주세요.'
       }
     }
 
@@ -648,7 +654,7 @@ export async function POST(req: Request) {
       : isAnalysisMode ? 'auto' as const
       : undefined
 
-    // maxSteps 5: 논문 검색 후 그 결과를 분석해 답변하는 단계 보장 (stopWhen: stepCountIs(5))
+    // maxSteps 10: 논문 검색 후 그 결과를 분석해 답변하는 단계 보장
     const result = streamText({
       model,
       system: systemPrompt,
@@ -656,8 +662,21 @@ export async function POST(req: Request) {
       maxOutputTokens: 800,
       tools: isAnalysisMode || forceSearch ? tools : undefined,
       toolChoice: isAnalysisMode || forceSearch ? toolChoice : undefined,
-      stopWhen: isAnalysisMode || forceSearch ? stepCountIs(5) : undefined,
+      stopWhen: isAnalysisMode || forceSearch ? stepCountIs(10) : undefined,
       experimental_transform: smoothStream(),
+      onStepFinish({ content }) {
+        const toolCalls = content.filter((c: { type: string }) => c.type === 'tool-call')
+        const toolResults = content.filter((c: { type: string }) => c.type === 'tool-result')
+        if (toolCalls.length > 0) {
+          console.log(`📌 [${requestId}] onStepFinish — 도구 호출:`, toolCalls.map((t: { toolName?: string }) => t.toolName))
+        }
+        if (toolResults.length > 0) {
+          toolResults.forEach((tr: { toolName?: string; output?: unknown }) => {
+            const out = typeof tr.output === 'string' ? tr.output.slice(0, 200) : JSON.stringify(tr.output).slice(0, 200)
+            console.log(`📌 [${requestId}] onStepFinish — 도구 결과 (${tr.toolName}):`, out + (out.length >= 200 ? '...' : ''))
+          })
+        }
+      },
       onError({ error }) {
         console.error(`❌ [${requestId}] 스트림 에러:`, error)
       },
@@ -674,23 +693,14 @@ export async function POST(req: Request) {
         try {
           for await (const part of result.fullStream) {
             if (part.type === 'tool-result' && part.toolName === 'searchPapers' && !papersSent) {
-              try {
-                const output = typeof part.output === 'string' ? part.output : JSON.stringify(part.output)
-                const parsed = JSON.parse(output)
-                const refs = Array.isArray(parsed)
-                  ? parsed.map((p: { pmid?: string; title?: string; abstract?: string }) => ({
-                      pmid: p.pmid ?? null,
-                      title: p.title ?? '',
-                      authors: '',
-                      abstract: p.abstract ?? '',
-                    }))
-                  : parsed?.error ? [] : []
-                if (refs.length > 0) {
-                  const prefix = `__DRDOCENT_PAPERS__${JSON.stringify(refs)}__END__\n\n`
-                  controller.enqueue(encoder.encode(prefix))
-                  papersSent = true
-                }
-              } catch (_) {}
+              const refs = lastSearchPapersRef.length > 0
+                ? lastSearchPapersRef.map((p) => ({ pmid: p.pmid, title: p.title, authors: '', abstract: p.abstract }))
+                : []
+              if (refs.length > 0) {
+                const prefix = `__DRDOCENT_PAPERS__${JSON.stringify(refs)}__END__\n\n`
+                controller.enqueue(encoder.encode(prefix))
+                papersSent = true
+              }
             }
             if (part.type === 'text-delta' && part.text) {
               controller.enqueue(encoder.encode(part.text))
