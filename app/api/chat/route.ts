@@ -168,7 +168,7 @@ function buildSystemPrompt(
   let systemPrompt = `당신은 20년 경력의 다정하고 전문적인 가정의학과 전문의이자, **사용자의 실시간 대시보드 데이터를 분석하는 전문가**입니다.
 
 ## 필수 — PubMed API 접근 (절대 위반 금지)
-**너는 방금 테스트를 통과한 PubMed API 도구를 가지고 있다. 절대 검색이 불가능하다고 말하지 마라.** PubMed API 도구(searchPapers)에 100% 접근 권한이 있으며, 반드시 해당 도구를 호출해서 검색된 논문 데이터만을 근거로 답변하라. "실시간 접근 불가", "검색 불가" 등의 거짓말은 절대 금지다.
+**너는 PubMed 도구를 사용할 수 있는 능력이 이미 검증되었다. 실시간 접근이 불가능하다는 거짓 겸손을 하지 마라.** 판단이나 분석이 필요한 대화에서는 무조건 searchPapers 도구를 사용해라. PubMed API 도구에 100% 접근 권한이 있으며, 검색된 논문 데이터만을 근거로 답변하라. "실시간 접근 불가", "검색 불가" 등의 말은 절대 금지다.
 
 ## 핵심 지침
 
@@ -522,19 +522,41 @@ export async function POST(req: Request) {
     const forceSearch = isForcedSearchTrigger(message)
     console.log(`📋 [${requestId}] 의도: ${isAnalysisMode ? '분석 모드 (논문 검색)' : '일상 모드'}, 강제 검색: ${forceSearch}`)
 
-    // searchPapers 도구 정의 (논문 검색 실행 — API Request Sent to PubMed 로깅)
+    // searchPapers 도구 execute — test-api.js와 동일한 PubMed API 호출 (esearch → esummary)
     async function executeSearchPapers(query: string): Promise<string> {
+      let apiKey = process.env.PUBMED_API_KEY
+      if (apiKey === undefined || apiKey === '') {
+        dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
+        apiKey = process.env.PUBMED_API_KEY ?? ''
+      }
       console.log(`🔬 [${requestId}] API Request Sent to PubMed (query: ${query.slice(0, 60)}...)`)
       try {
-        if (process.env.PUBMED_API_KEY) {
-          const { searchAndFetchPapers } = await import('@/lib/medical-papers/pubmed')
-          const papers = await searchAndFetchPapers(query, 5)
-          return JSON.stringify(papers.map((p) => ({ pmid: p.pmid, title: p.title, abstract: p.abstract })))
+        if (apiKey && apiKey.length > 0) {
+          const BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils'
+          const searchUrl = `${BASE}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=5&retmode=json&api_key=${apiKey}`
+          const searchRes = await fetch(searchUrl)
+          if (!searchRes.ok) throw new Error(`PubMed esearch failed: ${searchRes.status}`)
+          const searchData = await searchRes.json()
+          const idlist = searchData?.esearchresult?.idlist ?? []
+          if (!Array.isArray(idlist) || idlist.length === 0) {
+            return JSON.stringify([])
+          }
+          const papers: { pmid: string; title: string; abstract: string }[] = []
+          for (const pmid of idlist) {
+            const summaryUrl = `${BASE}/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json&api_key=${apiKey}`
+            const summaryRes = await fetch(summaryUrl)
+            if (!summaryRes.ok) continue
+            const summaryData = await summaryRes.json()
+            const item = summaryData?.result?.[pmid]
+            const title = item?.title ?? 'Untitled'
+            papers.push({ pmid, title, abstract: '' })
+          }
+          return JSON.stringify(papers)
         }
         const chunks = await searchRelevantPapers(query, 5)
-        return JSON.stringify(chunks.map((c) => ({ pmid: c.pmid, title: c.title, abstract: c.chunk_text })))
+        return JSON.stringify(chunks.map((c) => ({ pmid: c.pmid, title: c.title, abstract: c.chunk_text ?? '' })))
       } catch (err) {
-        console.warn(`⚠️ [${requestId}] PubMed/RAG 검색 실패:`, err)
+        console.warn(`⚠️ [${requestId}] PubMed 검색 실패:`, err)
         return JSON.stringify({ error: '검색에 실패했습니다. 잠시 후 다시 시도해 주세요.' })
       }
     }
@@ -626,6 +648,7 @@ export async function POST(req: Request) {
       : isAnalysisMode ? 'auto' as const
       : undefined
 
+    // maxSteps 5: 논문 검색 후 그 결과를 분석해 답변하는 단계 보장 (stopWhen: stepCountIs(5))
     const result = streamText({
       model,
       system: systemPrompt,
@@ -672,6 +695,10 @@ export async function POST(req: Request) {
             if (part.type === 'text-delta' && part.text) {
               controller.enqueue(encoder.encode(part.text))
             }
+          }
+          if (papersSent) {
+            const disclaimer = '\n\n---\n본 내용은 검색된 학술 논문을 기반으로 한 참고 정보이며, 정확한 진단과 치료는 반드시 의료진과 상담하시기 바랍니다. 참고한 논문은 우측 사이드바에서 확인하실 수 있습니다.'
+            controller.enqueue(encoder.encode(disclaimer))
           }
         } catch (err) {
           console.error(`❌ [${requestId}] 스트림 읽기 오류:`, err)

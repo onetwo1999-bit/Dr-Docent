@@ -163,7 +163,10 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
           try {
             const json = accumulated.slice(start, end)
             const refs = JSON.parse(json)
-            if (Array.isArray(refs) && refs.length > 0) setReferences(refs)
+            if (Array.isArray(refs) && refs.length > 0) {
+              setReferences(refs)
+              setReferencesLoading(false)
+            }
           } catch (_) {}
           contentStartIndex = accumulated.indexOf(PAPERS_SUFFIX) + PAPERS_SUFFIX.length
         }
