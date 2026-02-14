@@ -80,7 +80,7 @@ export async function esearch(
 }
 
 /**
- * efetch: PMID 목록으로 제목, 초록, DOI 링크 조회
+ * esummary: PMID 목록으로 제목·초록 조회 (JSON 응답만 사용 — efetch는 XML/비정형 반환 시 JSON 파싱 오류 발생)
  */
 export async function efetch(pmids: string[]): Promise<PubMedPaperResult[]> {
   if (pmids.length === 0) return []
@@ -90,53 +90,36 @@ export async function efetch(pmids: string[]): Promise<PubMedPaperResult[]> {
   const params = new URLSearchParams({
     db: 'pubmed',
     id: pmids.join(','),
-    rettype: 'abstract',
     retmode: 'json',
   })
   if (apiKey) params.set('api_key', apiKey)
 
   const res = await withRetry(async () => {
-    const r = await fetch(`${BASE}/efetch.fcgi?${params}`)
-    if (!r.ok) throw new Error(`PubMed efetch failed: ${r.status}`)
-    return r.json()
+    const r = await fetch(`${BASE}/esummary.fcgi?${params}`)
+    if (!r.ok) throw new Error(`PubMed esummary failed: ${r.status}`)
+    const text = await r.text()
+    try {
+      return JSON.parse(text) as { result?: Record<string, { title?: string; abstract?: string; source?: string }> }
+    } catch (parseErr) {
+      throw new Error(`PubMed esummary 응답이 JSON이 아님: ${text.slice(0, 80)}...`)
+    }
   })
 
   const result = res?.result ?? {}
   const out: PubMedPaperResult[] = []
 
   for (const pmid of pmids) {
-    const doc = result[pmid]
-    if (!doc) continue
-    const article = doc.pubmedarticle?.[0]?.article ?? doc.article
-    if (!article) continue
+    const item = result[pmid]
+    if (!item || typeof item !== 'object') continue
 
-    const title = article.articletitle
-      ? (typeof article.articletitle === 'string'
-          ? article.articletitle
-          : article.articletitle?.[0] ?? '')
-      : ''
-
-    let abstract = ''
-    const absBlock = article.abstract?.abstracttext
-    if (absBlock) {
-      abstract = Array.isArray(absBlock)
-        ? absBlock.map((x: { _?: string } | string) => (typeof x === 'string' ? x : x._ ?? '')).join(' ')
-        : String(absBlock)
-    }
-
-    let doi: string | undefined
-    const idList = article.articleids
-    if (Array.isArray(idList)) {
-      const doiObj = idList.find((x: { idtype?: string }) => String(x?.idtype).toLowerCase() === 'doi')
-      if (doiObj && doiObj.value) doi = doiObj.value
-    }
+    const title = typeof item.title === 'string' ? item.title : 'Untitled'
+    const abstract = typeof item.abstract === 'string' ? item.abstract : ''
 
     if (title || abstract) {
       out.push({
         pmid,
         title: title || 'Untitled',
         abstract,
-        doi,
         url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
       })
     }
