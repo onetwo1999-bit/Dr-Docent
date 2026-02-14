@@ -218,7 +218,8 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         <div className="max-w-2xl mx-auto space-y-4">
           {messages.map((message, index) => {
             const isLastAssistant = message.role === 'assistant' && index === messages.length - 1
-            const isStreaming = isLastAssistant && isLoading
+            const isWaitingFirstToken = isLastAssistant && typewriterJob !== null && typewriterJob.assistantIndex === index && !message.content
+            const isStreaming = isLastAssistant && (isLoading || isWaitingFirstToken)
             const lines = message.content ? message.content.split('\n') : []
             return (
               <div
