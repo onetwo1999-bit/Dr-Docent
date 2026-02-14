@@ -29,12 +29,27 @@ interface ChatInterfaceProps {
 
 const SCROLL_BOTTOM_THRESHOLD = 120
 const TYPEWRITER_INTERVAL_MS = 36
-const STATUS_TEXT_INTERVAL_MS = 1500
-const STATUS_TEXTS = [
-  '신체 구조 및 근육 기시점 확인 중...',
-  '연령별 맞춤 식단 매칭 중...',
-  '최적의 솔루션을 구성하고 있습니다.',
-]
+const LOADING_STEP_DURATIONS_MS = [2000, 2500, 3000] // 1단계 2초, 2단계 2.5초, 3단계 3초(최소)
+const EARLIEST_ANSWER_MS = 2000 + 2500 + 3000 // 7.5초: 3단계 3초 경과 후에만 답변 표시
+
+const BODY_KEYWORDS = ['허리', '목', '어깨', '무릎', '발목', '손목', '등', '척추', '팔꿈치', '다리', '손', '발', '골반', '엉덩이', '가슴', '배', '팔', '어깨']
+
+function extractBodyKeyword(text: string): string {
+  if (!text || typeof text !== 'string') return '신체 부위'
+  const t = text.trim()
+  for (const kw of BODY_KEYWORDS) {
+    if (t.includes(kw)) return kw
+  }
+  return '신체 부위'
+}
+
+function getStatusTexts(keyword: string): [string, string, string] {
+  return [
+    `사용자님의 ${keyword} 관련 고민을 정밀 분석하고 있습니다...`,
+    `${keyword} 부위의 해부학적 구조와 기시/정지점을 확인 중입니다...`,
+    '최적의 답변을 위한 솔루션을 구성하고 있습니다.',
+  ]
+}
 
 /** API papers 배열을 Reference 형태로 정규화 (말풍선 하단 출처용) */
 function normalizePapers(papers: unknown): Reference[] {
@@ -64,7 +79,9 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const userScrolledUpRef = useRef(false)
   const [typewriterJob, setTypewriterJob] = useState<{ fullText: string; assistantIndex: number } | null>(null)
-  const [statusTextIndex, setStatusTextIndex] = useState(0)
+  const [statusStep, setStatusStep] = useState<0 | 1 | 2>(0)
+  const [loadingKeyword, setLoadingKeyword] = useState('신체 부위')
+  const loadingStartTimeRef = useRef<number>(0)
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior })
@@ -84,13 +101,15 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
 
   useEffect(() => {
     if (!isLoading) {
-      setStatusTextIndex(0)
+      setStatusStep(0)
       return
     }
-    const timer = setInterval(() => {
-      setStatusTextIndex((prev) => (prev + 1) % STATUS_TEXTS.length)
-    }, STATUS_TEXT_INTERVAL_MS)
-    return () => clearInterval(timer)
+    const t1 = setTimeout(() => setStatusStep(1), LOADING_STEP_DURATIONS_MS[0])
+    const t2 = setTimeout(() => setStatusStep(2), LOADING_STEP_DURATIONS_MS[0] + LOADING_STEP_DURATIONS_MS[1])
+    return () => {
+      clearTimeout(t1)
+      clearTimeout(t2)
+    }
   }, [isLoading])
 
   useEffect(() => {
@@ -133,6 +152,8 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     const userMessage = input.trim()
     setInput('')
     userScrolledUpRef.current = false
+    setLoadingKeyword(extractBodyKeyword(userMessage))
+    loadingStartTimeRef.current = Date.now()
     setIsLoading(true)
     setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }])
     const assistantIndex = messages.length + 1
@@ -177,7 +198,14 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
       })
 
       if (answer.length > 0) {
-        setTypewriterJob({ fullText: answer, assistantIndex })
+        const elapsed = Date.now() - loadingStartTimeRef.current
+        const remaining = EARLIEST_ANSWER_MS - elapsed
+        const showAnswer = () => setTypewriterJob({ fullText: answer, assistantIndex })
+        if (remaining <= 0) {
+          showAnswer()
+        } else {
+          setTimeout(showAnswer, remaining)
+        }
       } else {
         setMessages(prev => {
           const next = [...prev]
@@ -274,13 +302,13 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                             <span
                               key={i}
                               className={`w-2 h-2 rounded-full bg-[#2DD4BF] animate-chat-dot-pulse ${
-                                i === statusTextIndex ? 'opacity-100' : 'opacity-40'
+                                i === statusStep ? 'opacity-100' : 'opacity-40'
                               }`}
                               style={{ animationDelay: `${i * 150}ms` }}
                             />
                           ))}
                         </span>
-                        <span className="text-gray-500 text-xs">{STATUS_TEXTS[statusTextIndex]}</span>
+                        <span className="text-gray-500 text-xs">{getStatusTexts(loadingKeyword)[statusStep]}</span>
                       </span>
                     ) : (
                       message.content
@@ -353,13 +381,13 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                       <span
                         key={i}
                         className={`w-2 h-2 rounded-full bg-[#2DD4BF] animate-chat-dot-pulse ${
-                          i === statusTextIndex ? 'opacity-100' : 'opacity-40'
+                          i === statusStep ? 'opacity-100' : 'opacity-40'
                         }`}
                         style={{ animationDelay: `${i * 150}ms` }}
                       />
                     ))}
                   </span>
-                  <span className="text-gray-500 text-xs">{STATUS_TEXTS[statusTextIndex]}</span>
+                  <span className="text-gray-500 text-xs">{getStatusTexts(loadingKeyword)[statusStep]}</span>
                 </span>
               </div>
             </div>
