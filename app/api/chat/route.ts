@@ -19,6 +19,8 @@ import {
   type PaperChunk,
 } from '@/lib/medical-papers/rag-search'
 import { isAnalysisIntent } from '@/lib/medical-papers/intent'
+import { searchAndFetchCached } from '@/lib/pubmed'
+import { translateToPubMedQuery } from '@/lib/pubmed-query'
 
 export const dynamic = 'force-dynamic'
 
@@ -200,8 +202,10 @@ function buildSystemPrompt(
 
   if (paperChunks && paperChunks.length > 0) {
     const ctx = formatPaperContext(paperChunks)
-    systemPrompt += `\n## 학술 논문 근거 (검색된 논문만 근거로 사용)\n\`\`\`\n${ctx}\n\`\`\`\n`
-    systemPrompt += `위 논문 데이터만을 근거로 답변하세요. 답변 본문에 면책·고지 문구는 넣지 마세요.\n\n`
+    systemPrompt += `\n## 학술 논문 근거 (PubMed 검색 결과 — 반드시 준수)\n\`\`\`\n${ctx}\n\`\`\`\n`
+    systemPrompt += `- 위 논문 데이터만을 근거로 답변하세요. 답변 본문에 면책·고지 문구는 넣지 마세요.\n`
+    systemPrompt += `- **인용 규칙**: 의학적 근거가 되는 문장 끝에 반드시 **(출처: PubMed PMID: XXXXXX)** 형식으로 해당 논문의 PMID를 붙이세요. 여러 문장에서 같은 논문을 쓰면 해당 문장마다 PMID를 달아도 됩니다.\n`
+    systemPrompt += `- 논문 원문이 영어여도 답변은 기존 닥터 도슨의 한국어 톤앤매너(~해요, ~입니다)를 유지하세요.\n\n`
   }
 
   return systemPrompt
@@ -250,24 +254,22 @@ export type SidebarPaper = {
   abstract: string
 }
 
-/** test-api.js와 동일: esearch → esummary (fetch만 사용). refsForSidebar에 journal/url 포함 */
-async function searchPubMedPapers(
+/**
+ * RAG 파이프라인: 한국어 질문 → 영어 검색어 변환 → PubMed 검색(캐시) → PaperChunk + Sidebar 반환
+ * PUBMED_API_KEY 없으면 DB RAG(searchRelevantPapers) fallback
+ */
+async function runPubMedRag(
   requestId: string,
-  query: string,
+  userMessage: string,
   retmax: number = 5
 ): Promise<{ papers: PaperChunk[]; refsForSidebar: SidebarPaper[] }> {
-  let apiKey = process.env.PUBMED_API_KEY
-  if (apiKey === undefined || apiKey === '') {
-    dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
-    apiKey = process.env.PUBMED_API_KEY ?? ''
-  }
-  console.log(`🔬 [${requestId}] 1단계: PubMed esearch 호출 (query: ${query.slice(0, 60)}...)`)
+  const apiKey = process.env.PUBMED_API_KEY ?? ''
   const refsForSidebar: SidebarPaper[] = []
 
   if (!apiKey || apiKey.length === 0) {
-    console.log(`⚠️ [${requestId}] PUBMED_API_KEY 없음 → RAG fallback`)
+    console.log(`⚠️ [${requestId}] PUBMED_API_KEY 없음 → DB RAG fallback`)
     try {
-      const chunks = await searchRelevantPapers(query, retmax)
+      const chunks = await searchRelevantPapers(userMessage, retmax)
       const papers: PaperChunk[] = chunks.map((c) => ({
         id: c.id,
         pmid: c.pmid,
@@ -293,52 +295,33 @@ async function searchPubMedPapers(
     }
   }
 
-  const BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils'
-  const searchUrl = `${BASE}/esearch.fcgi?db=pubmed&term=${encodeURIComponent(query)}&retmax=${retmax}&retmode=json&api_key=${apiKey}`
-
   try {
-    const searchRes = await fetch(searchUrl)
-    console.log(`🔬 [${requestId}] esearch 응답 상태: ${searchRes.status}`)
-    if (!searchRes.ok) throw new Error(`PubMed esearch failed: ${searchRes.status}`)
-    const searchData = await searchRes.json()
-    const idlist: string[] = searchData?.esearchresult?.idlist ?? []
-    if (!Array.isArray(idlist) || idlist.length === 0) {
-      console.log(`📭 [${requestId}] PubMed 검색 결과 0건`)
-      return { papers: [], refsForSidebar: [] }
-    }
-    console.log(`🔬 [${requestId}] 2단계: esummary 호출 (${idlist.length}건)`)
-
-    const papers: PaperChunk[] = []
-    for (const pmid of idlist) {
-      const summaryUrl = `${BASE}/esummary.fcgi?db=pubmed&id=${pmid}&retmode=json&api_key=${apiKey}`
-      const summaryRes = await fetch(summaryUrl)
-      if (!summaryRes.ok) continue
-      const summaryData = await summaryRes.json()
-      const item = summaryData?.result?.[pmid]
-      const title = item?.title ?? 'Untitled'
-      const abstract = typeof item?.abstract === 'string' ? item.abstract : ''
-      const journal = typeof item?.source === 'string' ? item.source : (item?.fulljournalname ?? '') || ''
-      papers.push({
-        id: pmid,
-        pmid,
-        title,
-        abstract: abstract || null,
-        citation_count: 0,
-        tldr: abstract ? abstract.slice(0, 300) + (abstract.length > 300 ? '...' : '') : null,
-        chunk_text: abstract || title,
-      })
-      refsForSidebar.push({
-        title,
-        pmid,
-        url: `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
-        journal,
-        abstract,
-      })
-    }
-    console.log(`📚 [${requestId}] PubMed 논문 ${papers.length}건 수집 완료`)
+    const englishQuery = await translateToPubMedQuery(userMessage)
+    const searchQuery = englishQuery || userMessage
+    console.log(`🔬 [${requestId}] PubMed 검색어(번역): "${searchQuery.slice(0, 60)}${searchQuery.length > 60 ? '...' : ''}"`)
+    const results = await searchAndFetchCached(searchQuery, retmax)
+    const papers: PaperChunk[] = results.map((p) => ({
+      id: p.pmid,
+      pmid: p.pmid,
+      title: p.title,
+      abstract: p.abstract || null,
+      citation_count: 0,
+      tldr: p.abstract ? p.abstract.slice(0, 300) + (p.abstract.length > 300 ? '...' : '') : null,
+      chunk_text: p.abstract || p.title,
+    }))
+    refsForSidebar.push(
+      ...results.map((p) => ({
+        title: p.title,
+        pmid: p.pmid,
+        url: p.url,
+        journal: '',
+        abstract: p.abstract,
+      }))
+    )
+    console.log(`📚 [${requestId}] PubMed 논문 ${papers.length}건 수집 완료 (캐시 적용 가능)`)
     return { papers, refsForSidebar }
   } catch (err) {
-    console.warn(`⚠️ [${requestId}] PubMed 검색 실패:`, err)
+    console.warn(`⚠️ [${requestId}] PubMed RAG 실패:`, err)
     return { papers: [], refsForSidebar: [] }
   }
 }
@@ -430,7 +413,7 @@ export async function POST(req: Request) {
     let refsForSidebar: SidebarPaper[] = []
 
     if (needSearch) {
-      const result = await searchPubMedPapers(requestId, message, 5)
+      const result = await runPubMedRag(requestId, message, 5)
       paperChunks = result.papers
       refsForSidebar = result.refsForSidebar
     }
