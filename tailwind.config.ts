@@ -16,6 +16,10 @@ const config: Config = {
           '0%, 100%': { opacity: '1', transform: 'scale(1)' },
           '50%': { opacity: '0.85', transform: 'scale(1.05)' },
         },
+        'chat-dot-pulse': {
+          '0%, 100%': { opacity: '0.4', transform: 'translateY(0)' },
+          '50%': { opacity: '1', transform: 'translateY(-4px)' },
+        },
         'chat-reveal-11-5': {
           '0%': {
             opacity: '0',
@@ -29,6 +33,7 @@ const config: Config = {
       },
       animation: {
         'ai-pulse': 'ai-pulse 2s ease-in-out infinite',
+        'chat-dot-pulse': 'chat-dot-pulse 0.8s ease-in-out infinite',
         'chat-reveal-11-5': 'chat-reveal-11-5 0.72s ease-out forwards',
       },
       colors: {

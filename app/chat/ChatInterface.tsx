@@ -29,6 +29,12 @@ interface ChatInterfaceProps {
 
 const SCROLL_BOTTOM_THRESHOLD = 120
 const TYPEWRITER_INTERVAL_MS = 36
+const STATUS_TEXT_INTERVAL_MS = 1500
+const STATUS_TEXTS = [
+  '신체 구조 및 근육 기시점 확인 중...',
+  '연령별 맞춤 식단 매칭 중...',
+  '최적의 솔루션을 구성하고 있습니다.',
+]
 
 /** API papers 배열을 Reference 형태로 정규화 (말풍선 하단 출처용) */
 function normalizePapers(papers: unknown): Reference[] {
@@ -58,6 +64,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const userScrolledUpRef = useRef(false)
   const [typewriterJob, setTypewriterJob] = useState<{ fullText: string; assistantIndex: number } | null>(null)
+  const [statusTextIndex, setStatusTextIndex] = useState(0)
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior })
@@ -74,6 +81,17 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     if (!isLoading) return
     if (!userScrolledUpRef.current) scrollToBottom()
   }, [messages, isLoading, scrollToBottom])
+
+  useEffect(() => {
+    if (!isLoading) {
+      setStatusTextIndex(0)
+      return
+    }
+    const timer = setInterval(() => {
+      setStatusTextIndex((prev) => (prev + 1) % STATUS_TEXTS.length)
+    }, STATUS_TEXT_INTERVAL_MS)
+    return () => clearInterval(timer)
+  }, [isLoading])
 
   useEffect(() => {
     if (!typewriterJob) return
@@ -249,10 +267,25 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                           )
                         })}
                       </>
+                    ) : isStreaming ? (
+                      <span className="flex flex-col gap-3">
+                        <span className="flex items-center gap-1.5" aria-hidden="true">
+                          {[0, 1, 2].map((i) => (
+                            <span
+                              key={i}
+                              className={`w-2 h-2 rounded-full bg-[#2DD4BF] animate-chat-dot-pulse ${
+                                i === statusTextIndex ? 'opacity-100' : 'opacity-40'
+                              }`}
+                              style={{ animationDelay: `${i * 150}ms` }}
+                            />
+                          ))}
+                        </span>
+                        <span className="text-gray-500 text-xs">{STATUS_TEXTS[statusTextIndex]}</span>
+                      </span>
                     ) : (
                       message.content
                     )}
-                    {isStreaming && (
+                    {isStreaming && lines.length > 0 && (
                       <span className="inline-block w-2 h-4 ml-0.5 bg-[#2DD4BF] animate-pulse align-middle" />
                     )}
                   </p>
@@ -310,15 +343,24 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
 
           {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
             <div className="flex gap-3 justify-start">
-              <div className="w-8 h-8 rounded-full bg-[#2DD4BF] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-full bg-[#2DD4BF] flex items-center justify-center flex-shrink-0">
                 <Bot className="w-5 h-5 text-white" />
               </div>
               <div className="bg-white rounded-2xl px-4 py-3 border border-gray-100 shadow-sm">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-[#2DD4BF] rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-2 h-2 bg-[#2DD4BF] rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-2 h-2 bg-[#2DD4BF] rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
+                <span className="flex flex-col gap-3">
+                  <span className="flex items-center gap-1.5" aria-hidden="true">
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className={`w-2 h-2 rounded-full bg-[#2DD4BF] animate-chat-dot-pulse ${
+                          i === statusTextIndex ? 'opacity-100' : 'opacity-40'
+                        }`}
+                        style={{ animationDelay: `${i * 150}ms` }}
+                      />
+                    ))}
+                  </span>
+                  <span className="text-gray-500 text-xs">{STATUS_TEXTS[statusTextIndex]}</span>
+                </span>
               </div>
             </div>
           )}
