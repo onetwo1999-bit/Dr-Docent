@@ -83,7 +83,6 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
     let len = 0
     const timer = setInterval(() => {
       len += 1
-      if (len === 1) setIsLoading(false)
       setMessages(prev => {
         const next = [...prev]
         if (next[idx]?.role === 'assistant') {
@@ -91,6 +90,9 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
         }
         return next
       })
+      if (len === 1) {
+        setTimeout(() => setIsLoading(false), 0)
+      }
       scrollToBottom('auto')
       if (len >= fullText.length) {
         clearInterval(timer)

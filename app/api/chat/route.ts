@@ -107,12 +107,17 @@ function buildSystemPrompt(
   const useHaiku = options?.useHaiku ?? false
   const displayName = options?.userName?.trim() || '선생님'
 
-  let systemPrompt = `## 페르소나 (Persona): 재활 전문 파트너
-너는 **15년 경력의 베테랑 물리치료사**야. 사용자를 '환자'가 아닌 **'신체 기능을 개선하려는 소중한 파트너'**로 대하며, 친절하고 신뢰감 있는 대화체(**~해요, ~입니다**)를 사용해.
+  let systemPrompt = `## [최우선 — 반드시 지킬 것]
+1) **말투**: 모든 문장은 물리치료사 대화체만 사용. **~해요, ~입니다, ~네요** 만 써. ~습니다/~합니다 금지.
+2) **번호·표 금지**: ①, 1., 2. 같은 번호 매기기 절대 금지. 표(|---|) 형식 금지. 문단과 문장으로만 써.
+3) **인용 필수**: 의학적 근거·연구 결과를 말할 때마다 그 문장 끝에 반드시 **(출처: PubMed PMID: XXXXXX)** 를 붙여. 아래 논문 블록에 있는 PMID만 사용해.
 
-## 금지 사항 (Prohibited Terms)
-- **의료법 저촉 단어 절대 금지**: '치료', '회복', '진단', '완치' 사용 금지. '관리', '기능 강화', '가이드', '상담' 등 비의료 표현만 써.
-- **기타 금지**: 한자(Hanja) 금지. 로봇 같은 번호(①, 1., 2. 등) 나열 금지. 표(|---|) 형식 금지. 모든 답변은 **문단과 문장으로만** 흐르게 써.
+## 페르소나
+너는 **15년 경력의 베테랑 물리치료사**야. 사용자를 '환자'가 아닌 **'신체 기능을 개선하려는 소중한 파트너'**로 대해.
+
+## 금지 사항
+- **의료법**: '치료', '회복', '진단', '완치' 사용 금지. '관리', '기능 강화', '가이드', '상담' 등만 써.
+- **기타**: 한자 금지. 번호 나열·표 금지.
 
 ## [1. 사용자 데이터 연동]
 - 대시보드 **생년월일**을 확인해 **만 나이**를 계산하고, 답변 전체에 연령에 맞게 반영해(예: 1993년생 → 만 33세, 30대).
@@ -202,10 +207,8 @@ function buildSystemPrompt(
 
   if (paperChunks && paperChunks.length > 0) {
     const ctx = formatPaperContext(paperChunks)
-    systemPrompt += `\n## 학술 논문 근거 (PubMed 검색 결과 — 반드시 준수)\n\`\`\`\n${ctx}\n\`\`\`\n`
-    systemPrompt += `- 위 논문 데이터만을 근거로 답변하세요. 답변 본문에 면책·고지 문구는 넣지 마세요.\n`
-    systemPrompt += `- **인용 규칙**: 의학적 근거가 되는 문장 끝에 반드시 **(출처: PubMed PMID: XXXXXX)** 형식으로 해당 논문의 PMID를 붙이세요. 여러 문장에서 같은 논문을 쓰면 해당 문장마다 PMID를 달아도 됩니다.\n`
-    systemPrompt += `- 논문 원문이 영어여도 답변은 기존 닥터 도슨의 한국어 톤앤매너(~해요, ~입니다)를 유지하세요.\n\n`
+    systemPrompt += `\n## [필수] 학술 논문 근거 — 아래 내용을 반드시 참고하고, 주장할 때마다 (출처: PubMed PMID: 해당번호) 붙여\n\`\`\`\n${ctx}\n\`\`\`\n`
+    systemPrompt += `위 논문만 근거로 사용하고, 의학적 주장 문장 끝에는 반드시 (출처: PubMed PMID: XXXXXX). 답변은 한국어 대화체(~해요, ~입니다) 유지.\n\n`
   }
 
   return systemPrompt
@@ -416,6 +419,11 @@ export async function POST(req: Request) {
       const result = await runPubMedRag(requestId, message, 5)
       paperChunks = result.papers
       refsForSidebar = result.refsForSidebar
+      console.log(`📚 [${requestId}] RAG 반환: paperChunks=${paperChunks.length}건, refsForSidebar=${refsForSidebar.length}건`)
+      if (paperChunks.length > 0) {
+        const ctxPreview = formatPaperContext(paperChunks)
+        console.log(`📚 [${requestId}] 주입 컨텍스트 길이: ${ctxPreview.length}자, 미리보기(200자): ${ctxPreview.slice(0, 200).replace(/\n/g, ' ')}...`)
+      }
     }
 
     const useHaiku = shouldUseHaiku(message)
@@ -427,7 +435,11 @@ export async function POST(req: Request) {
       ...history,
       { role: 'user', content: message },
     ]
-    console.log(`📝 [${requestId}] 시스템 프롬프트 길이: ${systemPrompt.length}자, 논문 블록: ${paperChunks.length}건, 공감 모드(하이쿠): ${useHaiku}, 대화 턴: ${chatMessages.length}`)
+    const hasPaperBlock = systemPrompt.includes('학술 논문 근거') && systemPrompt.includes('PMID')
+    console.log(`📝 [${requestId}] 시스템 프롬프트: 총 ${systemPrompt.length}자, 논문 블록 포함 여부: ${hasPaperBlock}, 논문 건수: ${paperChunks.length}, 공감 모드: ${useHaiku}, 대화 턴: ${chatMessages.length}`)
+    if (paperChunks.length > 0 && !hasPaperBlock) {
+      console.warn(`⚠️ [${requestId}] RAG 논문이 있으나 시스템 프롬프트에 논문 블록이 없음 — 주입 실패 가능`)
+    }
 
     const anthropicKey = process.env.ANTHROPIC_API_KEY
     const openaiKey = process.env.OPENAI_API_KEY
