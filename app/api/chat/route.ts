@@ -46,6 +46,36 @@ function shouldUseHaiku(userContent: string): boolean {
   return ALL_HAIKU_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()))
 }
 
+// ——— 다중 의미 단어 확인 단계 (Detection List) ———
+// 한국·외국에서 의미가 다르거나 다중적인 단어 → 감지 시 의도 확인 또는 양쪽 고려 후 답변
+const AMBIGUOUS_TERMS: Array<{ pattern: RegExp; term: string; meaningA: string; meaningB: string }> = [
+  { pattern: /\bpt\b|피티/i, term: 'PT', meaningA: '병원에서의 재활 물리치료(Physical Therapy)', meaningB: '센터에서의 웨이트 트레이닝·개인 운동 강습(Personal Training)' },
+  { pattern: /\bot\b|오티/i, term: 'OT', meaningA: '작업치료(Occupational Therapy)', meaningB: '연장근무·오버타임(Overtime)' },
+  { pattern: /\bdiet\b|다이어트/i, term: 'Diet', meaningA: '치료식·식단(Clinical Nutrition)', meaningB: '체중 감량(Weight Loss)' },
+  { pattern: /\bconditioning\b|컨디셔닝/i, term: 'Conditioning', meaningA: '재활 컨디셔닝(Rehabilitation)', meaningB: '체력 단련(Physical Prep)' },
+]
+
+const MEDICAL_CONTEXT_HINTS = ['병원', '의사', '처방', '재활', '정형외과', '치료받', '수술', '진료', '처방전', '물리치료', '작업치료', '재활치료', '클리닉']
+
+export interface AmbiguousHint {
+  terms: Array<{ term: string; meaningA: string; meaningB: string }>
+  hasMedicalContext: boolean
+}
+
+/** 사용자 질문에 모호한 키워드(PT/OT/Diet/Conditioning)가 포함돼 있는지 확인 */
+function detectAmbiguousTerms(userMessage: string): AmbiguousHint | null {
+  if (!userMessage || typeof userMessage !== 'string') return null
+  const text = userMessage.trim()
+  const lower = text.toLowerCase()
+  const detected: Array<{ term: string; meaningA: string; meaningB: string }> = []
+  for (const { pattern, term, meaningA, meaningB } of AMBIGUOUS_TERMS) {
+    if (pattern.test(text)) detected.push({ term, meaningA, meaningB })
+  }
+  if (detected.length === 0) return null
+  const hasMedicalContext = MEDICAL_CONTEXT_HINTS.some((h) => lower.includes(h.toLowerCase()))
+  return { terms: detected, hasMedicalContext }
+}
+
 interface UserProfile {
   birth_date: string | null
   gender: string | null
@@ -101,11 +131,12 @@ function buildSystemPrompt(
   currentHealthContext: string | null,
   appContext?: AppContextForAPI | null,
   paperChunks?: PaperChunk[] | null,
-  options?: { useHaiku?: boolean; userName?: string }
+  options?: { useHaiku?: boolean; userName?: string; ambiguousHint?: AmbiguousHint | null }
 ): string {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
   const useHaiku = options?.useHaiku ?? false
   const displayName = options?.userName?.trim() || '선생님'
+  const ambiguousHint = options?.ambiguousHint ?? null
 
   let systemPrompt = `## [최우선 — 15년 차 베테랑 물리치료사의 임상 상담 스타일]
 
@@ -152,6 +183,22 @@ function buildSystemPrompt(
 - 선생님의 최신 건강 기록(수면·운동·식단·복약)이 있으면 반영해 분석하고, 특이점이 보이면 먼저 언급해.
 - 존스홉킨스 등 특정 병원명은 언급하지 마.
 `
+  if (ambiguousHint && ambiguousHint.terms.length > 0) {
+    systemPrompt += `\n## [다중 의미 단어 확인 단계] (필수 적용)\n`
+    systemPrompt += `사용자 질문에 **모호한 키워드**가 포함되어 있음. 즉각적인 답변 대신 아래 규칙을 적용해.\n\n`
+    for (const { term, meaningA, meaningB } of ambiguousHint.terms) {
+      systemPrompt += `- **"${term}"**: ${meaningA} vs ${meaningB}\n`
+    }
+    systemPrompt += `\n### 확인 화법 (서두에 적용)\n`
+    systemPrompt += `답변 **서두**에 15년 차 물리치료사의 따뜻하고 노련한 말투로 확인 문구를 넣어. 예시: "${displayName}님, 말씀하신 **'PT'**가 병원에서의 재활 물리치료를 말씀하시는 걸까요, 아니면 센터에서의 웨이트 트레이닝을 말씀하시는 걸까요? 의학적 근거가 달라질 수 있어 조심스럽게 여쭤봐요." 또는 "정확한 도움을 드리고 싶은 마음에 먼저 여쭤보게 되었어요." 같은 배려 섞인 문구 사용.\n\n`
+    if (ambiguousHint.hasMedicalContext) {
+      systemPrompt += `### 맥락: 병원·의사·처방 등이 언급됨 → 의료 의미로 우선 판단\n`
+      systemPrompt += `"병원에서 권유받으신 만큼 물리치료(또는 해당 의미)를 중심으로 설명해 드릴게요"라고 명시한 뒤 해당 의미로 답변해.\n\n`
+    } else {
+      systemPrompt += `### 맥락: 불분명 → 두 가지 경우 모두 고려\n`
+      systemPrompt += `두 가지 의미의 **핵심 관리법을 짧게 요약**한 뒤, 사용자의 선택을 유도하는 다정한 문장으로 마무리해.\n\n`
+    }
+  }
   if (useHaiku) {
     systemPrompt += `
 ## 공감 모드 (하이쿠 호출 시, 필수)
@@ -417,9 +464,14 @@ export async function POST(req: Request) {
     }
 
     const useHaiku = shouldUseHaiku(message)
+    const ambiguousHint = detectAmbiguousTerms(message)
+    if (ambiguousHint) {
+      console.log(`🔀 [${requestId}] 다중 의미 키워드 감지: ${ambiguousHint.terms.map((t) => t.term).join(', ')}, 의료 맥락: ${ambiguousHint.hasMedicalContext}`)
+    }
     const systemPrompt = buildSystemPrompt(profile, currentHealthContext, appContext, paperChunks, {
       useHaiku,
       userName,
+      ambiguousHint,
     })
     const chatMessages: { role: 'user' | 'assistant'; content: string }[] = [
       ...history,
