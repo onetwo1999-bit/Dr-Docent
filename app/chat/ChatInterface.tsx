@@ -279,11 +279,10 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                   </p>
                   {message.role === 'assistant' && message.papers && message.papers.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
-                      <p className="text-xs font-medium text-gray-500 mb-2">📎 출처 · 논문</p>
-                      <ul className="space-y-2">
+                      <p className="text-xs font-medium text-gray-500 mb-2">🔗 출처: 참고 논문</p>
+                      <ul className="space-y-1.5">
                         {message.papers.map((ref, i) => {
                           const href = ref.url || (ref.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/` : null)
-                          const excerpt = ref.abstract ? (ref.abstract.slice(0, 80) + (ref.abstract.length > 80 ? '…' : '')) : null
                           return (
                             <li key={i} className="text-xs">
                               {href ? (
@@ -294,20 +293,11 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                                   className="text-[#2DD4BF] hover:underline flex items-start gap-1.5"
                                 >
                                   <ExternalLink className="w-3 h-3 flex-shrink-0 mt-0.5" />
-                                  <span>
-                                    {ref.title}
-                                    {ref.journal && <span className="text-gray-500"> · {ref.journal}</span>}
-                                    {ref.pmid && <span className="text-gray-400"> (PMID: {ref.pmid})</span>}
-                                  </span>
+                                  <span>{ref.title}</span>
                                 </a>
                               ) : (
-                                <span className="text-gray-600">
-                                  {ref.title}
-                                  {ref.journal && <span className="text-gray-500"> · {ref.journal}</span>}
-                                  {ref.pmid && <span className="text-gray-400"> (PMID: {ref.pmid})</span>}
-                                </span>
+                                <span className="text-gray-600">{ref.title}</span>
                               )}
-                              {excerpt && <p className="text-gray-500 mt-0.5 pl-4 line-clamp-2">{excerpt}</p>}
                             </li>
                           )
                         })}
