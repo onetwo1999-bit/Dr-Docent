@@ -279,7 +279,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
                   </p>
                   {message.role === 'assistant' && message.papers && message.papers.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
-                      <p className="text-xs font-medium text-gray-500 mb-2">🔗 출처: 참고 논문</p>
+                      <p className="text-xs font-medium text-gray-500 mb-2">🔗 닥터 도슨이 참고한 연구 논문</p>
                       <ul className="space-y-1.5">
                         {message.papers.map((ref, i) => {
                           const href = ref.url || (ref.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${ref.pmid}/` : null)
