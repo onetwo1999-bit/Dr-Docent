@@ -3,6 +3,8 @@
  * USDA는 정확한 영양 수치, 내부 DB는 관리 팁·레시피 역할 분담
  */
 
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 export type FoodKnowledgeRow = {
   food_name: string
   clinical_insight: string | null
@@ -14,16 +16,8 @@ export type FoodKnowledgeRow = {
   sodium?: number | null
 }
 
-type SupabaseClientLike = {
-  from(table: string): {
-    select(columns: string): {
-      ilike(column: string, pattern: string): { limit(n: number): Promise<{ data: FoodKnowledgeRow[] | null; error?: unknown }> }
-    }
-  }
-}
-
 export async function searchFoodKnowledge(
-  supabase: SupabaseClientLike,
+  supabase: SupabaseClient,
   query: string,
   limit: number = 5
 ): Promise<FoodKnowledgeRow[]> {
