@@ -9,6 +9,7 @@ import path from 'path'
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
 
 import { NextResponse } from 'next/server'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { getAgeFromBirthDate, getAgeContextForAI } from '@/utils/health'
@@ -488,7 +489,7 @@ export async function POST(req: Request) {
         console.warn(`⚠️ [${requestId}] USDA_API_KEY 미설정 또는 빈값 — 영양 데이터 조회 생략. Vercel/환경 변수에 USDA_API_KEY를 추가하세요.`)
       }
       const [foodRows, usdaItems] = await Promise.all([
-        searchFoodKnowledge(supabase, foodQuery, 5),
+        searchFoodKnowledge(supabase as SupabaseClient<any>, foodQuery, 5),
         usdaKey
           ? searchAndGetNutrients(usdaKey, foodQuery, 2).catch((err) => {
               const msg = err instanceof Error ? err.message : String(err)
