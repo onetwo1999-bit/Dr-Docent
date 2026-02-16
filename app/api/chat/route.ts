@@ -391,6 +391,10 @@ async function runPubMedRag(
 
 export async function POST(req: Request) {
   const requestId = Math.random().toString(36).slice(2, 8).toUpperCase()
+  const rawKey = process.env.USDA_API_KEY || process.env.NEXT_PUBLIC_USDA_API_KEY || ''
+  console.log(`[SYSTEM CHECK] USDA_API_KEY length: ${rawKey.length}`)
+  console.log(`[SYSTEM CHECK] USDA_API_KEY prefix: ${rawKey.length > 0 ? rawKey.substring(0, 5) + '...' : '(empty)'}`)
+
   console.log('\n' + '🏥'.repeat(25))
   console.log(`📩 [Chat API] 요청 시작 (ID: ${requestId})`)
   console.log('🏥'.repeat(25))
@@ -480,16 +484,24 @@ export async function POST(req: Request) {
 
     if (needFoodRag && foodQuery) {
       const usdaKey = (process.env.USDA_API_KEY ?? process.env[' USDA_API_KEY'] ?? '').trim()
+      if (!usdaKey) {
+        console.warn(`⚠️ [${requestId}] USDA_API_KEY 미설정 또는 빈값 — 영양 데이터 조회 생략. Vercel/환경 변수에 USDA_API_KEY를 추가하세요.`)
+      }
       const [foodRows, usdaItems] = await Promise.all([
         searchFoodKnowledge(supabase, foodQuery, 5),
-        usdaKey ? searchAndGetNutrients(usdaKey, foodQuery, 2).catch((err) => {
-          console.warn(`⚠️ [${requestId}] USDA 조회 실패:`, err)
-          return []
-        }) : Promise.resolve([]),
+        usdaKey
+          ? searchAndGetNutrients(usdaKey, foodQuery, 2).catch((err) => {
+              const msg = err instanceof Error ? err.message : String(err)
+              console.warn(`⚠️ [${requestId}] USDA 조회 실패:`, msg)
+              return []
+            })
+          : Promise.resolve([]),
       ])
       if (usdaItems.length > 0) {
         usdaContext = formatUsdaContextForPrompt(usdaItems)
         console.log(`🥗 [${requestId}] USDA 영양 데이터 ${usdaItems.length}건 주입`)
+      } else if (usdaKey) {
+        console.log(`📋 [${requestId}] USDA 검색 결과 없음 (검색어: "${foodQuery}")`)
       }
       if (foodRows.length > 0) {
         foodKnowledgeContext = foodRows

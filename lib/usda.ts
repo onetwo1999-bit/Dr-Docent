@@ -45,6 +45,43 @@ export type UsdaSearchResult = {
   foods: UsdaFoodItem[]
 }
 
+/** 한글 식품 검색어를 USDA 검색에 적합한 영어로 변환 (한글이 있을 때만) */
+const HAS_HANGUL = /[\u3131-\uD7A3]/
+async function translateFoodQueryForUsda(query: string): Promise<string> {
+  if (!query?.trim() || !HAS_HANGUL.test(query)) return query.trim()
+  const openaiKey = process.env.OPENAI_API_KEY
+  if (!openaiKey) return query.trim()
+  try {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${openaiKey}`,
+      },
+      body: JSON.stringify({
+        model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a food search translator. Given a Korean food or ingredient name, output ONLY the English equivalent for USDA food database search (e.g. apple, chicken breast, spinach). One word or short phrase only. No explanation.',
+          },
+          { role: 'user', content: query.trim().slice(0, 100) },
+        ],
+        max_tokens: 30,
+        temperature: 0.2,
+      }),
+    })
+    if (!res.ok) return query.trim()
+    const data = await res.json().catch(() => null)
+    const text = data?.choices?.[0]?.message?.content?.trim()
+    if (text && text.length > 0) return text
+  } catch {
+    // ignore
+  }
+  return query.trim()
+}
+
 /** USDA 검색 API: 식재료 키워드로 식품 목록 조회 */
 export async function searchFood(
   apiKey: string,
@@ -53,7 +90,7 @@ export async function searchFood(
 ): Promise<UsdaSearchResult> {
   if (!apiKey?.trim()) throw new Error('USDA_API_KEY is required')
   const url = `${USDA_BASE}/foods/search?api_key=${encodeURIComponent(apiKey.trim())}&query=${encodeURIComponent(query.trim())}&pageSize=${pageSize}`
-  const res = await fetch(url, { next: { revalidate: 3600 } })
+  const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) {
     const text = await res.text()
     throw new Error(`USDA search failed: ${res.status} ${text.slice(0, 200)}`)
@@ -130,18 +167,18 @@ export function getNutrientsPer100g(food: UsdaFoodItem): UsdaNutrientsPer100g {
   return out
 }
 
-/** 검색 후 상위 1~2건에 대해 100g당 영양 데이터 반환 (프롬프트 주입용) */
-export function searchAndGetNutrients(
+/** 검색 후 상위 1~2건에 대해 100g당 영양 데이터 반환 (한글 검색어는 영어로 변환 후 USDA 조회) */
+export async function searchAndGetNutrients(
   apiKey: string,
   query: string,
   maxFoods: number = 2
 ): Promise<{ description: string; nutrients: UsdaNutrientsPer100g }[]> {
-  return searchFood(apiKey, query, Math.max(5, maxFoods)).then((result) => {
-    return result.foods.slice(0, maxFoods).map((food) => ({
-      description: food.description,
-      nutrients: getNutrientsPer100g(food),
-    }))
-  })
+  const searchQuery = await translateFoodQueryForUsda(query)
+  const result = await searchFood(apiKey, searchQuery, Math.max(5, maxFoods))
+  return result.foods.slice(0, maxFoods).map((food) => ({
+    description: food.description,
+    nutrients: getNutrientsPer100g(food),
+  }))
 }
 
 /** 프롬프트에 넣을 USDA 영양 텍스트 포맷 (한국어 단위: g, mg, kcal) */
