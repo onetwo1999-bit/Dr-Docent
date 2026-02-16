@@ -3,8 +3,6 @@
  * USDA는 정확한 영양 수치, 내부 DB는 관리 팁·레시피 역할 분담
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js'
-
 export type FoodKnowledgeRow = {
   food_name: string
   clinical_insight: string | null
@@ -17,10 +15,10 @@ export type FoodKnowledgeRow = {
 }
 
 export async function searchFoodKnowledge(
-  supabase: SupabaseClient<any>,
+  supabase: any,
   query: string,
   limit: number = 5
-): Promise<FoodKnowledgeRow[]> {
+): Promise<any[]> {
   const term = query.trim().replace(/\s+/g, '%')
   if (!term) return []
   const pattern = `%${term}%`
