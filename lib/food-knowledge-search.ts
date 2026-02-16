@@ -17,7 +17,7 @@ export type FoodKnowledgeRow = {
 }
 
 export async function searchFoodKnowledge(
-  supabase: SupabaseClient,
+  supabase: SupabaseClient<any>,
   query: string,
   limit: number = 5
 ): Promise<FoodKnowledgeRow[]> {
