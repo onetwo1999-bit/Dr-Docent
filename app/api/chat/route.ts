@@ -18,9 +18,11 @@ import {
   formatPaperContext,
   type PaperChunk,
 } from '@/lib/medical-papers/rag-search'
-import { isAnalysisIntent } from '@/lib/medical-papers/intent'
+import { isAnalysisIntent, isFoodOrNutrientIntent, extractFoodSearchQuery } from '@/lib/medical-papers/intent'
 import { searchAndFetchCached } from '@/lib/pubmed'
 import { translateToPubMedQuery } from '@/lib/pubmed-query'
+import { searchAndGetNutrients, formatUsdaContextForPrompt } from '@/lib/usda'
+import { searchFoodKnowledge } from '@/lib/food-knowledge-search'
 
 export const dynamic = 'force-dynamic'
 
@@ -131,12 +133,20 @@ function buildSystemPrompt(
   currentHealthContext: string | null,
   appContext?: AppContextForAPI | null,
   paperChunks?: PaperChunk[] | null,
-  options?: { useHaiku?: boolean; userName?: string; ambiguousHint?: AmbiguousHint | null }
+  options?: {
+    useHaiku?: boolean
+    userName?: string
+    ambiguousHint?: AmbiguousHint | null
+    usdaContext?: string | null
+    foodKnowledgeContext?: string | null
+  }
 ): string {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
   const useHaiku = options?.useHaiku ?? false
   const displayName = options?.userName?.trim() || '선생님'
   const ambiguousHint = options?.ambiguousHint ?? null
+  const usdaContext = options?.usdaContext ?? null
+  const foodKnowledgeContext = options?.foodKnowledgeContext ?? null
 
   let systemPrompt = `## [최우선 — 15년 차 베테랑 물리치료사의 임상 상담 스타일]
 
@@ -246,6 +256,16 @@ function buildSystemPrompt(
     const ctx = formatPaperContext(paperChunks)
     systemPrompt += `\n## [필수] 학술 논문 — 대화의 배경으로만 사용\n\`\`\`\n${ctx}\n\`\`\`\n`
     systemPrompt += `위 논문 핵심을 대화 속에 녹여서 설명해. 인용 시 "이런 방식이 실제 임상 연구에서도 그 효과가 입증된 바 있거든요(PMID: XXXXXX)"처럼 자연스럽게. 논문 번호를 문장 앞에 두지 말고 문맥 안에만 넣어. 상담이 완전히 끝난 뒤 "🔗 닥터 도슨이 참고한 연구 논문"으로 최대 3개만 하단에 표시됨.\n\n`
+  }
+
+  if (usdaContext) {
+    systemPrompt += `\n## [필수] USDA 표준 영양 데이터 (100g당, 정밀 수치)\n\`\`\`\n${usdaContext}\n\`\`\`\n`
+    systemPrompt += `위 영양 수치를 언급할 때 반드시 **"USDA 표준 데이터에 따르면~"** 문구를 사용해. 모든 영양 데이터는 한국인에게 익숙한 단위(**g, mg, kcal**)로만 출력해.\n\n`
+  }
+
+  if (foodKnowledgeContext) {
+    systemPrompt += `\n## [참고] 내부 DB — 관리 팁·레시피\n\`\`\`\n${foodKnowledgeContext}\n\`\`\`\n`
+    systemPrompt += `위 내용은 식품별 관리 팁·레시피 참고용이야. USDA 수치와 함께 활용해 설명해.\n\n`
   }
 
   return systemPrompt
@@ -445,14 +465,44 @@ export async function POST(req: Request) {
       console.warn(`⚠️ [${requestId}] 건강 집계 실패:`, aggErr)
     }
 
-    // 의학 관련 키워드 있으면 코드에서 먼저 PubMed 검색 (Tool Calling 없음)
     const needSearch = isAnalysisIntent(message)
-    console.log(`📋 [${requestId}] 의학 키워드/분석 의도: ${needSearch ? '예 → PubMed 검색 수행' : '아니오'}`)
+    const needFoodRag = isFoodOrNutrientIntent(message)
+    const foodQuery = needFoodRag ? (extractFoodSearchQuery(message) || message.slice(0, 40).trim()) : ''
+    console.log(`📋 [${requestId}] 의학 키워드/분석 의도: ${needSearch ? '예' : '아니오'}, 음식·영양 의도: ${needFoodRag ? '예' : '아니오'}${foodQuery ? `, 검색어: "${foodQuery}"` : ''}`)
 
     let paperChunks: PaperChunk[] = []
     let refsForSidebar: SidebarPaper[] = []
+    let usdaContext: string | null = null
+    let foodKnowledgeContext: string | null = null
 
-    if (needSearch) {
+    if (needFoodRag && foodQuery) {
+      const usdaKey = (process.env.USDA_API_KEY ?? process.env[' USDA_API_KEY'] ?? '').trim()
+      const [foodRows, usdaItems] = await Promise.all([
+        searchFoodKnowledge(supabase, foodQuery, 5),
+        usdaKey ? searchAndGetNutrients(usdaKey, foodQuery, 2).catch((err) => {
+          console.warn(`⚠️ [${requestId}] USDA 조회 실패:`, err)
+          return []
+        }) : Promise.resolve([]),
+      ])
+      if (usdaItems.length > 0) {
+        usdaContext = formatUsdaContextForPrompt(usdaItems)
+        console.log(`🥗 [${requestId}] USDA 영양 데이터 ${usdaItems.length}건 주입`)
+      }
+      if (foodRows.length > 0) {
+        foodKnowledgeContext = foodRows
+          .map((r) => {
+            const parts = [`[${r.food_name}]`]
+            if (r.clinical_insight) parts.push(`관리 팁: ${r.clinical_insight}`)
+            if (r.synthetic_qa) parts.push(`Q&A: ${r.synthetic_qa}`)
+            if (r.calories != null) parts.push(`칼로리 ${r.calories}kcal 등`)
+            return parts.join('\n')
+          })
+          .join('\n\n')
+        console.log(`📂 [${requestId}] 내부 DB food_knowledge ${foodRows.length}건 (관리 팁·레시피) 주입`)
+      }
+    }
+
+    if (needSearch || needFoodRag) {
       const result = await runPubMedRag(requestId, message, 5)
       paperChunks = result.papers
       refsForSidebar = result.refsForSidebar
@@ -472,6 +522,8 @@ export async function POST(req: Request) {
       useHaiku,
       userName,
       ambiguousHint,
+      usdaContext,
+      foodKnowledgeContext,
     })
     const chatMessages: { role: 'user' | 'assistant'; content: string }[] = [
       ...history,

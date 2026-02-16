@@ -56,3 +56,26 @@ export function isAnalysisIntent(message: string): boolean {
   if (dailyMatch && !analysisMatch) return false
   return false
 }
+
+/** 음식·영양소 관련 의도: 특정 음식/영양 질문 시 내부 DB + USDA + PubMed 하이브리드 RAG 트리거 */
+const FOOD_NUTRIENT_KEYWORDS = [
+  '음식', '식품', '식재료', '영양', '칼로리', '단백질', '지방', '탄수화물', '비타민', '미네랄',
+  '레시피', '식단', '메뉴', '저녁', '아침', '점심', '간식', '나트륨', '당', '당류', '섬유', '식이섬유',
+  '마그네슘', '칼슘', '칼륨', '철분', '오메가', '포화지방', '콜레스테롤',
+]
+
+export function isFoodOrNutrientIntent(message: string): boolean {
+  if (!message || message.trim().length < 2) return false
+  const text = message.trim().toLowerCase()
+  return FOOD_NUTRIENT_KEYWORDS.some((kw) => text.includes(kw.toLowerCase()))
+}
+
+/** 질문에서 식품 검색어 추출 (간단: 한글/영문 단어 1~2개). USDA 검색용. */
+export function extractFoodSearchQuery(message: string): string | null {
+  const t = message.trim()
+  if (t.length < 2) return null
+  const removed = t.replace(/(칼로리|영양|얼마|몇|함유|포함|있어|알려|알고|싶어|요\?|있나|있니)/gi, ' ').trim()
+  const words = removed.split(/\s+/).filter((w) => w.length >= 1 && /[\u3131-\uD7A3a-zA-Z]/.test(w))
+  if (words.length === 0) return null
+  return words.slice(0, 3).join(' ')
+}
