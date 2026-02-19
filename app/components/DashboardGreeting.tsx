@@ -58,7 +58,7 @@ export default function DashboardGreeting({
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-[#2DD4BF] text-sm md:text-base font-semibold">
-            차트 #{chartNumber} 선생님
+            차트 #{chartNumber}
           </p>
           <h1 className="text-xl md:text-2xl font-bold text-gray-900 truncate">
             {displayName(nickname)}님, {greeting}! ✨

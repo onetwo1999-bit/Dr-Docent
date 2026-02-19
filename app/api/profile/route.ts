@@ -7,6 +7,7 @@ import { cookies } from 'next/headers'
 // ========================
 interface ProfileInput {
   user_id?: string
+  nickname?: string | null
   birth_date?: string | null
   gender?: string | null
   height?: string | number | null
@@ -19,6 +20,7 @@ interface ProfileInput {
 
 interface ProfileData {
   id: string
+  nickname: string | null
   birth_date: string | null
   gender: string | null
   height: number | null
@@ -107,6 +109,7 @@ function validateAndTransform(input: ProfileInput, authenticatedUserId: string):
   }
   
   // 3. 데이터 타입 변환
+  const nickname = toString(input.nickname)
   const height = toNumber(input.height)
   const weight = toNumber(input.weight)
   const gender = toString(input.gender)
@@ -216,6 +219,7 @@ function validateAndTransform(input: ProfileInput, authenticatedUserId: string):
     success: true,
     data: {
       id: userId,
+      nickname,
       birth_date,
       gender,
       height,
@@ -333,6 +337,7 @@ export async function POST(req: Request) {
     // 첫 번째 시도: 모든 필드 포함
     let upsertData: Record<string, unknown> = {
       id: profileData.id,
+      ...(profileData.nickname !== null && { nickname: profileData.nickname }),
       birth_date: profileData.birth_date,
       gender: profileData.gender,
       height: profileData.height,
