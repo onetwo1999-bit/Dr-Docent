@@ -9,6 +9,7 @@
     "clean": "rm -rf .next",
     "build": "next build",
     "start": "next start",
+    "kill-port": "lsof -ti :3000 | xargs kill -9 2>/dev/null; echo '포트 3000 정리 완료'",
     "lint": "eslint",
     "check-env": "node --loader tsx scripts/check-env.ts || echo '환경 변수 체크를 건너뜁니다. 수동으로 확인해주세요.'",
     "test:signup-profile": "node --loader tsx scripts/integration-test-signup-profile.ts",

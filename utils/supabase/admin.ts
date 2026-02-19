@@ -8,6 +8,7 @@ import { createClient } from '@supabase/supabase-js'
  * 이 파일은 app/api/*, lib/* (서버에서만 호출)에서만 import해야 하며, 'use client' 컴포넌트에서는 사용 금지.
  */
 export function createAdminClient() {
+  // 서버 전용. 환경 변수명은 대문자 그대로 사용 (Vercel/로컬 동일)
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) {

@@ -103,6 +103,7 @@ export async function runDrugRag(
   console.log(`[${requestId}] [runDrugRag] ServiceKey Exist:`, !!process.env.SUPABASE_SERVICE_ROLE_KEY)
   console.log(`[${requestId}] [runDrugRag] MFDS_DRUG_INFO_API_KEY Exist:`, !!process.env.MFDS_DRUG_INFO_API_KEY)
 
+  // 서버 전용. 키 이름은 반드시 대문자 MFDS_DRUG_INFO_API_KEY (Vercel/로컬 동일)
   const apiKey = process.env.MFDS_DRUG_INFO_API_KEY?.trim()
 
   if (!apiKey) {
