@@ -50,6 +50,7 @@ const PRODUCT_TO_INGREDIENT: Record<string, string> = {
   자일로릭: '알로푸리놀',
 }
 
+/** URL 생성 시 한글 검색어는 encodeURIComponent를 딱 1회만 적용 (깨짐 방지) */
 function buildQuery(
   key: string,
   params: { Prduct?: string; MTRAL_NM?: string },
@@ -107,7 +108,8 @@ async function request(apiKey: string, params: { Prduct?: string; MTRAL_NM?: str
 
 /**
  * 제품명 검색 → getDrugPrdtMcpnDtlInq07 호출 (JSON, serviceKey 그대로).
- * 파라미터: Prduct(제품명, 대소문자 고정). 0건이면 MTRAL_NM(성분명) 보조 검색.
+ * - 와일드카드: Prduct=%검색어% 로 호출 (한글은 buildQuery에서 encodeURIComponent 1회만 적용).
+ * - 0건이면 완전 일치·성분명(MTRAL_NM) 보조 검색.
  */
 export async function fetchDrugPrdtMcpnDtlInq07(
   apiKey: string,
@@ -121,24 +123,23 @@ export async function fetchDrugPrdtMcpnDtlInq07(
 
   const opts = { pageNo: options?.pageNo ?? 1, numOfRows: options?.numOfRows ?? 10 }
 
-  // 1) Prduct(제품명, 대소문자 일치)로 완전 일치 검색
-  let result = await request(key, { Prduct: name }, opts)
+  // 1) 와일드카드: Prduct=%검색어% (앞뒤 %). URL 생성 시 encodeURIComponent는 buildQuery에서 1회만 적용
+  let result = await request(key, { Prduct: `%${name}%` }, opts)
   if (result.items.length > 0) return result
 
-  // 2) 부분 일치: 검색어로 시작하는 제품 (Prduct=검색어%)
+  // 2) 완전 일치
+  result = await request(key, { Prduct: name }, opts)
+  if (result.items.length > 0) return result
+
+  // 3) 검색어로 시작 (검색어%)
   result = await request(key, { Prduct: `${name}%` }, opts)
   if (result.items.length > 0) return result
 
-  // 3) 부분 일치: 검색어를 포함하는 다른 제품 (Prduct=%검색어%)
-  result = await request(key, { Prduct: `%${name}%` }, opts)
-  if (result.items.length > 0) return result
-
-  // 4) 보조: 성분명(MTRAL_NM)으로 검색 (알려진 제품명→성분 매핑)
+  // 4) 보조: 성분명(MTRAL_NM)
   const ingredient = PRODUCT_TO_INGREDIENT[name] ?? name
   result = await request(key, { MTRAL_NM: ingredient }, opts)
   if (result.items.length > 0) return result
 
-  // 5) 성분명 부분 일치
   result = await request(key, { MTRAL_NM: `${ingredient}%` }, opts)
   return result
 }

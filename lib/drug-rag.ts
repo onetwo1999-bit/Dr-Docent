@@ -21,12 +21,11 @@ function clip(s: string | null | undefined, max: number): string | null {
   return s.length > max ? s.slice(0, max) + '…' : s
 }
 
-/** API MTRAL_NM(성분명) → 성분 분석 섹션용 텍스트. 제품명·성분명·업체명만 사용 */
-export function formatDrugContextForPrompt(items: MfdsMcpn07Item[]): string {
+/** API MTRAL_NM(성분명) → 성분 분석 섹션용 텍스트. 다중 결과도 모두 전달(LLM이 선택·요약) */
+export function formatDrugContextForPrompt(items: MfdsMcpn07Item[], maxItems = 20): string {
   const lines: string[] = []
-  for (const item of items.slice(0, 5)) {
+  for (const item of items.slice(0, maxItems)) {
     lines.push(`■ 제품명: ${item.productName || '(정보 없음)'}`)
-    // 성분 분석 섹션: 식약처 MTRAL_NM(성분명) 데이터를 그대로 매핑
     if (item.ingredientName) lines.push(`  성분명: ${clip(item.ingredientName, 300)}`)
     if (item.companyName) lines.push(`  업체명: ${item.companyName}`)
     lines.push('')
@@ -59,10 +58,10 @@ export async function runDrugRag(
   }
 
   try {
-    console.log(`🌐 [${requestId}] MFDS getDrugPrdtMcpnDtlInq07 호출: "${drugQuery}"`)
+    console.log(`🌐 [${requestId}] MFDS getDrugPrdtMcpnDtlInq07 호출 (Prduct=%검색어%): "${drugQuery}"`)
     const { items, totalCount } = await fetchDrugPrdtMcpnDtlInq07(apiKey, drugQuery, {
       pageNo: 1,
-      numOfRows: 10,
+      numOfRows: 20,
     })
     console.log(`💊 [${requestId}] MFDS API 반환: ${items.length}건 (totalCount: ${totalCount})`)
 
