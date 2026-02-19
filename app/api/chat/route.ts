@@ -460,6 +460,13 @@ export async function POST(req: Request) {
   console.log('AVAILABLE KEYS (Chat 관련):', available.join(', '))
   if (missing.length > 0) {
     console.log('MISSING KEYS (undefined/empty):', missing.join(', '))
+    if (missing.includes('SUPABASE_SERVICE_ROLE_KEY') || missing.includes('MFDS_DRUG_INFO_API_KEY')) {
+      console.log('[Vercel] 누락된 키는 대시보드에서 다음을 확인하세요:')
+      console.log('  1. Project → Settings → Environment Variables')
+      console.log('  2. 이름 정확히: SUPABASE_SERVICE_ROLE_KEY, MFDS_DRUG_INFO_API_KEY (대문자, 밑줄만)')
+      console.log('  3. Production 체크 (및 Preview 필요 시 체크) 후 Save')
+      console.log('  4. Deployments → 최신 배포 ⋮ → Redeploy (캐시 없이)')
+    }
   }
   console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'OK' : '(undefined)')
   console.log('Supabase ServiceRole:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'OK' : '(undefined)')
