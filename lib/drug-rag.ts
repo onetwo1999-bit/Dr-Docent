@@ -2,8 +2,9 @@
  * 의약품 RAG 파이프라인
  *
  * 데이터 흐름:
- *   식약처 DrugPrdtPrmsnInfoService07 getDrugPrdtMcpnDtlInq07 호출
- *   → PRDUCT(제품명), MTRAL_NM(성분명), ENTRPS(업체명) 매핑 후 LLM 프롬프트용 포맷
+ *   식약처 getDrugPrdtMcpnDtlInq07(성분 상세 조회) 호출
+ *   → Prduct(제품명), MTRAL_NM(성분명), ENTRPS(업체명) 매핑
+ *   → MTRAL_NM(성분명)은 서비스의 성분 분석 섹션에 그대로 사용
  *
  * 중요:
  *   - MFDS_DRUG_INFO_API_KEY 미설정 시 null 반환 (일반 지식 답변 금지)
@@ -20,11 +21,12 @@ function clip(s: string | null | undefined, max: number): string | null {
   return s.length > max ? s.slice(0, max) + '…' : s
 }
 
-/** MfdsMcpn07Item 배열 → 시스템 프롬프트 삽입용 텍스트 (제품명·성분명·업체명) */
+/** API MTRAL_NM(성분명) → 성분 분석 섹션용 텍스트. 제품명·성분명·업체명만 사용 */
 export function formatDrugContextForPrompt(items: MfdsMcpn07Item[]): string {
   const lines: string[] = []
   for (const item of items.slice(0, 5)) {
     lines.push(`■ 제품명: ${item.productName || '(정보 없음)'}`)
+    // 성분 분석 섹션: 식약처 MTRAL_NM(성분명) 데이터를 그대로 매핑
     if (item.ingredientName) lines.push(`  성분명: ${clip(item.ingredientName, 300)}`)
     if (item.companyName) lines.push(`  업체명: ${item.companyName}`)
     lines.push('')

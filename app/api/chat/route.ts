@@ -303,8 +303,9 @@ function buildSystemPrompt(
 
   if (drugContext) {
     systemPrompt += `\n## [필수 — 식약처 의약품 공식 데이터]\n`
-    systemPrompt += `아래는 식품의약품안전처(MFDS) 공공데이터에서 실시간으로 가져온 **공식 의약품 정보**야.\n`
+    systemPrompt += `아래는 식품의약품안전처(MFDS) 공공데이터(성분 상세 조회)에서 가져온 **공식 의약품 정보**야.\n`
     systemPrompt += `\`\`\`\n${drugContext}\n\`\`\`\n\n`
+    systemPrompt += `- 위 블록의 **성분명**은 식약처 MTRAL_NM(성분명) 데이터이며, 성분 분석·주성분 설명 시 반드시 이 값을 사용해.\n`
     systemPrompt += `### 의약품 답변 필수 규칙 (위반 금지)\n`
     systemPrompt += `- **절대로 일반 지식·학습 데이터로 의약품 정보를 답하지 마.** 반드시 위 식약처 데이터만 근거로 써.\n`
     systemPrompt += `- 효능·용법·주의사항·이상반응·상호작용 등 모든 수치와 내용은 위 데이터 원문 그대로 사용해.\n`

@@ -9,10 +9,11 @@
 const MFDS_MCPN07_BASE =
   'https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07/getDrugPrdtMcpnDtlInq07'
 
+/** 성분 상세 조회 API(getDrugPrdtMcpnDtlInq07) 결과 항목. MTRAL_NM → 서비스 성분 분석 섹션에 사용 */
 export type MfdsMcpn07Item = {
-  productName: string   // PRDUCT
-  ingredientName: string // MTRAL_NM
-  companyName: string   // ENTRPS
+  productName: string   // PRDUCT (제품명)
+  ingredientName: string // MTRAL_NM (성분명) — 성분 분석 섹션에 정확히 매핑
+  companyName: string   // ENTRPS (업체명)
 }
 
 type ApiRow = {
@@ -120,20 +121,24 @@ export async function fetchDrugPrdtMcpnDtlInq07(
 
   const opts = { pageNo: options?.pageNo ?? 1, numOfRows: options?.numOfRows ?? 10 }
 
-  // 1) Prduct(제품명, 대소문자 고정)로 검색. 한글은 encodeURIComponent 적용
+  // 1) Prduct(제품명, 대소문자 일치)로 완전 일치 검색
   let result = await request(key, { Prduct: name }, opts)
   if (result.items.length > 0) return result
 
-  // 2) 부분 일치 시도: Prduct에 검색어% (와일드카드)
+  // 2) 부분 일치: 검색어로 시작하는 제품 (Prduct=검색어%)
   result = await request(key, { Prduct: `${name}%` }, opts)
   if (result.items.length > 0) return result
 
-  // 3) 보조: 성분명(MTRAL_NM)으로 검색 (알려진 제품명→성분 매핑)
+  // 3) 부분 일치: 검색어를 포함하는 다른 제품 (Prduct=%검색어%)
+  result = await request(key, { Prduct: `%${name}%` }, opts)
+  if (result.items.length > 0) return result
+
+  // 4) 보조: 성분명(MTRAL_NM)으로 검색 (알려진 제품명→성분 매핑)
   const ingredient = PRODUCT_TO_INGREDIENT[name] ?? name
   result = await request(key, { MTRAL_NM: ingredient }, opts)
   if (result.items.length > 0) return result
 
-  // 4) 성분명 부분 일치
+  // 5) 성분명 부분 일치
   result = await request(key, { MTRAL_NM: `${ingredient}%` }, opts)
   return result
 }
