@@ -19,6 +19,7 @@ import HealthReport from '../components/HealthReport'
 import DashboardRankingSection from '../components/DashboardRankingSection'
 import DashboardGroupSection from '../components/DashboardGroupSection'
 import DashboardShell from '../components/DashboardShell'
+import DashboardGreeting from '../components/DashboardGreeting'
 
 // 🔒 HTTP → HTTPS 변환 함수
 function toSecureUrl(url: string | null | undefined): string | null {
@@ -144,7 +145,7 @@ export default async function DashboardPage() {
   // 📊 profiles 테이블에서 사용자 데이터 조회
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('birth_date, gender, height, weight, conditions, medications, chronic_diseases, bmi')
+    .select('nickname, birth_date, gender, height, weight, conditions, medications, chronic_diseases, bmi')
     .eq('id', user.id)
     .single()
 
@@ -159,14 +160,10 @@ export default async function DashboardPage() {
     user.identities?.[0]?.identity_data?.email ||
     null
 
-  // 👤 이름 추출
-  const realName = 
-    user.user_metadata?.full_name ||
-    user.user_metadata?.name ||
-    user.user_metadata?.preferred_username ||
-    user.identities?.[0]?.identity_data?.nickname ||
-    email?.split('@')[0] ||
-    '사용자'
+  // 👤 이름 추출 — profiles.nickname 우선, 없으면 이메일 앞부분 폴백
+  const profileNickname = (profile as { nickname?: string | null } | null)?.nickname ?? null
+  const emailPrefix = email?.split('@')[0] || '사용자'
+  const realName = profileNickname?.trim() || emailPrefix
 
   // 🏥 차트 번호 생성 (6자리)
   const chartNumber = user.id.replace(/-/g, '').slice(0, 6).toUpperCase()
@@ -211,24 +208,14 @@ export default async function DashboardPage() {
       <div className="min-h-screen bg-white text-gray-800 p-3 md:p-5 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-6xl mx-auto space-y-4">
           
-          {/* 🎯 VIP 인사말 헤더 */}
-          <div className="bg-white rounded-2xl p-4 md:p-5 border border-gray-100 shadow-sm">
-            <div className="flex items-center gap-3">
-              {/* 이모티콘으로 단순화 */}
-              <div className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-[#2DD4BF]/10 flex items-center justify-center text-2xl">
-                😊
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[#2DD4BF] text-sm md:text-base font-semibold">차트 #{chartNumber} 선생님</p>
-                <h1 className="text-xl md:text-2xl font-bold text-gray-900 truncate">
-                  {realName}님, {greeting}! ✨ 
-                </h1>
-                <p className="text-gray-600 text-sm md:text-base mt-0.5">
-                  오늘 컨디션은 어떠세요?
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* 🎯 VIP 인사말 헤더 — Realtime 닉네임 동기화 */}
+          <DashboardGreeting
+            userId={user.id}
+            initialNickname={profileNickname}
+            emailPrefix={emailPrefix}
+            chartNumber={chartNumber}
+            greeting={greeting}
+          />
 
           {/* 📊 4개의 데이터 카드 그리드 */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
