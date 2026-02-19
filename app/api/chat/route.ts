@@ -4,16 +4,22 @@
  * 순차 로직: 유저 질문 → (의학 키워드 시) PubMed 검색 → 프롬프트에 결과 합침 → OpenAI 답변 생성
  * Tool Calling 없이, 코드에서 검색 후 AI에 데이터 전달.
  *
- * 환경변수: 개발 시 .env.local 강제 로드(override: false). Vercel은 대시보드 주입만 사용.
+ * [실행 위치] 서버 전용. 이 파일은 'use client' 없음 → Next.js API Route (Node.js 런타임).
+ * [Edge 아님] export const runtime = 'edge' 없음 → process.env 사용이 맞음 (Edge면 env 객체 검토 필요).
+ * [환경변수] 개발 시 .env.local 강제 로드(override: false). Vercel은 대시보드 주입만 사용.
  */
 import dotenv from 'dotenv'
 import path from 'path'
 import { NextResponse } from 'next/server'
 
-// 서버에서 Supabase/기타 키가 비어 있을 수 있을 때 .env.local 강제 로드 (개발 전용, 기존 값 덮어쓰지 않음)
-if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+// 서버 전용: .env.local 강제 로드 (보안 키 누락 시 production 포함 시도. override: false로 기존 값 유지)
+const needsEnvLoad =
+  typeof process !== 'undefined' &&
+  (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || !process.env.MFDS_DRUG_INFO_API_KEY?.trim())
+if (needsEnvLoad) {
   dotenv.config({ path: path.join(process.cwd(), '.env.local'), override: false })
 }
+// Vercel build trigger: 재배포 시 환경 변수 새로 주입 확인용 (제거 가능)
 
 console.log('--- VERCEL ENV KEYS ALL ---')
 console.log(Object.keys(process.env).sort().join(', '))
