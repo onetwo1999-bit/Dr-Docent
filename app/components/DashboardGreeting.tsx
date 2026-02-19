@@ -3,14 +3,34 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/utils/supabase/client'
 
+/** 유저 로컬 시간대 기준 아침/오후/저녁 인사말 (3040 부모님 건강 걱정 유저 공감 톤) */
+function getDynamicGreeting(): { greeting: string; subtitle: string } {
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 12) {
+    return {
+      greeting: '오늘도 건강한 아침이에요',
+      subtitle: '나와 가족을 위해 오늘도 한 걸음씩 챙겨보아요',
+    }
+  }
+  if (hour >= 12 && hour < 18) {
+    return {
+      greeting: '따뜻한 오후 보내세요',
+      subtitle: '몸과 마음이 편한 하루 되세요',
+    }
+  }
+  return {
+    greeting: '오늘 하루 수고 많으셨어요',
+    subtitle: '편안한 저녁 보내시고, 내일도 건강한 하루 되세요',
+  }
+}
+
 interface DashboardGreetingProps {
   userId: string
-  /** profiles.nickname (서버에서 조회한 초기값) */
   initialNickname: string | null
-  /** 이메일 앞부분 — nickname 없을 때 폴백 */
   emailPrefix: string
   chartNumber: string
-  greeting: string
+  /** 서버 초기값 (클라이언트에서 시간대별로 덮어씀) */
+  greeting?: string
 }
 
 export default function DashboardGreeting({
@@ -18,9 +38,9 @@ export default function DashboardGreeting({
   initialNickname,
   emailPrefix,
   chartNumber,
-  greeting,
 }: DashboardGreetingProps) {
   const displayName = (nick: string | null) => nick?.trim() || emailPrefix
+  const { greeting, subtitle } = getDynamicGreeting()
 
   const [nickname, setNickname] = useState<string | null>(initialNickname)
 
@@ -64,7 +84,7 @@ export default function DashboardGreeting({
             {displayName(nickname)}님, {greeting}! ✨
           </h1>
           <p className="text-gray-600 text-sm md:text-base mt-0.5">
-            오늘 컨디션은 어떠세요?
+            {subtitle}
           </p>
         </div>
       </div>

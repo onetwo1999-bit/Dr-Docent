@@ -54,7 +54,7 @@ export async function fetchDrugPrdtMcpnDtlInq07(
 
   const pageNo = String(options?.pageNo ?? 1)
   const numOfRows = String(options?.numOfRows ?? 10)
-  // serviceKey는 그대로 꽂기 (encodeURIComponent 사용 안 함). 나머지만 인코딩.
+  // serviceKey: 인코딩 없이 환경 변수 값 그대로. URL 끝에 &type=json 고정으로 JSON 수신
   const q = `serviceKey=${key}&itemName=${encodeURIComponent(name)}&pageNo=${pageNo}&numOfRows=${numOfRows}&type=json`
   const url = `${MFDS_MCPN07_BASE}?${q}`
 
