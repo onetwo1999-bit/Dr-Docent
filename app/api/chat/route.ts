@@ -23,12 +23,13 @@ import {
   formatPaperContext,
   type PaperChunk,
 } from '@/lib/medical-papers/rag-search'
-import { isAnalysisIntent, isFoodOrNutrientIntent, extractFoodSearchQuery, isLikelyFoodName } from '@/lib/medical-papers/intent'
+import { isAnalysisIntent, isFoodOrNutrientIntent, extractFoodSearchQuery, isLikelyFoodName, isDrugIntent, extractDrugSearchQuery } from '@/lib/medical-papers/intent'
 import { searchAndFetchCached } from '@/lib/pubmed'
 import { translateToPubMedQuery } from '@/lib/pubmed-query'
 import { searchAndGetNutrients, formatUsdaContextForPrompt } from '@/lib/usda'
 import { searchFoodKnowledge } from '@/lib/food-knowledge-search'
 import { runDniInference } from '@/lib/dni-inference'
+import { runDrugRag } from '@/lib/drug-rag'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -147,6 +148,8 @@ function buildSystemPrompt(
     usdaContext?: string | null
     foodKnowledgeContext?: string | null
     dniCautionGuide?: string | null
+    drugContext?: string | null
+    drugQueryMissing?: boolean
   }
 ): string {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
@@ -156,6 +159,8 @@ function buildSystemPrompt(
   const usdaContext = options?.usdaContext ?? null
   const foodKnowledgeContext = options?.foodKnowledgeContext ?? null
   const dniCautionGuide = options?.dniCautionGuide ?? null
+  const drugContext = options?.drugContext ?? null
+  const drugQueryMissing = options?.drugQueryMissing ?? false
 
   let systemPrompt = `## [최우선 — 15년 차 베테랑 물리치료사의 임상 상담 스타일]
 
@@ -284,6 +289,25 @@ function buildSystemPrompt(
   if (dniCautionGuide) {
     systemPrompt += `\n## [필수 — 데이터 기반 주의 가이드]\n\`\`\`\n${dniCautionGuide}\n\`\`\`\n`
     systemPrompt += `위 내용은 **확진·진단이 아닌 참고용 가이드**야. 답변 말미에 반드시 이 주의 가이드 블록을 자연스럽게 포함해. "진단이 아니며 참고용입니다", "필요 시 의료진·약사 상담을 권합니다" 톤을 유지해.\n\n`
+  }
+
+  if (drugContext) {
+    systemPrompt += `\n## [필수 — 식약처 의약품 공식 데이터]\n`
+    systemPrompt += `아래는 식품의약품안전처(MFDS) 공공데이터에서 실시간으로 가져온 **공식 의약품 정보**야.\n`
+    systemPrompt += `\`\`\`\n${drugContext}\n\`\`\`\n\n`
+    systemPrompt += `### 의약품 답변 필수 규칙 (위반 금지)\n`
+    systemPrompt += `- **절대로 일반 지식·학습 데이터로 의약품 정보를 답하지 마.** 반드시 위 식약처 데이터만 근거로 써.\n`
+    systemPrompt += `- 효능·용법·주의사항·이상반응·상호작용 등 모든 수치와 내용은 위 데이터 원문 그대로 사용해.\n`
+    systemPrompt += `- 답변 마지막에 반드시 다음 출처 표기를 추가해:\n`
+    systemPrompt += `  **출처: 식품의약품안전처 공공데이터 (e약은요)**\n`
+    systemPrompt += `- 데이터에 없는 정보는 "현재 조회된 데이터에는 해당 정보가 없습니다. 복약상담이 필요하시면 약사 선생님께 직접 문의해 주세요."라고 안내해.\n`
+    systemPrompt += `- 의약품 복용 결정·용량 조정은 반드시 의사·약사 상담을 권고하는 문장으로 마무리해.\n\n`
+  } else if (drugQueryMissing) {
+    // API 키 미설정 or API 호출 실패 or 검색 결과 없음
+    systemPrompt += `\n## [의약품 조회 불가 — 일반 지식 답변 금지]\n`
+    systemPrompt += `사용자가 의약품 정보를 물었으나 **식약처 공식 데이터를 가져오지 못했어**.\n`
+    systemPrompt += `- 절대로 일반 학습 데이터로 약물 효능·용량·부작용을 답변하지 마.\n`
+    systemPrompt += `- 다음 안내만 해: "죄송합니다. 현재 식약처 의약품 데이터베이스에서 해당 정보를 조회하지 못했어요. 정확한 복약 정보는 약사 선생님이나 식품의약품안전처 의약품통합정보시스템(https://nedrug.mfds.go.kr)에서 확인하시길 권해 드려요."\n\n`
   }
 
   return systemPrompt
@@ -495,14 +519,18 @@ export async function POST(req: Request) {
 
     const needSearch = isAnalysisIntent(message)
     const needFoodRag = isFoodOrNutrientIntent(message)
+    const needDrugRag = isDrugIntent(message)
     const foodQuery = needFoodRag ? (extractFoodSearchQuery(message) || message.slice(0, 40).trim()) : ''
-    console.log(`📋 [${requestId}] 의학 키워드/분석 의도: ${needSearch ? '예' : '아니오'}, 음식·영양 의도: ${needFoodRag ? '예' : '아니오'}${foodQuery ? `, 검색어: "${foodQuery}"` : ''}`)
+    const drugQuery = needDrugRag ? (extractDrugSearchQuery(message) || message.slice(0, 40).trim()) : ''
+    console.log(`📋 [${requestId}] 분석의도: ${needSearch ? 'Y' : 'N'}, 음식·영양: ${needFoodRag ? 'Y' : 'N'}${foodQuery ? ` ("${foodQuery}")` : ''}, 의약품: ${needDrugRag ? 'Y' : 'N'}${drugQuery ? ` ("${drugQuery}")` : ''}`)
 
     let paperChunks: PaperChunk[] = []
     let refsForSidebar: SidebarPaper[] = []
     let usdaContext: string | null = null
     let foodKnowledgeContext: string | null = null
     let dniCautionGuide: string | null = null
+    let drugContext: string | null = null
+    let drugQueryMissing = false
 
     if (needFoodRag && foodQuery) {
       // 추출된 검색어가 증상·형용사면 USDA는 건너뛰고 PubMed·내부 DB만 사용
@@ -557,6 +585,27 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── 의약품 RAG (식약처 e약은요 API) ──────────────────────────────────────
+    if (needDrugRag && drugQuery) {
+      console.log(`💊 [${requestId}] 의약품 RAG 시작: "${drugQuery}"`)
+      try {
+        const admin = createAdminClient()
+        const drugResult = await runDrugRag(requestId, drugQuery, admin)
+        drugContext = drugResult.drugContext
+        if (drugContext) {
+          console.log(`💊 [${requestId}] 의약품 데이터 주입 완료 (${drugResult.itemCount}건, API=${drugResult.apiUsed})`)
+        } else {
+          // 데이터 없거나 API 실패 → 일반 지식 답변 금지 플래그
+          drugQueryMissing = true
+          console.warn(`⚠️ [${requestId}] 의약품 데이터 조회 실패 → 일반 지식 답변 금지 주입`)
+        }
+      } catch (err) {
+        drugQueryMissing = true
+        console.error(`❌ [${requestId}] drug RAG 예외:`, err instanceof Error ? err.message : String(err))
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
     if (needSearch || needFoodRag) {
       const result = await runPubMedRag(requestId, message, 5)
       paperChunks = result.papers
@@ -580,6 +629,8 @@ export async function POST(req: Request) {
       usdaContext,
       foodKnowledgeContext,
       dniCautionGuide,
+      drugContext,
+      drugQueryMissing,
     })
     const chatMessages: { role: 'user' | 'assistant'; content: string }[] = [
       ...history,
