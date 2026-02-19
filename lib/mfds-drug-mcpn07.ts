@@ -51,15 +51,15 @@ const PRODUCT_TO_INGREDIENT: Record<string, string> = {
 
 function buildQuery(
   key: string,
-  params: { PRDUCT?: string; MTRAL_NM?: string },
+  params: { Prduct?: string; MTRAL_NM?: string },
   pageNo: string,
   numOfRows: string
 ): string {
   const parts: string[] = []
   parts.push(`serviceKey=${key}`)
-  if (params.PRDUCT) parts.push(`PRDUCT=${encodeURIComponent(params.PRDUCT)}`)
+  if (params.Prduct) parts.push(`Prduct=${encodeURIComponent(params.Prduct)}`)
   if (params.MTRAL_NM) parts.push(`MTRAL_NM=${encodeURIComponent(params.MTRAL_NM)}`)
-  parts.push(`pageNo=${pageNo}`, `numOfRows=${numOfRows}`, `type=json`)
+  parts.push(`pageNo=${pageNo}`, `numOfRows=${numOfRows}`)
   return parts.join('&')
 }
 
@@ -90,11 +90,14 @@ function parseResponse(text: string): { items: MfdsMcpn07Item[]; totalCount: num
   return { items, totalCount }
 }
 
-async function request(apiKey: string, params: { PRDUCT?: string; MTRAL_NM?: string }, options: { pageNo: number; numOfRows: number }) {
+async function request(apiKey: string, params: { Prduct?: string; MTRAL_NM?: string }, options: { pageNo: number; numOfRows: number }) {
   const pageNo = String(options.pageNo)
   const numOfRows = String(options.numOfRows)
   const q = buildQuery(apiKey, params, pageNo, numOfRows)
-  const url = `${MFDS_MCPN07_BASE}?${q}`
+  // 응답을 JSON으로 수신하기 위해 URL 끝에 &type=json 고정
+  const url = `${MFDS_MCPN07_BASE}?${q}&type=json`
+  const maskedUrl = url.replace(/serviceKey=[^&]+/, `serviceKey=${apiKey.length >= 4 ? apiKey.slice(0, 4) : ''}...`)
+  console.log('[MFDS MCPN07]', maskedUrl)
   const res = await fetch(url, { cache: 'no-store' })
   const text = await res.text()
   if (!res.ok) throw new Error(`MFDS MCPN07 API HTTP ${res.status}: ${text.slice(0, 200)}`)
@@ -103,7 +106,7 @@ async function request(apiKey: string, params: { PRDUCT?: string; MTRAL_NM?: str
 
 /**
  * 제품명 검색 → getDrugPrdtMcpnDtlInq07 호출 (JSON, serviceKey 그대로).
- * 파라미터: PRDUCT(제품명, 한글 인코딩). 0건이면 MTRAL_NM(성분명) 보조 검색.
+ * 파라미터: Prduct(제품명, 대소문자 고정). 0건이면 MTRAL_NM(성분명) 보조 검색.
  */
 export async function fetchDrugPrdtMcpnDtlInq07(
   apiKey: string,
@@ -117,12 +120,12 @@ export async function fetchDrugPrdtMcpnDtlInq07(
 
   const opts = { pageNo: options?.pageNo ?? 1, numOfRows: options?.numOfRows ?? 10 }
 
-  // 1) PRDUCT로 검색 (제품명). 한글은 반드시 encodeURIComponent 적용
-  let result = await request(key, { PRDUCT: name }, opts)
+  // 1) Prduct(제품명, 대소문자 고정)로 검색. 한글은 encodeURIComponent 적용
+  let result = await request(key, { Prduct: name }, opts)
   if (result.items.length > 0) return result
 
-  // 2) 부분 일치 시도: PRDUCT에 검색어% (와일드카드)
-  result = await request(key, { PRDUCT: `${name}%` }, opts)
+  // 2) 부분 일치 시도: Prduct에 검색어% (와일드카드)
+  result = await request(key, { Prduct: `${name}%` }, opts)
   if (result.items.length > 0) return result
 
   // 3) 보조: 성분명(MTRAL_NM)으로 검색 (알려진 제품명→성분 매핑)
