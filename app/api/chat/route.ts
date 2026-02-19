@@ -28,6 +28,8 @@ import { searchAndFetchCached } from '@/lib/pubmed'
 import { translateToPubMedQuery } from '@/lib/pubmed-query'
 import { searchAndGetNutrients, formatUsdaContextForPrompt } from '@/lib/usda'
 import { searchFoodKnowledge } from '@/lib/food-knowledge-search'
+import { runDniInference } from '@/lib/dni-inference'
+import { createAdminClient } from '@/utils/supabase/admin'
 
 export const dynamic = 'force-dynamic'
 
@@ -144,6 +146,7 @@ function buildSystemPrompt(
     ambiguousHint?: AmbiguousHint | null
     usdaContext?: string | null
     foodKnowledgeContext?: string | null
+    dniCautionGuide?: string | null
   }
 ): string {
   const bmi = profile ? calculateBMI(profile.height, profile.weight) : null
@@ -152,6 +155,7 @@ function buildSystemPrompt(
   const ambiguousHint = options?.ambiguousHint ?? null
   const usdaContext = options?.usdaContext ?? null
   const foodKnowledgeContext = options?.foodKnowledgeContext ?? null
+  const dniCautionGuide = options?.dniCautionGuide ?? null
 
   let systemPrompt = `## [최우선 — 15년 차 베테랑 물리치료사의 임상 상담 스타일]
 
@@ -275,6 +279,11 @@ function buildSystemPrompt(
   if (foodKnowledgeContext) {
     systemPrompt += `\n## [참고] 내부 DB — 관리 팁·레시피\n\`\`\`\n${foodKnowledgeContext}\n\`\`\`\n`
     systemPrompt += `위 내용은 식품별 관리 팁·레시피 참고용이야. USDA 수치와 함께 활용해 설명해.\n\n`
+  }
+
+  if (dniCautionGuide) {
+    systemPrompt += `\n## [필수 — 데이터 기반 주의 가이드]\n\`\`\`\n${dniCautionGuide}\n\`\`\`\n`
+    systemPrompt += `위 내용은 **확진·진단이 아닌 참고용 가이드**야. 답변 말미에 반드시 이 주의 가이드 블록을 자연스럽게 포함해. "진단이 아니며 참고용입니다", "필요 시 의료진·약사 상담을 권합니다" 톤을 유지해.\n\n`
   }
 
   return systemPrompt
@@ -493,6 +502,7 @@ export async function POST(req: Request) {
     let refsForSidebar: SidebarPaper[] = []
     let usdaContext: string | null = null
     let foodKnowledgeContext: string | null = null
+    let dniCautionGuide: string | null = null
 
     if (needFoodRag && foodQuery) {
       // 추출된 검색어가 증상·형용사면 USDA는 건너뛰고 PubMed·내부 DB만 사용
@@ -533,6 +543,18 @@ export async function POST(req: Request) {
           .join('\n\n')
         console.log(`📂 [${requestId}] 내부 DB food_knowledge ${foodRows.length}건 (관리 팁·레시피) 주입`)
       }
+      if (usdaItems.length > 0) {
+        try {
+          const admin = createAdminClient()
+          const dniResult = await runDniInference(admin, user.id, usdaItems)
+          if (dniResult.hasConflict && dniResult.cautionGuideMessage) {
+            dniCautionGuide = dniResult.cautionGuideMessage
+            console.log(`⚠️ [${requestId}] DNI 충돌 ${dniResult.conflicts.length}건 → 주의 가이드 주입`)
+          }
+        } catch (dniErr) {
+          console.warn(`⚠️ [${requestId}] DNI 추론 실패:`, dniErr instanceof Error ? dniErr.message : String(dniErr))
+        }
+      }
     }
 
     if (needSearch || needFoodRag) {
@@ -557,6 +579,7 @@ export async function POST(req: Request) {
       ambiguousHint,
       usdaContext,
       foodKnowledgeContext,
+      dniCautionGuide,
     })
     const chatMessages: { role: 'user' | 'assistant'; content: string }[] = [
       ...history,
