@@ -98,6 +98,11 @@ export async function runDrugRag(
   drugQuery: string,
   supabaseAdmin: SupabaseAdmin
 ): Promise<DrugRagResult> {
+  // 이 함수는 API Route(서버)에서만 호출됨. process.env는 서버 런타임의 환경변수를 참조.
+  console.log(`[${requestId}] [runDrugRag] URL:`, process.env.NEXT_PUBLIC_SUPABASE_URL ?? '(undefined)')
+  console.log(`[${requestId}] [runDrugRag] ServiceKey Exist:`, !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+  console.log(`[${requestId}] [runDrugRag] MFDS_DRUG_INFO_API_KEY Exist:`, !!process.env.MFDS_DRUG_INFO_API_KEY)
+
   const apiKey = process.env.MFDS_DRUG_INFO_API_KEY?.trim()
 
   if (!apiKey) {

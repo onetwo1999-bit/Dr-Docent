@@ -586,8 +586,13 @@ export async function POST(req: Request) {
     }
 
     // ── 의약품 RAG (식약처 e약은요 API) ──────────────────────────────────────
+    // 실행 위치: Next.js API Route (서버 전용). createAdminClient/runDrugRag는 클라이언트 번들에 포함되지 않음.
     if (needDrugRag && drugQuery) {
       console.log(`💊 [${requestId}] 의약품 RAG 시작: "${drugQuery}"`)
+      // 디버깅: 서버가 Supabase/Service Role 환경변수를 보는지 확인 (값은 출력하지 않음)
+      console.log(`[${requestId}] [Drug RAG] URL:`, process.env.NEXT_PUBLIC_SUPABASE_URL ?? '(undefined)')
+      console.log(`[${requestId}] [Drug RAG] ServiceKey Exist:`, !!process.env.SUPABASE_SERVICE_ROLE_KEY)
+      console.log(`[${requestId}] [Drug RAG] MFDS_DRUG_INFO_API_KEY Exist:`, !!process.env.MFDS_DRUG_INFO_API_KEY)
       try {
         const admin = createAdminClient()
         const drugResult = await runDrugRag(requestId, drugQuery, admin)
