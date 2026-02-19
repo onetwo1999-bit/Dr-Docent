@@ -3,11 +3,12 @@
  *
  * 순차 로직: 유저 질문 → (의학 키워드 시) PubMed 검색 → 프롬프트에 결과 합침 → OpenAI 답변 생성
  * Tool Calling 없이, 코드에서 검색 후 AI에 데이터 전달.
+ *
+ * 환경변수 로딩 방식:
+ * - 로컬 개발: Next.js가 .env.local을 자동으로 process.env에 주입
+ * - Vercel 배포: Vercel이 대시보드 환경변수를 직접 process.env에 주입
+ * dotenv.config() 호출 불필요 — dotenvx v17이 process.env를 재초기화해 Vercel 주입 키가 사라지는 문제 발생
  */
-import dotenv from 'dotenv'
-import path from 'path'
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') })
-
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
