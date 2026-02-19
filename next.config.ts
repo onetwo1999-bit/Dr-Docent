@@ -9,10 +9,6 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Vercel 환경변수를 서버 런타임에 명시적으로 노출
-  env: {
-    USDA_API_KEY: process.env.USDA_API_KEY ?? '',
-  },
   // 루트에서 npm run dev 시 lockfile 경고 방지 (my-app을 워크스페이스 루트로 고정)
   turbopack: {
     root: __dirname,
