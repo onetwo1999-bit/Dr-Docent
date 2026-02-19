@@ -392,6 +392,12 @@ async function runPubMedRag(
 
 export async function POST(req: Request) {
   const requestId = Math.random().toString(36).slice(2, 8).toUpperCase()
+
+  // USDA 키 인식 디버그 (키 이름만 확인, 값 노출 없음)
+  console.log('AVAILABLE KEYS:', Object.keys(process.env).filter((k) => k.includes('USDA')))
+  const testKey = process.env.USDA_API_KEY || 'NOT_FOUND'
+  console.log('[DEBUG] USDA_API_KEY existence:', testKey !== 'NOT_FOUND')
+
   const rawKey = process.env.USDA_API_KEY || process.env.NEXT_PUBLIC_USDA_API_KEY || ''
   console.log(`[SYSTEM CHECK] USDA_API_KEY length: ${rawKey.length}`)
   console.log(`[SYSTEM CHECK] USDA_API_KEY prefix: ${rawKey.length > 0 ? rawKey.substring(0, 5) + '...' : '(empty)'}`)
