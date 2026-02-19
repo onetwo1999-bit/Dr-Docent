@@ -490,9 +490,10 @@ export async function POST(req: Request) {
     let foodKnowledgeContext: string | null = null
 
     if (needFoodRag && foodQuery) {
+      // Vercel 배포 시 .env.local은 업로드되지 않음 → 대시보드에서 USDA_API_KEY 필수 등록
       const usdaKey = (process.env.USDA_API_KEY ?? process.env[' USDA_API_KEY'] ?? '').trim()
       if (!usdaKey) {
-        console.warn(`⚠️ [${requestId}] USDA_API_KEY 미설정 또는 빈값 — 영양 데이터 조회 생략. Vercel/환경 변수에 USDA_API_KEY를 추가하세요.`)
+        console.warn(`⚠️ [${requestId}] USDA_API_KEY 미설정 — 영양 데이터 조회 생략. Vercel: Project → Settings → Environment Variables에 Key: USDA_API_KEY 추가 후 재배포`)
       }
       const [foodRows, usdaItems] = await Promise.all([
         searchFoodKnowledge(supabase as any, foodQuery, 5),
