@@ -9,6 +9,10 @@
  * - Vercel 배포: Vercel이 대시보드 환경변수를 직접 process.env에 주입
  * dotenv.config() 호출 불필요 — dotenvx v17이 process.env를 재초기화해 Vercel 주입 키가 사라지는 문제 발생
  */
+console.log('--- VERCEL ENV KEYS ALL ---')
+console.log(Object.keys(process.env).sort().join(', '))
+console.log('---------------------------')
+
 import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
