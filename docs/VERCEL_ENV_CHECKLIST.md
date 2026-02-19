@@ -1,7 +1,10 @@
 # Vercel 환경 변수 체크리스트 (Chat API / 의약품 RAG)
 
 로그에 `SUPABASE_SERVICE_ROLE_KEY`, `MFDS_DRUG_INFO_API_KEY`가 **(undefined)** 로 나오는 경우,  
-**Vercel이 해당 키를 런타임에 주입하지 않은 것**입니다. 코드가 아니라 대시보드 설정을 확인하세요.
+**Vercel이 해당 키를 주입하지 않은 것**입니다. 코드가 아니라 대시보드 설정을 확인하세요.
+
+**참고:** 이 프로젝트는 `next.config.ts`의 `env` 블록으로 위 두 키를 **빌드 시점**에 연결합니다.  
+Vercel에서 해당 변수가 **Build 시에도** 사용 가능해야 합니다 (Settings → Environment Variables에서 제한이 없다면 Build·Runtime 모두 사용 가능).
 
 ## 확인 순서
 
