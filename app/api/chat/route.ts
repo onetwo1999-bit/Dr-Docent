@@ -4,16 +4,20 @@
  * 순차 로직: 유저 질문 → (의학 키워드 시) PubMed 검색 → 프롬프트에 결과 합침 → OpenAI 답변 생성
  * Tool Calling 없이, 코드에서 검색 후 AI에 데이터 전달.
  *
- * 환경변수 로딩 방식:
- * - 로컬 개발: Next.js가 .env.local을 자동으로 process.env에 주입
- * - Vercel 배포: Vercel이 대시보드 환경변수를 직접 process.env에 주입
- * dotenv.config() 호출 불필요 — dotenvx v17이 process.env를 재초기화해 Vercel 주입 키가 사라지는 문제 발생
+ * 환경변수: 개발 시 .env.local 강제 로드(override: false). Vercel은 대시보드 주입만 사용.
  */
+import dotenv from 'dotenv'
+import path from 'path'
+import { NextResponse } from 'next/server'
+
+// 서버에서 Supabase/기타 키가 비어 있을 수 있을 때 .env.local 강제 로드 (개발 전용, 기존 값 덮어쓰지 않음)
+if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+  dotenv.config({ path: path.join(process.cwd(), '.env.local'), override: false })
+}
+
 console.log('--- VERCEL ENV KEYS ALL ---')
 console.log(Object.keys(process.env).sort().join(', '))
 console.log('---------------------------')
-
-import { NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { getAgeFromBirthDate, getAgeContextForAI } from '@/utils/health'
@@ -431,14 +435,29 @@ async function runPubMedRag(
 export async function POST(req: Request) {
   const requestId = Math.random().toString(36).slice(2, 8).toUpperCase()
 
-  // USDA 키 인식 디버그 (키 이름만 확인, 값 노출 없음)
-  console.log('AVAILABLE KEYS:', Object.keys(process.env).filter((k) => k.includes('USDA_KEY')))
-  const testKey = process.env.NEXT_PUBLIC_USDA_KEY || 'NOT_FOUND'
-  console.log('[DEBUG] NEXT_PUBLIC_USDA_KEY existence:', testKey !== 'NOT_FOUND')
-
-  const rawKey = process.env.NEXT_PUBLIC_USDA_KEY || ''
-  console.log(`[SYSTEM CHECK] NEXT_PUBLIC_USDA_KEY length: ${rawKey.length}`)
-  console.log(`[SYSTEM CHECK] NEXT_PUBLIC_USDA_KEY prefix: ${rawKey.length > 0 ? rawKey.substring(0, 5) + '...' : '(empty)'}`)
+  // 환경변수 로드 확인 (키 이름·존재 여부만, 값 노출 없음)
+  const CHAT_RELEVANT_KEYS = [
+    'NEXT_PUBLIC_SUPABASE_URL',
+    'NEXT_PUBLIC_SUPABASE_ANON_KEY',
+    'SUPABASE_SERVICE_ROLE_KEY',
+    'NEXT_PUBLIC_USDA_KEY',
+    'MFDS_DRUG_INFO_API_KEY',
+    'OPENAI_API_KEY',
+    'ANTHROPIC_API_KEY',
+    'PUBMED_API_KEY',
+  ] as const
+  const available = CHAT_RELEVANT_KEYS.filter((k) => {
+    const v = process.env[k]
+    return v !== undefined && v !== null && String(v).trim().length > 0
+  })
+  const missing = CHAT_RELEVANT_KEYS.filter((k) => !available.includes(k))
+  console.log('AVAILABLE KEYS (Chat 관련):', available.join(', '))
+  if (missing.length > 0) {
+    console.log('MISSING KEYS (undefined/empty):', missing.join(', '))
+  }
+  console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'OK' : '(undefined)')
+  console.log('Supabase ServiceRole:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'OK' : '(undefined)')
+  console.log('MFDS_DRUG_INFO_API_KEY:', process.env.MFDS_DRUG_INFO_API_KEY ? 'OK' : '(undefined)')
 
   console.log('\n' + '🏥'.repeat(25))
   console.log(`📩 [Chat API] 요청 시작 (ID: ${requestId})`)
