@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
 import { isAnalysisIntent, isForcedSearchTrigger } from '@/lib/medical-papers/intent'
 import { useAppContextStore } from '@/store/useAppContextStore'
+import { createClient } from '@/utils/supabase/client'
 
 export interface Reference {
   title: string
@@ -24,7 +25,10 @@ interface Message {
 }
 
 interface ChatInterfaceProps {
-  userName: string
+  userId: string
+  initialNickname: string | null
+  /** nickname 없을 때 폴백 — 이메일 앞부분 또는 '사용자' */
+  emailPrefix: string
 }
 
 const SCROLL_BOTTOM_THRESHOLD = 120
@@ -44,13 +48,56 @@ function normalizePapers(papers: unknown): Reference[] {
   }))
 }
 
-export default function ChatInterface({ userName }: ChatInterfaceProps) {
+/** profiles.nickname → 표시 이름 결정. 없으면 emailPrefix 폴백 */
+function resolveDisplayName(nickname: string | null, emailPrefix: string): string {
+  return nickname?.trim() || emailPrefix
+}
+
+/** 초기 인사말 생성 */
+function buildGreeting(displayName: string): string {
+  return `안녕하세요, ${displayName}님! 👋\n닥터 도슨 AI 건강 상담사입니다.\n건강에 관한 궁금한 점을 물어보세요.`
+}
+
+export default function ChatInterface({ userId, initialNickname, emailPrefix }: ChatInterfaceProps) {
   const getRecentActionsForAPI = useAppContextStore((s) => s.getRecentActionsForAPI)
   const getHesitationHint = useAppContextStore((s) => s.getHesitationHint)
+
+  // ─── 닉네임 Realtime 상태 ───────────────────────────────
+  const [nickname, setNickname] = useState<string | null>(initialNickname)
+  const displayName = resolveDisplayName(nickname, emailPrefix)
+
+  // Supabase Realtime 구독 — profiles UPDATE 감지
+  useEffect(() => {
+    const supabase = createClient()
+    const channel = supabase
+      .channel(`chat:profiles:${userId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` },
+        (payload) => {
+          const newNick = (payload.new as { nickname?: string | null }).nickname ?? null
+          setNickname(newNick)
+        }
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [userId])
+
+  // 닉네임이 바뀌면 첫 번째 인사 메시지도 즉시 갱신
+  useEffect(() => {
+    setMessages(prev => {
+      if (prev.length === 0 || prev[0].role !== 'assistant') return prev
+      const next = [...prev]
+      next[0] = { ...next[0], content: buildGreeting(resolveDisplayName(nickname, emailPrefix)) }
+      return next
+    })
+  }, [nickname, emailPrefix])
+  // ──────────────────────────────────────────────────────
+
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
-      content: `안녕하세요, ${userName}님! 👋\n닥터 도슨 AI 건강 상담사입니다.\n건강에 관한 궁금한 점을 물어보세요.`
+      content: buildGreeting(displayName)
     }
   ])
   const [input, setInput] = useState('')
@@ -140,7 +187,7 @@ export default function ChatInterface({ userName }: ChatInterfaceProps) {
           history: messages.map((m) => ({ role: m.role, content: m.content })),
           recentActions: actions,
           hesitationHint: getHesitationHint(),
-          userName: userName || undefined
+          userName: displayName || undefined
         }),
       })
 

@@ -4,18 +4,25 @@ import ChatInterface from './ChatInterface'
 
 export default async function ChatPage() {
   const supabase = await createClient()
-  
-  // 🚨 로그인 체크: 로그인 안 했으면 메인으로 리다이렉트
+
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) {
-    redirect('/')
-  }
+  if (!user) redirect('/')
 
-  // 유저 이름 추출
-  const userName = user.user_metadata?.full_name 
-    || user.user_metadata?.name 
-    || user.email 
-    || '사용자'
+  // profiles.nickname 조회 (Realtime 초기값)
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('nickname')
+    .eq('id', user.id)
+    .single()
 
-  return <ChatInterface userName={userName} />
+  const initialNickname = (profile as { nickname?: string | null } | null)?.nickname ?? null
+  const emailPrefix = user.email?.split('@')[0] || '사용자'
+
+  return (
+    <ChatInterface
+      userId={user.id}
+      initialNickname={initialNickname}
+      emailPrefix={emailPrefix}
+    />
+  )
 }
