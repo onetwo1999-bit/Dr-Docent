@@ -399,13 +399,13 @@ export async function POST(req: Request) {
   const requestId = Math.random().toString(36).slice(2, 8).toUpperCase()
 
   // USDA 키 인식 디버그 (키 이름만 확인, 값 노출 없음)
-  console.log('AVAILABLE KEYS:', Object.keys(process.env).filter((k) => k.includes('DR_DOCENT_USDA')))
-  const testKey = process.env.DR_DOCENT_USDA_KEY || 'NOT_FOUND'
-  console.log('[DEBUG] DR_DOCENT_USDA_KEY existence:', testKey !== 'NOT_FOUND')
+  console.log('AVAILABLE KEYS:', Object.keys(process.env).filter((k) => k.includes('USDA_KEY')))
+  const testKey = process.env.NEXT_PUBLIC_USDA_KEY || 'NOT_FOUND'
+  console.log('[DEBUG] NEXT_PUBLIC_USDA_KEY existence:', testKey !== 'NOT_FOUND')
 
-  const rawKey = process.env.DR_DOCENT_USDA_KEY || ''
-  console.log(`[SYSTEM CHECK] DR_DOCENT_USDA_KEY length: ${rawKey.length}`)
-  console.log(`[SYSTEM CHECK] DR_DOCENT_USDA_KEY prefix: ${rawKey.length > 0 ? rawKey.substring(0, 5) + '...' : '(empty)'}`)
+  const rawKey = process.env.NEXT_PUBLIC_USDA_KEY || ''
+  console.log(`[SYSTEM CHECK] NEXT_PUBLIC_USDA_KEY length: ${rawKey.length}`)
+  console.log(`[SYSTEM CHECK] NEXT_PUBLIC_USDA_KEY prefix: ${rawKey.length > 0 ? rawKey.substring(0, 5) + '...' : '(empty)'}`)
 
   console.log('\n' + '🏥'.repeat(25))
   console.log(`📩 [Chat API] 요청 시작 (ID: ${requestId})`)
@@ -495,10 +495,10 @@ export async function POST(req: Request) {
     let foodKnowledgeContext: string | null = null
 
     if (needFoodRag && foodQuery) {
-      // Vercel 배포 시 .env.local은 업로드되지 않음 → 대시보드에서 DR_DOCENT_USDA_KEY 필수 등록
-      const usdaKey = (process.env.DR_DOCENT_USDA_KEY ?? '').trim()
+      // Vercel 배포 시 .env.local은 업로드되지 않음 → 대시보드에서 NEXT_PUBLIC_USDA_KEY 필수 등록
+      const usdaKey = (process.env.NEXT_PUBLIC_USDA_KEY ?? '').trim()
       if (!usdaKey) {
-        console.warn(`⚠️ [${requestId}] DR_DOCENT_USDA_KEY 미설정 — 영양 데이터 조회 생략. Vercel: Project → Settings → Environment Variables에 Key: DR_DOCENT_USDA_KEY 추가 후 재배포`)
+        console.warn(`⚠️ [${requestId}] NEXT_PUBLIC_USDA_KEY 미설정 — 영양 데이터 조회 생략. Vercel: Project → Settings → Environment Variables에 Key: NEXT_PUBLIC_USDA_KEY 추가 후 재배포`)
       }
       const [foodRows, usdaItems] = await Promise.all([
         searchFoodKnowledge(supabase as any, foodQuery, 5),

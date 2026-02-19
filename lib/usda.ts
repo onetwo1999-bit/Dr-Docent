@@ -1,6 +1,6 @@
 /**
  * USDA FoodData Central API 유틸리티
- * .env.local의 DR_DOCENT_USDA_KEY 사용. 식품 검색 및 100g당 영양 성분 조회.
+ * .env.local의 NEXT_PUBLIC_USDA_KEY 사용. 식품 검색 및 100g당 영양 성분 조회.
  */
 
 const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1'
@@ -88,7 +88,7 @@ export async function searchFood(
   query: string,
   pageSize: number = 10
 ): Promise<UsdaSearchResult> {
-  if (!apiKey?.trim()) throw new Error('DR_DOCENT_USDA_KEY is required')
+  if (!apiKey?.trim()) throw new Error('NEXT_PUBLIC_USDA_KEY is required')
   const url = `${USDA_BASE}/foods/search?api_key=${encodeURIComponent(apiKey.trim())}&query=${encodeURIComponent(query.trim())}&pageSize=${pageSize}`
   const res = await fetch(url, { cache: 'no-store' })
   if (!res.ok) {
