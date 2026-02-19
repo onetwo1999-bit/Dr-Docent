@@ -79,3 +79,31 @@ export function extractFoodSearchQuery(message: string): string | null {
   if (words.length === 0) return null
   return words.slice(0, 3).join(' ')
 }
+
+/**
+ * 추출된 검색어가 식품 명칭(사과, 고기 등)인지, 증상/형용사인지 구분.
+ * 증상·형용사일 경우 USDA API 호출을 건너뛰고 PubMed·내부 DB만 사용.
+ */
+const NON_FOOD_QUERY_TERMS = new Set([
+  // 증상
+  '아픈', '아프다', '아파', '통증', '두통', '복통', '어지럽', '어지러움', '피로', '부종', '가려움', '가려운',
+  '메스껍', '메스꺼움', '구토', '설사', '변비', '불면', '열', '오한', '저림', '마비', '쑤심', '쑤시', '뻐근', '뻐근함',
+  '따가움', '따가워', '욱신', '욱신거림', '저리', '결리', '부었어', '붓기', '멍', '멍울',
+  // 형용사·상태
+  '맛있는', '맛없는', '짜다', '달다', '싱겁', '느끼한', '건강한', '나쁜', '좋은', '빨간', '빨간색',
+  '좋아', '싫어', '싫은', '무거운', '가벼운', '딱딱한', '부드러운', '차가운', '뜨거운',
+  // 기타 식품명이 아닌 단어
+  '못', '잘', '너무', '많이', '적게', '어떤', '무슨', '이거', '그거', '저거',
+])
+
+export function isLikelyFoodName(query: string | null): boolean {
+  if (!query || typeof query !== 'string') return false
+  const t = query.trim()
+  if (t.length < 2) return false
+  const lower = t.toLowerCase()
+  if (NON_FOOD_QUERY_TERMS.has(t) || NON_FOOD_QUERY_TERMS.has(lower)) return false
+  const words = t.split(/\s+/).filter((w) => w.length >= 1)
+  if (words.length >= 1 && words.every((w) => NON_FOOD_QUERY_TERMS.has(w) || NON_FOOD_QUERY_TERMS.has(w.toLowerCase())))
+    return false
+  return true
+}

@@ -23,7 +23,7 @@ import {
   formatPaperContext,
   type PaperChunk,
 } from '@/lib/medical-papers/rag-search'
-import { isAnalysisIntent, isFoodOrNutrientIntent, extractFoodSearchQuery } from '@/lib/medical-papers/intent'
+import { isAnalysisIntent, isFoodOrNutrientIntent, extractFoodSearchQuery, isLikelyFoodName } from '@/lib/medical-papers/intent'
 import { searchAndFetchCached } from '@/lib/pubmed'
 import { translateToPubMedQuery } from '@/lib/pubmed-query'
 import { searchAndGetNutrients, formatUsdaContextForPrompt } from '@/lib/usda'
@@ -495,14 +495,19 @@ export async function POST(req: Request) {
     let foodKnowledgeContext: string | null = null
 
     if (needFoodRag && foodQuery) {
+      // 추출된 검색어가 증상·형용사면 USDA는 건너뛰고 PubMed·내부 DB만 사용
+      const useUsda = isLikelyFoodName(foodQuery)
+      if (!useUsda) {
+        console.log(`📋 [${requestId}] 검색어 "${foodQuery}"는 식품 명칭이 아님 → USDA 호출 생략 (PubMed·내부 DB만 사용)`)
+      }
       // Vercel 배포 시 .env.local은 업로드되지 않음 → 대시보드에서 NEXT_PUBLIC_USDA_KEY 필수 등록
-      const usdaKey = (process.env.NEXT_PUBLIC_USDA_KEY ?? '').trim()
-      if (!usdaKey) {
+      const usdaKey = useUsda ? (process.env.NEXT_PUBLIC_USDA_KEY ?? '').trim() : ''
+      if (useUsda && !usdaKey) {
         console.warn(`⚠️ [${requestId}] NEXT_PUBLIC_USDA_KEY 미설정 — 영양 데이터 조회 생략. Vercel: Project → Settings → Environment Variables에 Key: NEXT_PUBLIC_USDA_KEY 추가 후 재배포`)
       }
       const [foodRows, usdaItems] = await Promise.all([
         searchFoodKnowledge(supabase as any, foodQuery, 5),
-        usdaKey
+        useUsda && usdaKey
           ? searchAndGetNutrients(usdaKey, foodQuery, 2).catch((err) => {
               const msg = err instanceof Error ? err.message : String(err)
               console.warn(`⚠️ [${requestId}] USDA 조회 실패:`, msg)
