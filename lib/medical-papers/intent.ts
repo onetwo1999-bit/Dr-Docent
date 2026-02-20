@@ -178,10 +178,10 @@ export function extractDrugSearchQuery(message: string): string | null {
   const cleaned = message
     .replace(/(복용법|용법|용량|먹는법|먹어도|먹으면|부작용|효능|효과|성분|주의사항|상호작용|의약품|처방약|일반의약품|알려줘|알려|줘|있나|있어|어떻게|어때|어떤|뭐야|뭔가요|인가요|인지|되나|되요|되나요|입니다|입니까|이에요|이야|이야\?)/gi, ' ')
     .trim()
-  const words = cleaned
+  const cleanedWords = cleaned
     .split(/\s+/)
     .filter((w) => w.length >= 2 && /[\u3131-\uD7A3a-zA-Z]/.test(w))
-  return words.length > 0 ? words.slice(0, 2).join(' ') : null
+  return cleanedWords.length > 0 ? cleanedWords.slice(0, 2).join(' ') : null
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
