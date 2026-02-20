@@ -79,10 +79,14 @@ async function saveDrugMasterFromApiItems(
   return { saved: payload.length }
 }
 
+/** LIKE/ILIKE 와일드카드(% _) 이스케이프: 검색어에 포함된 % _ 를 리터럴로 매칭 */
+function escapeLikePattern(s: string): string {
+  return s.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_')
+}
+
 /**
- * drug_master 캐시 조회: pg_trgm 인덱스 활용을 위한 ILIKE 검색 (제품명).
- * - 패턴: %검색어% (Supabase .ilike → PostgreSQL ilike, trigram GIN 인덱스 사용)
- * - 결과: prduct(product_name), mtral_nm(main_ingredient) 등 핵심 필드만
+ * drug_master 캐시 조회: 부분 검색(ILIKE %검색어%). pg_trgm 인덱스 활용.
+ * - eq(완전 일치) 사용 안 함. 검색어 앞뒤에 % 붙여 부분 일치.
  */
 async function getCachedDrugRows(
   supabase: SupabaseAdmin,
@@ -91,17 +95,24 @@ async function getCachedDrugRows(
 ): Promise<DrugMasterRow[]> {
   const q = query?.trim()
   if (!q) return []
-  const pattern = `%${q}%`
+  const pattern = `%${escapeLikePattern(q)}%`
   try {
+    // product_name 컬럼과 유저 검색어를 ILIKE로 부분 매칭 (%검색어%, 대소문자 무시)
     const { data, error } = await supabase
       .from('drug_master')
       .select('product_name, main_ingredient, company_name, ee_doc_data, nb_doc_data')
       .ilike('product_name', pattern)
       .order('product_name', { ascending: true })
       .limit(limit)
-    if (error || !Array.isArray(data)) return []
-    return data as DrugMasterRow[]
-  } catch {
+    if (error) {
+      console.warn('[drug_master] 쿼리 오류:', error.message, '| keyword:', q)
+      return []
+    }
+    const rows = Array.isArray(data) ? (data as DrugMasterRow[]) : []
+    console.log(`[drug_master] 키워드 "${q}" 조회 로우 수: ${rows.length}건`)
+    return rows
+  } catch (e) {
+    console.warn('[drug_master] 조회 예외:', e instanceof Error ? e.message : String(e))
     return []
   }
 }
@@ -172,8 +183,9 @@ export async function runDrugRag(
     }
 
     const cached = await getCachedDrugRows(supabaseAdmin, drugQuery, 20)
-    console.log('DB 결과:', cached)
+    console.log(`[drug_master] keyword="${drugQuery}" → ${cached.length}건 (샘플: 중외5%포도당, 아네모정 등으로 테스트 가능)`)
     if (cached.length > 0) {
+      console.log('DB 결과:', JSON.stringify(cached.map((r) => ({ product_name: r.product_name, main_ingredient: r.main_ingredient }))))
       const items = cacheRowsToItems(cached)
       const drugContext = formatDrugContextForPrompt(items)
       const paperSearchKeywords = extractPaperSearchKeywords(items)

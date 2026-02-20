@@ -13,7 +13,8 @@
     "lint": "eslint",
     "check-env": "node --loader tsx scripts/check-env.ts || echo '환경 변수 체크를 건너뜁니다. 수동으로 확인해주세요.'",
     "test:signup-profile": "node --loader tsx scripts/integration-test-signup-profile.ts",
-    "verify-sw": "node scripts/verify-sw.js"
+    "verify-sw": "node scripts/verify-sw.js",
+    "test:drug-master": "node --loader tsx scripts/test-drug-master-query.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",
