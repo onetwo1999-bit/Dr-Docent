@@ -107,7 +107,7 @@ async function request(apiKey: string, params: { Prduct?: string; MTRAL_NM?: str
   // 응답을 JSON으로 수신하기 위해 URL 끝에 &type=json 고정
   const url = `${MFDS_MCPN07_BASE}?${q}&type=json`
   const maskedUrl = url.replace(/serviceKey=[^&]+/, `serviceKey=${apiKey.length >= 4 ? apiKey.slice(0, 4) : ''}...`)
-  console.log('[MFDS MCPN07]', maskedUrl)
+  console.log('API 호출 URL:', maskedUrl)
   const res = await fetch(url, { cache: 'no-store' })
   const text = await res.text()
   if (!res.ok) throw new Error(`MFDS MCPN07 API HTTP ${res.status}: ${text.slice(0, 200)}`)
@@ -131,7 +131,7 @@ export async function fetchDrugPrdtMcpnDtlInq07(
 
   const opts = { pageNo: options?.pageNo ?? 1, numOfRows: options?.numOfRows ?? 10 }
 
-  // 1) 와일드카드: Prduct=%검색어% (앞뒤 %). URL 생성 시 encodeURIComponent는 buildQuery에서 1회만 적용
+  // 1) 와일드카드: Prduct=%검색어% (앞뒤 %)
   let result = await request(key, { Prduct: `%${name}%` }, opts)
   if (result.items.length > 0) return result
 
@@ -149,5 +149,21 @@ export async function fetchDrugPrdtMcpnDtlInq07(
   if (result.items.length > 0) return result
 
   result = await request(key, { MTRAL_NM: `${ingredient}%` }, opts)
+  if (result.items.length > 0) return result
+
+  // 5) 검색어에서 '정' 제거 후 재시도 (예: 콜킨정 → 콜킨)
+  const nameWithoutSuffix = name.replace(/정$/, '').trim()
+  if (nameWithoutSuffix && nameWithoutSuffix !== name) {
+    result = await request(key, { Prduct: `%${nameWithoutSuffix}%` }, opts)
+    if (result.items.length > 0) return result
+    result = await request(key, { Prduct: nameWithoutSuffix }, opts)
+    if (result.items.length > 0) return result
+    result = await request(key, { Prduct: `${nameWithoutSuffix}%` }, opts)
+    if (result.items.length > 0) return result
+    const ing = PRODUCT_TO_INGREDIENT[nameWithoutSuffix] ?? nameWithoutSuffix
+    result = await request(key, { MTRAL_NM: ing }, opts)
+    if (result.items.length > 0) return result
+    result = await request(key, { MTRAL_NM: `${ing}%` }, opts)
+  }
   return result
 }

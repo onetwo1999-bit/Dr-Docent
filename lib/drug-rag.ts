@@ -148,6 +148,7 @@ export async function runDrugRag(
     }
 
     const cached = await getCachedDrugRows(supabaseAdmin, drugQuery, 20)
+    console.log('DB 결과:', cached)
     if (cached.length > 0) {
       const items = cacheRowsToItems(cached)
       const drugContext = formatDrugContextForPrompt(items)

@@ -319,11 +319,11 @@ function buildSystemPrompt(
     systemPrompt += `- 데이터에 없는 정보는 "현재 조회된 데이터에는 해당 정보가 없습니다. 복약상담이 필요하시면 약사 선생님께 직접 문의해 주세요."라고 안내해.\n`
     systemPrompt += `- 의약품 복용 결정·용량 조정은 반드시 의사·약사 상담을 권고하는 문장으로 마무리해.\n\n`
   } else if (drugQueryMissing) {
-    // API 키 미설정 or API 호출 실패 or 검색 결과 없음
+    // DB·API 조회 실패 시: 구체적인 상태 메시지로 안내
     systemPrompt += `\n## [의약품 조회 불가 — 일반 지식 답변 금지]\n`
-    systemPrompt += `사용자가 의약품 정보를 물었으나 **식약처 공식 데이터를 가져오지 못했어**.\n`
+    systemPrompt += `사용자가 의약품 정보를 물었으나 **식약처 데이터를 지금 가져오지 못했어**.\n`
     systemPrompt += `- 절대로 일반 학습 데이터로 약물 효능·용량·부작용을 답변하지 마.\n`
-    systemPrompt += `- 다음 안내만 해: "죄송합니다. 현재 식약처 의약품 데이터베이스에서 해당 정보를 조회하지 못했어요. 정확한 복약 정보는 약사 선생님이나 식품의약품안전처 의약품통합정보시스템(https://nedrug.mfds.go.kr)에서 확인하시길 권해 드려요."\n\n`
+    systemPrompt += `- 다음 안내만 해: **"현재 식약처 서버와 연동 중입니다. 잠시만 기다려주세요."**\n\n`
   }
 
   return systemPrompt
