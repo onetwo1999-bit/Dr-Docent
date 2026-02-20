@@ -5,7 +5,7 @@
 
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/utils/supabase/admin'
-import { searchDrugByProductNameAndSave } from '@/lib/mfds-drug-api'
+import { searchDrugAndSave } from '@/lib/drugService'
 
 export const dynamic = 'force-dynamic'
 
@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
   try {
     const admin = createAdminClient()
-    const result = await searchDrugByProductNameAndSave(itemName, admin)
+    const result = await searchDrugAndSave(admin, itemName)
     return NextResponse.json({
       totalCount: result.totalCount,
       items: result.items,

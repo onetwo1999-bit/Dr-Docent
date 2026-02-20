@@ -13,7 +13,7 @@ const nextConfig: NextConfig = {
   // NEXT_PUBLIC_ 접두사 없음 → 클라이언트 번들에 노출되지 않음
   env: {
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ?? '',
-    MFDS_DRUG_INFO_API_KEY: process.env.MFDS_DRUG_INFO_API_KEY ?? '',
+    MFDS_SERVICE_KEY: process.env.MFDS_SERVICE_KEY ?? '',
   },
   // 루트에서 npm run dev 시 lockfile 경고 방지 (my-app을 워크스페이스 루트로 고정)
   turbopack: {

@@ -54,7 +54,7 @@ function cacheRowsToItems(rows: DrugMasterRow[]): MfdsMcpn07Item[] {
  * API에서 가져온 제품명·성분명·효능·주의사항을 drug_master에 즉시 Upsert.
  * 동일 product_name이 있으면 ee_doc_data, nb_doc_data 포함 해당 행 갱신.
  */
-async function saveDrugMasterFromApiItems(
+export async function saveDrugMasterFromApiItems(
   supabase: SupabaseAdmin,
   items: MfdsMcpn07Item[]
 ): Promise<{ saved: number; error?: string }> {
@@ -176,7 +176,7 @@ export async function runDrugRag(
   drugQuery: string,
   supabaseAdmin: SupabaseAdmin
 ): Promise<DrugRagResult> {
-  const apiKey = process.env.MFDS_DRUG_INFO_API_KEY?.trim()
+  const apiKey = process.env.MFDS_SERVICE_KEY?.trim()
 
   try {
     const callCount = await incrementSearchLog(supabaseAdmin, drugQuery)
@@ -209,7 +209,7 @@ export async function runDrugRag(
       if (cached.length > 0) {
         console.warn(`⚠️ [${requestId}] DB에 효능(ee_doc_data) 없음 — API 키 없어 폴백 불가`)
       } else {
-        console.warn(`⚠️ [${requestId}] MFDS_DRUG_INFO_API_KEY 미설정 — API 폴백 불가`)
+        console.warn(`⚠️ [${requestId}] MFDS_SERVICE_KEY(e-약은요) 미설정 — API 폴백 불가`)
       }
       return emptyDrugRagResult()
     }

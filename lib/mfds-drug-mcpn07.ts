@@ -125,7 +125,7 @@ export async function fetchDrugPrdtMcpnDtlInq07(
   options?: { pageNo?: number; numOfRows?: number }
 ): Promise<{ items: MfdsMcpn07Item[]; totalCount: number }> {
   const key = apiKey?.trim()
-  if (!key) throw new Error('MFDS_DRUG_INFO_API_KEY is required')
+  if (!key) throw new Error('MFDS_SERVICE_KEY (e-약은요) is required')
   const name = itemName?.trim()
   if (!name) throw new Error('itemName is required')
 

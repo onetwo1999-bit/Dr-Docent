@@ -1,6 +1,6 @@
 # Vercel 환경 변수 체크리스트 (Chat API / 의약품 RAG)
 
-로그에 `SUPABASE_SERVICE_ROLE_KEY`, `MFDS_DRUG_INFO_API_KEY`가 **(undefined)** 로 나오는 경우,  
+로그에 `SUPABASE_SERVICE_ROLE_KEY`, `MFDS_SERVICE_KEY`가 **(undefined)** 로 나오는 경우,  
 **Vercel이 해당 키를 주입하지 않은 것**입니다. 코드가 아니라 대시보드 설정을 확인하세요.
 
 **참고:** 이 프로젝트는 `next.config.ts`의 `env` 블록으로 위 두 키를 **빌드 시점**에 연결합니다.  
@@ -14,7 +14,7 @@ Vercel에서 해당 변수가 **Build 시에도** 사용 가능해야 합니다 
 - [ ] **Settings** → **Environment Variables**
 - [ ] 아래 두 이름이 **정확히** 있는지 확인 (대소문자·밑줄만, 띄어쓰기 없음)
   - `SUPABASE_SERVICE_ROLE_KEY`
-  - `MFDS_DRUG_INFO_API_KEY`
+  - `MFDS_SERVICE_KEY` (e-약은요)
 
 ### 2. 적용 환경(Environment) 체크
 
@@ -39,7 +39,7 @@ Vercel에서 해당 변수가 **Build 시에도** 사용 가능해야 합니다 
 | 올바른 이름 (복사용)        | 잘못된 예 |
 |----------------------------|-----------|
 | `SUPABASE_SERVICE_ROLE_KEY` | `SUPABASE_SERVICE_ROLE_KEY ` (끝 공백), `Supabase_Service_Role_Key` |
-| `MFDS_DRUG_INFO_API_KEY`    | `MFDS_DRUG_INFO_API_KEY ` (끝 공백), `MFDS_DRUG_INFO_AP_KEY` |
+| `MFDS_SERVICE_KEY` (e-약은요) | `MFDS_SERVICE_KEY ` (끝 공백), `MFDS_DRUG_INFO_API_KEY` (구이름) |
 
 Value는 **Encrypted**로 표시되면 정상입니다. 키 **이름**이 위와 완전히 일치하는지만 확인하면 됩니다.
 
@@ -49,7 +49,7 @@ Value는 **Encrypted**로 표시되면 정상입니다. 키 **이름**이 위와
 
 배포 후 채팅 한 번 보내고, Vercel 로그에서 다음을 확인:
 
-- `VERCEL ENV KEYS ALL` 목록에 `SUPABASE_SERVICE_ROLE_KEY`, `MFDS_DRUG_INFO_API_KEY`가 **포함**되어 있는지
-- `Supabase ServiceRole: OK`, `MFDS_DRUG_INFO_API_KEY: OK` 로 나오는지
+- `VERCEL ENV KEYS ALL` 목록에 `SUPABASE_SERVICE_ROLE_KEY`, `MFDS_SERVICE_KEY`가 **포함**되어 있는지
+- `Supabase ServiceRole: OK`, `MFDS_SERVICE_KEY(e-약은요): OK` 로 나오는지
 
 둘 다 OK면 해당 요청에서는 환경 변수가 정상 주입된 것입니다.

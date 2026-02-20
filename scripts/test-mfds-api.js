@@ -54,9 +54,9 @@ async function callWithoutFilter(apiKey, useEncodedKey = false) {
 }
 
 async function main() {
-  const apiKey = process.env.MFDS_DRUG_INFO_API_KEY?.trim()
+  const apiKey = process.env.MFDS_SERVICE_KEY?.trim()
   if (!apiKey) {
-    console.error('❌ .env.local에 MFDS_DRUG_INFO_API_KEY가 없습니다.')
+    console.error('❌ .env.local에 MFDS_SERVICE_KEY(e-약은요)가 없습니다.')
     process.exit(1)
   }
 

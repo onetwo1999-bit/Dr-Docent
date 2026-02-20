@@ -15,7 +15,7 @@ import { NextResponse } from 'next/server'
 // 서버 전용: .env.local 강제 로드 (보안 키 누락 시 production 포함 시도. override: false로 기존 값 유지)
 const needsEnvLoad =
   typeof process !== 'undefined' &&
-  (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || !process.env.MFDS_DRUG_INFO_API_KEY?.trim())
+  (!process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || !process.env.MFDS_SERVICE_KEY?.trim())
 if (needsEnvLoad) {
   dotenv.config({ path: path.join(process.cwd(), '.env.local'), override: false })
 }
@@ -312,7 +312,7 @@ function buildSystemPrompt(
 
   if (drugContext) {
     systemPrompt += `\n## [필수 — 식약처 의약품 공식 데이터]\n`
-    systemPrompt += `아래는 식약처 공공데이터 또는 우리 DB(drug_master)에서 가져온 **공식 의약품 정보**야. 제품명·성분명·**효능(ee_doc_data)**·**주의사항(nb_doc_data)**가 포함돼.\n`
+    systemPrompt += `아래는 **e-약은요 API(getDrugPrdtMcpnDtlInq07)** 또는 그 결과를 캐시한 drug_master에서만 가져온 **공식 의약품 정보**야. 제품명·성분명·**효능(ee_doc_data)**·**주의사항(nb_doc_data)**가 포함돼.\n`
     systemPrompt += `\`\`\`\n${drugContext}\n\`\`\`\n\n`
     systemPrompt += `- **답변 형식 (필수)**: 텍스트 나열이 아닌, 반드시 아래 두 개의 헤더를 사용해 구분해.\n`
     systemPrompt += `  - **### [✅ 식약처 데이터 기반 분석]** — 위 공식 데이터 요약·분석을 이 헤더 아래 문단으로 작성.\n`
@@ -468,7 +468,7 @@ export async function POST(req: Request) {
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
     'SUPABASE_SERVICE_ROLE_KEY',
     'NEXT_PUBLIC_USDA_KEY',
-    'MFDS_DRUG_INFO_API_KEY',
+    'MFDS_SERVICE_KEY',
     'OPENAI_API_KEY',
     'ANTHROPIC_API_KEY',
     'PUBMED_API_KEY',
@@ -481,17 +481,17 @@ export async function POST(req: Request) {
   console.log('AVAILABLE KEYS (Chat 관련):', available.join(', '))
   if (missing.length > 0) {
     console.log('MISSING KEYS (undefined/empty):', missing.join(', '))
-    if (missing.includes('SUPABASE_SERVICE_ROLE_KEY') || missing.includes('MFDS_DRUG_INFO_API_KEY')) {
+    if (missing.includes('SUPABASE_SERVICE_ROLE_KEY') || missing.includes('MFDS_SERVICE_KEY')) {
       console.log('[Vercel] 누락된 키는 대시보드에서 다음을 확인하세요:')
       console.log('  1. Project → Settings → Environment Variables')
-      console.log('  2. 이름 정확히: SUPABASE_SERVICE_ROLE_KEY, MFDS_DRUG_INFO_API_KEY (대문자, 밑줄만)')
+      console.log('  2. 이름 정확히: SUPABASE_SERVICE_ROLE_KEY, MFDS_SERVICE_KEY (e-약은요, 대문자)')
       console.log('  3. Production 체크 (및 Preview 필요 시 체크) 후 Save')
       console.log('  4. Deployments → 최신 배포 ⋮ → Redeploy (캐시 없이)')
     }
   }
   console.log('Supabase URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? 'OK' : '(undefined)')
   console.log('Supabase ServiceRole:', process.env.SUPABASE_SERVICE_ROLE_KEY ? 'OK' : '(undefined)')
-  console.log('MFDS_DRUG_INFO_API_KEY:', process.env.MFDS_DRUG_INFO_API_KEY ? 'OK' : '(undefined)')
+  console.log('MFDS_SERVICE_KEY(e-약은요):', process.env.MFDS_SERVICE_KEY ? 'OK' : '(undefined)')
 
   console.log('\n' + '🏥'.repeat(25))
   console.log(`📩 [Chat API] 요청 시작 (ID: ${requestId})`)
@@ -647,13 +647,13 @@ export async function POST(req: Request) {
       // 디버깅: 서버가 Supabase/Service Role 환경변수를 보는지 확인 (값은 출력하지 않음)
       console.log(`[${requestId}] [Drug RAG] URL:`, process.env.NEXT_PUBLIC_SUPABASE_URL ?? '(undefined)')
       console.log(`[${requestId}] [Drug RAG] ServiceKey Exist:`, !!process.env.SUPABASE_SERVICE_ROLE_KEY)
-      console.log(`[${requestId}] [Drug RAG] MFDS_DRUG_INFO_API_KEY Exist:`, !!process.env.MFDS_DRUG_INFO_API_KEY)
+      console.log(`[${requestId}] [Drug RAG] MFDS_SERVICE_KEY(e-약은요) Exist:`, !!process.env.MFDS_SERVICE_KEY)
       try {
         const admin = createAdminClient()
         drugResult = await runDrugRag(requestId, drugQuery, admin)
         drugContext = drugResult.drugContext
         if (drugContext) {
-          console.log(`💊 [${requestId}] 의약품 데이터 주입 완료 (${drugResult.itemCount}건, API=${drugResult.apiUsed})`)
+          console.log(`💊 [${requestId}] 의약품 데이터 주입 완료 (${drugResult.itemCount}건, API=${drugResult.apiUsed}) — e-약은요(getDrugPrdtMcpnDtlInq07) 데이터만 프롬프트에 주입`)
           if (drugResult.paperSearchKeywords.length > 0) {
             drugPaperChunks = await searchRelevantPapers(drugResult.paperSearchKeywords.join(' '), 5)
             console.log(`📚 [${requestId}] 의약품 성분명 논문 RAG: ${drugPaperChunks.length}건, paperSearchKeywords:`, drugResult.paperSearchKeywords)
@@ -683,7 +683,7 @@ export async function POST(req: Request) {
           paperChunks.push(c)
         }
       }
-      refsForSidebar = [...refsForSidebar, ...drugPaperChunks.map((p) => ({ title: p.title, pmid: p.pmid ?? '', url: p.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${p.pmid}` : '', journal: null, abstract: p.abstract ?? null }))]
+      refsForSidebar = [...refsForSidebar, ...drugPaperChunks.map((p) => ({ title: p.title, pmid: p.pmid ?? '', url: p.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${p.pmid}` : '', journal: '', abstract: p.abstract ?? '' }))]
       console.log(`📚 [${requestId}] 의약품 논문 병합 후 paperChunks=${paperChunks.length}건`)
     }
     if (paperChunks.length > 0) {
