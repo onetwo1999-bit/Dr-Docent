@@ -1,9 +1,7 @@
 /**
  * 식약처 의약품 제품·성분 상세 API (DrugPrdtPrmsnInfoService07 / getDrugPrdtMcpnDtlInq07)
- * - 엔드포인트: https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07/getDrugPrdtMcpnDtlInq07
+ * - 제품명(PRDUCT)·성분명(MTRAL_NM)·업체명(ENTRPS) 외 효능(EE_DOC_DATA)·주의사항(NB_DOC_DATA) 함께 수집
  * - JSON 응답: URL 끝에 &type=json
- * - serviceKey: encodeURIComponent 사용하지 않고 값 그대로 전달
- * - 표시 필드: PRDUCT(제품명), MTRAL_NM(성분명), ENTRPS(업체명)
  */
 
 const MFDS_MCPN07_BASE =
@@ -29,6 +27,8 @@ type ApiRow = {
   entrps?: string
   ee_doc_data?: string
   nb_doc_data?: string
+  EFCY?: string
+  SIDE_EFFECT?: string
   [key: string]: string | undefined
 }
 
@@ -94,8 +94,8 @@ function parseResponse(text: string): { items: MfdsMcpn07Item[]; totalCount: num
     productName: pick(r, 'PRDUCT', 'prduct'),
     ingredientName: pick(r, 'MTRAL_NM', 'mtral_nm'),
     companyName: pick(r, 'ENTRPS', 'entrps'),
-    eeDocData: pick(r, 'EE_DOC_DATA', 'ee_doc_data') || null,
-    nbDocData: pick(r, 'NB_DOC_DATA', 'nb_doc_data') || null,
+    eeDocData: pick(r, 'EE_DOC_DATA', 'ee_doc_data', 'EFCY') || null,
+    nbDocData: pick(r, 'NB_DOC_DATA', 'nb_doc_data', 'SIDE_EFFECT') || null,
   }))
   return { items, totalCount }
 }

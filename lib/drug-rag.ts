@@ -26,15 +26,15 @@ function clip(s: string | null | undefined, max: number): string | null {
   return s.length > max ? s.slice(0, max) + '…' : s
 }
 
-/** API/캐시 항목 → 성분 분석 섹션용 텍스트. 다중 결과도 모두 전달(LLM이 선택·요약) */
+/** API/캐시 항목 → LLM 컨텍스트용 텍스트. 제품명·성분명·효능·주의사항 포함(행동 지침 생성에 사용) */
 export function formatDrugContextForPrompt(items: MfdsMcpn07Item[], maxItems = 20): string {
   const lines: string[] = []
   for (const item of items.slice(0, maxItems)) {
     lines.push(`■ 제품명: ${item.productName || '(정보 없음)'}`)
     if (item.ingredientName) lines.push(`  성분명: ${clip(item.ingredientName, 300)}`)
     if (item.companyName) lines.push(`  업체명: ${item.companyName}`)
-    if (item.eeDocData) lines.push(`  효능: ${clip(item.eeDocData, 500)}`)
-    if (item.nbDocData) lines.push(`  주의사항: ${clip(item.nbDocData, 500)}`)
+    if (item.eeDocData) lines.push(`  효능: ${clip(item.eeDocData, 600)}`)
+    if (item.nbDocData) lines.push(`  주의사항: ${clip(item.nbDocData, 600)}`)
     lines.push('')
   }
   return lines.join('\n').trim()
@@ -50,7 +50,10 @@ function cacheRowsToItems(rows: DrugMasterRow[]): MfdsMcpn07Item[] {
   }))
 }
 
-/** drug_master에 API 결과 핵심 필드만 Insert(또는 product_name 기준 upsert 가능 시 upsert) */
+/**
+ * API에서 가져온 제품명·성분명·효능·주의사항을 drug_master에 즉시 Upsert.
+ * 동일 product_name이 있으면 ee_doc_data, nb_doc_data 포함 해당 행 갱신.
+ */
 async function saveDrugMasterFromApiItems(
   supabase: SupabaseAdmin,
   items: MfdsMcpn07Item[]
