@@ -84,8 +84,16 @@ export function extractFoodSearchQuery(message: string): string | null {
 // 의약품 조회 의도 감지 (MFDS 식약처 API 호출 트리거)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** 제품명 형태 접미사 — 이걸로 끝나는 단어가 있으면 무조건 의약품: Y */
+const DRUG_FORM_SUFFIXES = ['정', '캡슐', '시럽', '액'] as const
+
+/** 특정 제품명 — 포함 시 다른 조건 없이 의약품: Y */
+const DRUG_PRODUCT_NAMES = ['아네모정']
+
 /** 자주 검색되는 의약품명 패턴 (소문자로 비교) */
 const DRUG_NAME_PATTERNS = [
+  // 제품명 (의도 오인 방지용 우선)
+  '아네모정',
   // 해열·진통제
   '타이레놀', '아스피린', '이부프로펜', '나프록센', '아세트아미노펜', '애드빌', '부루펜',
   // 항생제
@@ -128,13 +136,24 @@ const DRUG_INFO_KEYWORDS = [
 /**
  * 사용자 질문이 특정 의약품 정보 조회인지 감지.
  * → true면 MFDS e약은요 API를 통해 식약처 실시간 데이터를 가져옴.
+ * 긴급 수리: '정'·'캡슐'·'시럽'·'액'으로 끝나는 단어 또는 특정 제품명(예: 아네모정) 포함 시 다른 조건 없이 의약품: Y.
  */
 export function isDrugIntent(message: string): boolean {
   if (!message || message.trim().length < 2) return false
-  const lower = message.toLowerCase()
-  // 알려진 약명이 포함된 경우
+  const trimmed = message.trim()
+  const lower = trimmed.toLowerCase()
+
+  // 1) 특정 제품명 포함 시 무조건 의약품
+  if (DRUG_PRODUCT_NAMES.some((name) => lower.includes(name.toLowerCase()))) return true
+
+  // 2) '정', '캡슐', '시럽', '액'으로 끝나는 단어가 있으면 무조건 의약품
+  const words = trimmed.split(/\s+/).filter((w) => w.length >= 2)
+  if (words.some((w) => DRUG_FORM_SUFFIXES.some((suffix) => w.endsWith(suffix)))) return true
+
+  // 3) 알려진 약명이 포함된 경우
   if (DRUG_NAME_PATTERNS.some((name) => lower.includes(name.toLowerCase()))) return true
-  // 약 관련 키워드 + '약' 단어가 함께 있는 경우
+
+  // 4) 약 관련 키워드 + '약' 단어가 함께 있는 경우
   const hasDrugKeyword = DRUG_INFO_KEYWORDS.some((kw) => lower.includes(kw.toLowerCase()))
   const hasGenericDrug = lower.includes('약') || lower.includes('의약품') || lower.includes('약물')
   return hasDrugKeyword && hasGenericDrug
@@ -142,7 +161,7 @@ export function isDrugIntent(message: string): boolean {
 
 /**
  * 질문에서 의약품 검색어(제품명)를 추출.
- * 알려진 약명 패턴 우선, 없으면 명사 추출.
+ * 알려진 약명 패턴 우선, '정'·'캡슐'·'시럽'·'액' 끝 단어, 없으면 명사 추출.
  */
 export function extractDrugSearchQuery(message: string): string | null {
   if (!message || message.trim().length < 2) return null
@@ -151,6 +170,10 @@ export function extractDrugSearchQuery(message: string): string | null {
   for (const name of DRUG_NAME_PATTERNS) {
     if (lower.includes(name.toLowerCase())) return name
   }
+  // '정'·'캡슐'·'시럽'·'액'으로 끝나는 단어가 있으면 해당 단어를 검색어로
+  const words = message.trim().split(/\s+/).filter((w) => w.length >= 2)
+  const formWord = words.find((w) => DRUG_FORM_SUFFIXES.some((suffix) => w.endsWith(suffix)))
+  if (formWord) return formWord
   // 약 관련 동사·조사 제거 후 명사 추출
   const cleaned = message
     .replace(/(복용법|용법|용량|먹는법|먹어도|먹으면|부작용|효능|효과|성분|주의사항|상호작용|의약품|처방약|일반의약품|알려줘|알려|줘|있나|있어|어떻게|어때|어떤|뭐야|뭔가요|인가요|인지|되나|되요|되나요|입니다|입니까|이에요|이야|이야\?)/gi, ' ')

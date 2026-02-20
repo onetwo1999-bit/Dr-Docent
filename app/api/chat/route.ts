@@ -48,6 +48,10 @@ const DAILY_LIMIT = 10
 const OPENAI_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini'
 const CLAUDE_HAIKU_MODEL = 'claude-3-haiku-20240307'
 
+/** 의약품: Y로 분류됐으나 DB·e-약은요 API 모두 0건일 때 AI 호출 없이 이 문구만 반환 (Hallucination Killer) */
+const DRUG_DATA_NOT_FOUND_MESSAGE =
+  '죄송합니다. 식약처 공식 데이터베이스에서 해당 약물 정보를 찾을 수 없어 정확한 안내가 어렵습니다. 제품명을 다시 확인하시거나 약사에게 문의해 주세요.'
+
 // 1. 신체적 통증·감각 (공감 필수)
 const KEYWORDS_PAIN = ['아파', '시려', '통증', '찌릿', '욱신', '부었어', '열나', '저려', '결려', '뻐근해', '따가워']
 // 2. 수치·검사 결과 (냉철한 분석)
@@ -311,9 +315,11 @@ function buildSystemPrompt(
   }
 
   if (drugContext) {
-    systemPrompt += `\n## [필수 — 식약처 의약품 공식 데이터]\n`
+    systemPrompt += `\n## [필수 — 식약처 의약품 공식 데이터] <DRUG_DATA>\n`
     systemPrompt += `아래는 **e-약은요 API(getDrugPrdtMcpnDtlInq07)** 또는 그 결과를 캐시한 drug_master에서만 가져온 **공식 의약품 정보**야. 제품명·성분명·**효능(ee_doc_data)**·**주의사항(nb_doc_data)**가 포함돼.\n`
     systemPrompt += `\`\`\`\n${drugContext}\n\`\`\`\n\n`
+    systemPrompt += `- **Strict Grounding**: 답변 시 **오직 위 <DRUG_DATA> 블록에 적힌 내용만** 사용해. 데이터 출처가 불분명한 내용은 절대 포함하지 마.\n`
+    systemPrompt += `- **배지 필수**: 답변 하단에 반드시 **[✅ 식약처 공식 데이터 기반]** 배지를 노출해.\n`
     systemPrompt += `- **답변 형식 (필수)**: 텍스트 나열이 아닌, 반드시 아래 두 개의 헤더를 사용해 구분해.\n`
     systemPrompt += `  - **### [✅ 식약처 데이터 기반 분석]** — 위 공식 데이터 요약·분석을 이 헤더 아래 문단으로 작성.\n`
     systemPrompt += `  - **### [🎯 오늘의 안심 행동 지침]** — 유저 맞춤 행동 제안(복용·상담·주의 등)을 이 헤더 아래 문단으로 작성.\n`
@@ -329,16 +335,15 @@ function buildSystemPrompt(
     systemPrompt += `### 의약품 답변 필수 규칙 (위반 금지)\n`
     systemPrompt += `- **내부 지식 금지**: DB가 제공되었으므로 학습 데이터·일반 지식으로 의약품 효능·용도·성분을 답하지 마. 위 블록의 main_ingredient·ee_doc_data·nb_doc_data만 사용해.\n`
     systemPrompt += `- 효능·용법·주의사항·이상반응·상호작용 등 모든 수치와 내용은 위 데이터 원문 그대로 사용해.\n`
-    systemPrompt += `- 답변 마지막에 반드시 다음 출처 표기를 추가해:\n`
-    systemPrompt += `  **출처: 식품의약품안전처 공공데이터 (e약은요)**\n`
+    systemPrompt += `- 답변 마지막에 반드시 다음을 추가해: **출처: 식품의약품안전처 공공데이터 (e약은요)** 및 **[✅ 식약처 공식 데이터 기반]** 배지.\n`
     systemPrompt += `- 데이터에 없는 정보는 "현재 조회된 데이터에는 해당 정보가 없습니다. 복약상담이 필요하시면 약사 선생님께 직접 문의해 주세요."라고 안내해.\n`
     systemPrompt += `- 의약품 복용 결정·용량 조정은 반드시 의사·약사 상담을 권고하는 문장으로 마무리해.\n\n`
   } else if (drugQueryMissing) {
-    // DB·API 조회 실패 시: 구체적인 상태 메시지로 안내
+    // DB·e-약은요 API 모두 0건 시: API에서 고정 문구만 반환하므로 이 블록은 폴백용
     systemPrompt += `\n## [의약품 조회 불가 — 일반 지식 답변 금지]\n`
-    systemPrompt += `사용자가 의약품 정보를 물었으나 **식약처 데이터를 지금 가져오지 못했어**.\n`
+    systemPrompt += `사용자가 의약품 정보를 물었으나 **식약처 DB·API 모두에서 데이터를 찾지 못했어**.\n`
     systemPrompt += `- 절대로 일반 학습 데이터로 약물 효능·용량·부작용을 답변하지 마.\n`
-    systemPrompt += `- 다음 안내만 해: **"현재 식약처 서버와 연동 중입니다. 잠시만 기다려주세요."**\n\n`
+    systemPrompt += `- 아래 문구만 출력해: **"죄송합니다. 식약처 공식 데이터베이스에서 해당 약물 정보를 찾을 수 없어 정확한 안내가 어렵습니다. 제품명을 다시 확인하시거나 약사에게 문의해 주세요."**\n\n`
   }
 
   return systemPrompt
@@ -723,7 +728,12 @@ export async function POST(req: Request) {
 
     let answer = ''
 
-    if (useHaiku && hasClaude) {
+    if (needDrugRag && drugQuery && drugQueryMissing) {
+      answer = DRUG_DATA_NOT_FOUND_MESSAGE
+      console.log(`💊 [${requestId}] 의약품 데이터 0건 → 고정 문구만 반환 (Hallucination Killer)`)
+    }
+
+    if (answer === '' && useHaiku && hasClaude) {
       console.log(`🚀 [${requestId}] Claude(하이쿠) 호출 (공감 모드, model: ${CLAUDE_HAIKU_MODEL})`)
       const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
