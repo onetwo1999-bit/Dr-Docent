@@ -9,20 +9,26 @@
 const MFDS_MCPN07_BASE =
   'https://apis.data.go.kr/1471000/DrugPrdtPrmsnInfoService07/getDrugPrdtMcpnDtlInq07'
 
-/** 성분 상세 조회 API(getDrugPrdtMcpnDtlInq07) 결과 항목. MTRAL_NM → 서비스 성분 분석 섹션에 사용 */
+/** 성분 상세 조회 API(getDrugPrdtMcpnDtlInq07) 결과 항목. drug_master 캐시 시 핵심 필드만 저장 */
 export type MfdsMcpn07Item = {
   productName: string   // PRDUCT (제품명)
-  ingredientName: string // MTRAL_NM (성분명) — 성분 분석 섹션에 정확히 매핑
+  ingredientName: string // MTRAL_NM (성분명)
   companyName: string   // ENTRPS (업체명)
+  eeDocData?: string | null  // EE_DOC_DATA (효능)
+  nbDocData?: string | null  // NB_DOC_DATA (주의사항)
 }
 
 type ApiRow = {
   PRDUCT?: string
   MTRAL_NM?: string
   ENTRPS?: string
+  EE_DOC_DATA?: string
+  NB_DOC_DATA?: string
   prduct?: string
   mtral_nm?: string
   entrps?: string
+  ee_doc_data?: string
+  nb_doc_data?: string
   [key: string]: string | undefined
 }
 
@@ -88,6 +94,8 @@ function parseResponse(text: string): { items: MfdsMcpn07Item[]; totalCount: num
     productName: pick(r, 'PRDUCT', 'prduct'),
     ingredientName: pick(r, 'MTRAL_NM', 'mtral_nm'),
     companyName: pick(r, 'ENTRPS', 'entrps'),
+    eeDocData: pick(r, 'EE_DOC_DATA', 'ee_doc_data') || null,
+    nbDocData: pick(r, 'NB_DOC_DATA', 'nb_doc_data') || null,
   }))
   return { items, totalCount }
 }

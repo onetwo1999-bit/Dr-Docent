@@ -1,12 +1,10 @@
 /**
- * 식약처 API(DrugPrdtPrmsnInfoService07)에서 100건 조회 → mfds_sample_data.csv 저장
- * 설정: pageNo=1, numOfRows=100, type=json
+ * 식약처 API(DrugPrdtPrmsnInfoService07)에서 상위 1,000건 조회 → mfds_sample_data.csv 저장
+ * 설정: pageNo=1, numOfRows=1000, type=json (검색 조건 없음 = 최근 허가 순 등 API 기본 순서)
  * 환경변수: .env.local 의 MFDS_DRUG_INFO_API_KEY 사용
- * 필드: PRDUCT(제품명), MTRAL_NM(성분명), ENTRPS(업체명)
+ * 필드: PRDUCT, MTRAL_NM, ENTRPS, EE_DOC_DATA(효능), NB_DOC_DATA(주의사항)
  *
- * 실행 방법 (프로젝트 루트에서):
- *   node scripts/fetch-mfds-sample.js
- * 결과 파일: 프로젝트 루트의 mfds_sample_data.csv (UTF-8 BOM)
+ * 실행: node scripts/fetch-mfds-sample.js
  */
 
 import dotenv from 'dotenv'
@@ -47,7 +45,7 @@ function escapeCsvCell(s) {
   return str
 }
 
-async function fetchPage(apiKey, params, pageNo = 1, numOfRows = 100) {
+async function fetchPage(apiKey, params, pageNo = 1, numOfRows = 1000) {
   const parts = [
     `serviceKey=${apiKey}`,
     `pageNo=${pageNo}`,
@@ -60,7 +58,6 @@ async function fetchPage(apiKey, params, pageNo = 1, numOfRows = 100) {
   const text = await res.text()
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 200)}`)
   const data = JSON.parse(text)
-  console.log('API 데이터 샘플:', JSON.stringify(data).substring(0, 500))
   const header = data?.response?.header ?? data?.header
   const resultCode = header?.resultCode
   if (resultCode !== '00' && resultCode !== undefined) {
@@ -80,46 +77,47 @@ async function main() {
     process.exit(1)
   }
 
-  console.log('🌐 식약처 API 호출 중 (pageNo=1, numOfRows=100, type=json)...')
+  // 공공 API는 한 번에 1000건을 주지 않을 수 있음 → 100건씩 10페이지 요청해 1,000건 수집
+  const PAGE_SIZE = 100
+  const TARGET = 1000
+  const PAGES = Math.ceil(TARGET / PAGE_SIZE)
+  console.log(`🌐 식약처 API 호출 중 (상위 ${TARGET}건 = ${PAGES}페이지 × ${PAGE_SIZE}건)...`)
+
   let rows = []
   let totalCount = 0
+  let lastTotal = 0
 
-  // 넓은 조건으로 100건 요청 (Prduct=% → 파라미터 없음 → 공통 검색어 '정' 순으로 시도)
-  const attempts = [
-    { Prduct: '%' },
-    {},
-    { Prduct: '타이레놀' },
-  ]
-  for (const params of attempts) {
-    try {
-      const res = await fetchPage(apiKey, params, 1, 100)
-      rows = res.rows
-      totalCount = res.totalCount
-      if (rows.length > 0) break
-    } catch (e) {
-      continue
+  try {
+    for (let page = 1; page <= PAGES; page++) {
+      const res = await fetchPage(apiKey, {}, page, PAGE_SIZE)
+      if (page === 1) {
+        console.log('API 데이터 샘플:', JSON.stringify(res.rows[0] ?? {}).substring(0, 300))
+        totalCount = res.totalCount
+      }
+      if (res.rows.length === 0) break
+      rows = rows.concat(res.rows)
+      lastTotal = res.rows.length
+      if (res.rows.length < PAGE_SIZE) break
     }
-  }
-  if (rows.length === 0) {
-    try {
-      const res = await fetchPage(apiKey, { MTRAL_NM: '아세트아미노펜' }, 1, 100)
-      rows = res.rows
-      totalCount = res.totalCount
-    } catch (_) {}
+  } catch (e) {
+    console.error('❌ API 호출 실패:', e.message)
+    process.exit(1)
   }
 
   if (rows.length === 0) {
-    console.warn('⚠️ 조회 결과 0건입니다. API가 검색 조건(Prduct 등)을 요구할 수 있습니다.')
+    console.warn('⚠️ 조회 결과 0건입니다. API 키·URL·응답 구조를 확인하세요.')
   } else {
     console.log(`✅ ${rows.length}건 수신 (totalCount: ${totalCount})`)
   }
 
-  const csvHeader = 'PRDUCT,MTRAL_NM,ENTRPS'
+  const csvHeader = 'PRDUCT,MTRAL_NM,ENTRPS,EE_DOC_DATA,NB_DOC_DATA'
   const csvRows = rows.map((r) => {
     const prduct = escapeCsvCell(pick(r, 'PRDUCT', 'prduct'))
     const mtralNm = escapeCsvCell(pick(r, 'MTRAL_NM', 'mtral_nm'))
     const entrps = escapeCsvCell(pick(r, 'ENTRPS', 'entrps'))
-    return `${prduct},${mtralNm},${entrps}`
+    const eeDoc = escapeCsvCell(pick(r, 'EE_DOC_DATA', 'ee_doc_data'))
+    const nbDoc = escapeCsvCell(pick(r, 'NB_DOC_DATA', 'nb_doc_data'))
+    return `${prduct},${mtralNm},${entrps},${eeDoc},${nbDoc}`
   })
   const csv = [csvHeader, ...csvRows].join('\n')
 
