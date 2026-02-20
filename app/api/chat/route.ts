@@ -220,6 +220,11 @@ function buildSystemPrompt(
 - 선생님의 최신 건강 기록(수면·운동·식단·복약)이 있으면 반영해 분석하고, 특이점이 보이면 먼저 언급해.
 - 존스홉킨스 등 특정 병원명은 언급하지 마.
 `
+  if (drugContext) {
+    systemPrompt =
+      `[필수 — 최우선]\n**반드시 아래 제공된 DB 정보(식약처/drug_master)를 바탕으로만 답변하라.** 일반 지식이나 학습 데이터로 의약품 정보를 보완·대체하지 마.\n\n` +
+      systemPrompt
+  }
   if (ambiguousHint && ambiguousHint.terms.length > 0) {
     systemPrompt += `\n## [다중 의미 단어 확인] (고정 로직 — 건너뛰지 말 것)\n`
     systemPrompt += `사용자 질문에 **모호한 키워드**가 포함되어 있음. 본문 답변을 하기 **전에** 반드시 확인 질문을 먼저 해.\n\n`
@@ -305,6 +310,9 @@ function buildSystemPrompt(
     systemPrompt += `\n## [필수 — 식약처 의약품 공식 데이터]\n`
     systemPrompt += `아래는 식약처 공공데이터 또는 우리 DB(drug_master)에서 가져온 **공식 의약품 정보**야. 제품명·성분명·**효능(ee_doc_data)**·**주의사항(nb_doc_data)**가 포함돼.\n`
     systemPrompt += `\`\`\`\n${drugContext}\n\`\`\`\n\n`
+    systemPrompt += `- **답변 형식 (필수)**: 텍스트 나열이 아닌, 반드시 아래 두 개의 헤더를 사용해 구분해.\n`
+    systemPrompt += `  - **### [✅ 식약처 데이터 기반 분석]** — 위 공식 데이터 요약·분석을 이 헤더 아래 문단으로 작성.\n`
+    systemPrompt += `  - **### [🎯 오늘의 안심 행동 지침]** — 유저 맞춤 행동 제안(복용·상담·주의 등)을 이 헤더 아래 문단으로 작성.\n`
     systemPrompt += `- **검색 결과 매핑**: 위 블록의 제품명·성분명·효능·주의사항을 그대로 사용해.\n`
     systemPrompt += `- **건강 데이터 결합 분석**: 위 의약품 데이터와 **이 프롬프트 상단의 선생님 건강 프로필**(만 나이·성별·기저 질환·복용 약물)을 반드시 결합해서 답변해. 38세 여성, 고혈압·갑상선 등 기저 질환이 있으면 해당 약과의 상호작용·주의사항을 맞춤형으로 짚어 주고, 연령·성별에 맞는 복용 가이드를 제시해.\n`
     systemPrompt += `- **다중 결과 처리**: 위에 여러 건이 있으면, 유저 질문·상황에 가장 적합한 제품을 골라 설명하거나 필요한 제품들을 요약해서 답변해. 하나만 있으면 그 제품 기준으로 답하면 돼.\n`
@@ -803,8 +811,13 @@ export async function POST(req: Request) {
       journal: r.journal,
       abstract: r.abstract,
     }))
-    console.log(`📤 [${requestId}] 응답 전송: answer ${answer.length}자, papers ${papers.length}건(최대 3건)`)
-    return NextResponse.json({ answer, papers })
+    const hasOfficialDrugData = !!drugContext
+    console.log(`📤 [${requestId}] 응답 전송: answer ${answer.length}자, papers ${papers.length}건(최대 3건)${hasOfficialDrugData ? ', source: official' : ''}`)
+    return NextResponse.json({
+      answer,
+      papers,
+      ...(hasOfficialDrugData ? { source: 'official' as const } : {}),
+    })
   } catch (error) {
     console.error(`❌ [${requestId}] 예외:`, error)
     return NextResponse.json({ error: '서버 오류가 발생했습니다.' }, { status: 500 })
