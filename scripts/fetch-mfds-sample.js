@@ -1,8 +1,7 @@
 /**
- * 식약처 API(DrugPrdtPrmsnInfoService07)에서 상위 1,000건 조회 → mfds_sample_data.csv 저장
- * 설정: pageNo=1, numOfRows=1000, type=json (검색 조건 없음 = 최근 허가 순 등 API 기본 순서)
- * 환경변수: .env.local 의 MFDS_DRUG_INFO_API_KEY 사용
- * 필드: PRDUCT, MTRAL_NM, ENTRPS, EE_DOC_DATA(효능), NB_DOC_DATA(주의사항)
+ * 식약처 API에서 상위 1,000건 조회 → mfds_sample_data.csv (Supabase drug_master 업로드용)
+ * CSV 컬럼: product_name, main_ingredient, company_name, ee_doc_data, nb_doc_data
+ * 업로드 전: Supabase SQL Editor에서 supabase/drug_master-add-columns.sql 실행 필요.
  *
  * 실행: node scripts/fetch-mfds-sample.js
  */
@@ -110,21 +109,22 @@ async function main() {
     console.log(`✅ ${rows.length}건 수신 (totalCount: ${totalCount})`)
   }
 
-  const csvHeader = 'PRDUCT,MTRAL_NM,ENTRPS,EE_DOC_DATA,NB_DOC_DATA'
+  // Supabase drug_master 테이블 컬럼명과 일치 (PRDUCT→product_name, MTRAL_NM→main_ingredient 등)
+  const csvHeader = 'product_name,main_ingredient,company_name,ee_doc_data,nb_doc_data'
   const csvRows = rows.map((r) => {
-    const prduct = escapeCsvCell(pick(r, 'PRDUCT', 'prduct'))
-    const mtralNm = escapeCsvCell(pick(r, 'MTRAL_NM', 'mtral_nm'))
-    const entrps = escapeCsvCell(pick(r, 'ENTRPS', 'entrps'))
+    const productName = escapeCsvCell(pick(r, 'PRDUCT', 'prduct'))
+    const mainIngredient = escapeCsvCell(pick(r, 'MTRAL_NM', 'mtral_nm'))
+    const companyName = escapeCsvCell(pick(r, 'ENTRPS', 'entrps'))
     const eeDoc = escapeCsvCell(pick(r, 'EE_DOC_DATA', 'ee_doc_data'))
     const nbDoc = escapeCsvCell(pick(r, 'NB_DOC_DATA', 'nb_doc_data'))
-    return `${prduct},${mtralNm},${entrps},${eeDoc},${nbDoc}`
+    return `${productName},${mainIngredient},${companyName},${eeDoc},${nbDoc}`
   })
   const csv = [csvHeader, ...csvRows].join('\n')
 
   const outPath = path.join(root, 'mfds_sample_data.csv')
   try {
     fs.writeFileSync(outPath, '\uFEFF' + csv, 'utf8')
-    console.log(`📁 저장 완료: ${outPath}`)
+    console.log(`📁 저장 완료: ${outPath} (Supabase drug_master 컬럼명 적용)`)
   } catch (writeErr) {
     const fallback = path.join(__dirname, 'mfds_sample_data.csv')
     fs.writeFileSync(fallback, '\uFEFF' + csv, 'utf8')

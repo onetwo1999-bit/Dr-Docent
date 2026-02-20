@@ -1,10 +1,10 @@
 /**
- * 의약품 RAG 파이프라인 — 하이브리드 검색
+ * 의약품 RAG 파이프라인 — 학습형 하이브리드 검색
  *
- * 1) Supabase drug_master 우선: product_name ILIKE '%검색어%' (pg_trgm 인덱스 활용)
- * 2) API 폴백: DB 결과 0건일 때만 식약처 getDrugPrdtMcpnDtlInq07 호출 후 drug_master Insert
- *
- * 검색 결과 매핑: prduct → productName, mtral_nm → ingredientName (DB/API 동일 포맷으로 AI 전달)
+ * 1) search_logs에 해당 키워드 call_count 1 증가 (RPC: increment_search_log)
+ * 2) drug_master 우선 검색 (product_name ILIKE '%검색어%')
+ * 3) 0건일 때만 식약처 API 호출
+ * 4) 인기 키워드(call_count >= 5)면 API 결과를 drug_master에 영구 저장(캐싱)
  */
 
 import { fetchDrugPrdtMcpnDtlInq07, type MfdsMcpn07Item } from './mfds-drug-mcpn07'
@@ -50,7 +50,7 @@ function cacheRowsToItems(rows: DrugMasterRow[]): MfdsMcpn07Item[] {
   }))
 }
 
-/** drug_master에 API 결과 핵심 필드만 Insert (PRDUCT, MTRAL_NM, ENTRPS, EE_DOC_DATA, NB_DOC_DATA) */
+/** drug_master에 API 결과 핵심 필드만 Insert(또는 product_name 기준 upsert 가능 시 upsert) */
 async function saveDrugMasterFromApiItems(
   supabase: SupabaseAdmin,
   items: MfdsMcpn07Item[]
@@ -64,15 +64,13 @@ async function saveDrugMasterFromApiItems(
     ee_doc_data: r.eeDocData ?? null,
     nb_doc_data: r.nbDocData ?? null,
   }))
-  let { error } = await supabase.from('drug_master').insert(payload)
+  const { error } = await supabase.from('drug_master').upsert(payload, {
+    onConflict: 'product_name',
+    ignoreDuplicates: false,
+  })
   if (error) {
-    const fallback = items.map((r) => ({
-      product_name: r.productName,
-      main_ingredient: r.ingredientName || null,
-      ingredient_code: null,
-    }))
-    const r2 = await supabase.from('drug_master').insert(fallback)
-    if (!r2.error) return { saved: fallback.length }
+    const { error: insertError } = await supabase.from('drug_master').insert(payload)
+    if (!insertError) return { saved: payload.length }
     return { saved: 0, error: String(error) }
   }
   return { saved: payload.length }
@@ -111,8 +109,27 @@ export type DrugRagResult = {
   itemCount: number
 }
 
+/** search_logs에 검색 키워드 기록 후 현재 call_count 반환 (RPC: increment_search_log) */
+async function incrementSearchLog(
+  supabase: SupabaseAdmin,
+  keyword: string
+): Promise<number> {
+  const q = keyword?.trim()
+  if (!q) return 0
+  try {
+    const { data, error } = await supabase.rpc('increment_search_log', { p_keyword: q })
+    if (error) {
+      console.warn('search_logs increment 실패:', error.message)
+      return 0
+    }
+    return typeof data === 'number' ? data : 0
+  } catch {
+    return 0
+  }
+}
+
 /**
- * 의약품 RAG 실행: 하이브리드 검색 (DB 우선 → 0건일 때만 API 폴백)
+ * 의약품 RAG 실행: 학습형 하이브리드 (검색 로그 → DB 우선 → 0건 시 API → 인기 키워드 시 영구 캐싱)
  */
 export async function runDrugRag(
   requestId: string,
@@ -122,6 +139,11 @@ export async function runDrugRag(
   const apiKey = process.env.MFDS_DRUG_INFO_API_KEY?.trim()
 
   try {
+    const callCount = await incrementSearchLog(supabaseAdmin, drugQuery)
+    if (callCount > 0) {
+      console.log(`📊 [${requestId}] search_logs: "${drugQuery}" call_count=${callCount}`)
+    }
+
     const cached = await getCachedDrugRows(supabaseAdmin, drugQuery, 20)
     if (cached.length > 0) {
       const items = cacheRowsToItems(cached)
@@ -146,12 +168,17 @@ export async function runDrugRag(
       return { drugContext: null, apiUsed: true, itemCount: 0 }
     }
 
-    const insertResult = await saveDrugMasterFromApiItems(supabaseAdmin, items)
-    if (insertResult.saved > 0) {
-      console.log(`📥 [${requestId}] drug_master 자동 캐싱: ${insertResult.saved}건`)
-    }
-    if (insertResult.error) {
-      console.warn(`⚠️ [${requestId}] drug_master Insert 실패(무시):`, insertResult.error)
+    const isPopular = callCount >= 5
+    if (isPopular) {
+      const insertResult = await saveDrugMasterFromApiItems(supabaseAdmin, items)
+      if (insertResult.saved > 0) {
+        console.log(`📥 [${requestId}] 인기 키워드(call_count=${callCount}) → drug_master 영구 캐싱: ${insertResult.saved}건`)
+      }
+      if (insertResult.error) {
+        console.warn(`⚠️ [${requestId}] drug_master 저장 실패(무시):`, insertResult.error)
+      }
+    } else {
+      console.log(`📋 [${requestId}] call_count ${callCount} < 5 → API 결과만 반환, DB 미저장`)
     }
 
     const drugContext = formatDrugContextForPrompt(items)
