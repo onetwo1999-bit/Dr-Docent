@@ -110,6 +110,11 @@ export type DrugRagResult = {
   drugContext: string | null
   apiUsed: boolean
   itemCount: number
+  /** MTRAL_NM(성분명) 추출 → 논문 RAG queryPapers 키워드로 사용 */
+  paperSearchKeywords: string[]
+  /** 인기 키워드(5회 이상) 시 paper_insight 업데이트 대상 제품명 목록 */
+  productNamesForCache: string[]
+  callCount: number
 }
 
 /** search_logs에 검색 키워드 기록 후 현재 call_count 반환 (RPC: increment_search_log) */
@@ -131,8 +136,27 @@ async function incrementSearchLog(
   }
 }
 
+/** DB/API 결과에서 MTRAL_NM(성분명)만 추출 → 논문 RAG 키워드 */
+function extractPaperSearchKeywords(items: MfdsMcpn07Item[]): string[] {
+  const set = new Set<string>()
+  for (const item of items) {
+    const name = (item.ingredientName ?? '').trim()
+    if (name) set.add(name)
+  }
+  return Array.from(set)
+}
+
+const emptyDrugRagResult = (): DrugRagResult => ({
+  drugContext: null,
+  apiUsed: false,
+  itemCount: 0,
+  paperSearchKeywords: [],
+  productNamesForCache: [],
+  callCount: 0,
+})
+
 /**
- * 의약품 RAG 실행: 학습형 하이브리드 (검색 로그 → DB 우선 → 0건 시 API → 인기 키워드 시 영구 캐싱)
+ * 의약품 RAG 실행: 학습형 하이브리드 + 성분명 추출(paperSearchKeywords)
  */
 export async function runDrugRag(
   requestId: string,
@@ -152,13 +176,22 @@ export async function runDrugRag(
     if (cached.length > 0) {
       const items = cacheRowsToItems(cached)
       const drugContext = formatDrugContextForPrompt(items)
-      console.log(`💊 [${requestId}] drug_master 캐시 사용: ${cached.length}건 (API 미호출)`)
-      return { drugContext, apiUsed: false, itemCount: cached.length }
+      const paperSearchKeywords = extractPaperSearchKeywords(items)
+      const productNamesForCache = callCount >= 5 ? items.map((i) => i.productName).filter(Boolean) : []
+      console.log(`💊 [${requestId}] drug_master 캐시 사용: ${cached.length}건, paperSearchKeywords:`, paperSearchKeywords)
+      return {
+        drugContext,
+        apiUsed: false,
+        itemCount: cached.length,
+        paperSearchKeywords,
+        productNamesForCache,
+        callCount,
+      }
     }
 
     if (!apiKey) {
       console.warn(`⚠️ [${requestId}] MFDS_DRUG_INFO_API_KEY 미설정 — API 폴백 불가`)
-      return { drugContext: null, apiUsed: false, itemCount: 0 }
+      return emptyDrugRagResult()
     }
 
     console.log(`🌐 [${requestId}] DB 0건 → 식약처 API 폴백 (getDrugPrdtMcpnDtlInq07): "${drugQuery}"`)
@@ -169,7 +202,7 @@ export async function runDrugRag(
     console.log(`💊 [${requestId}] MFDS API 반환: ${items.length}건 (totalCount: ${totalCount})`)
 
     if (items.length === 0) {
-      return { drugContext: null, apiUsed: true, itemCount: 0 }
+      return { ...emptyDrugRagResult(), apiUsed: true }
     }
 
     const isPopular = callCount >= 5
@@ -186,10 +219,20 @@ export async function runDrugRag(
     }
 
     const drugContext = formatDrugContextForPrompt(items)
-    return { drugContext, apiUsed: true, itemCount: items.length }
+    const paperSearchKeywords = extractPaperSearchKeywords(items)
+    const productNamesForCache = isPopular ? items.map((i) => i.productName).filter(Boolean) : []
+    console.log(`📚 [${requestId}] paperSearchKeywords(성분명):`, paperSearchKeywords)
+    return {
+      drugContext,
+      apiUsed: true,
+      itemCount: items.length,
+      paperSearchKeywords,
+      productNamesForCache,
+      callCount,
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`❌ [${requestId}] MFDS API 호출 실패:`, msg)
-    return { drugContext: null, apiUsed: false, itemCount: 0 }
+    return emptyDrugRagResult()
   }
 }

@@ -311,6 +311,7 @@ function buildSystemPrompt(
     systemPrompt += `### 건강지침·행동 가이드 (필수)\n`
     systemPrompt += `- 답변에 반드시 **「행동 지침」** 섹션을 포함해. 38세 여성, 고혈압/갑상선 등 유저 건강 프로필을 고려한 **데이터 기반 안내**로 작성해. "판단"이라는 단어 대신 **"데이터 기반 안내"** 표현을 사용해.\n`
     systemPrompt += `- **효능·주의사항 활용**: 위 블록에 **효능**, **주의사항**이 있으면 반드시 인용해서 **구체적인 복약 안내**를 해. 행동 지침에는 그 내용을 바탕으로 유저가 **다음 단계로 할 구체적 행동**을 제시해. 예: "복용 전 약사 선생님께 '이 약과 혈압약을 함께 먹어도 될까요?'라고 여쭤보시면 좋아요", "갑상선 검사 결과지를 지참하고 병원 상담 시 보여 드리세요", 주의사항에 적힌 금기·상호작용을 확인한 뒤 약사에게 질문하기 등.\n`
+    systemPrompt += `- **[데이터 기반 안심 행동 지침]**: 이 프롬프트에 **학술 논문** 블록이 있으면, 논문에서 찾은 전문 정보와 **선생님 건강 프로필**(고혈압·갑상선 등 기저 질환)을 대조하여 **「데이터 기반 안심 행동 지침」** 섹션을 반드시 작성해. 논문 근거(PMID)를 인용하면서, 유저가 다음에 할 구체적 행동(예: 약사 질문, 검사 결과지 지참, 복용 시 주의할 점)을 제시해.\n`
     systemPrompt += `### 의약품 답변 필수 규칙 (위반 금지)\n`
     systemPrompt += `- **절대로 일반 지식·학습 데이터로 의약품 정보를 답하지 마.** 반드시 위 식약처 데이터만 근거로 써.\n`
     systemPrompt += `- 효능·용법·주의사항·이상반응·상호작용 등 모든 수치와 내용은 위 데이터 원문 그대로 사용해.\n`
@@ -569,6 +570,8 @@ export async function POST(req: Request) {
     let dniCautionGuide: string | null = null
     let drugContext: string | null = null
     let drugQueryMissing = false
+    let drugResult: Awaited<ReturnType<typeof runDrugRag>> | null = null
+    let drugPaperChunks: PaperChunk[] = []
 
     if (needFoodRag && foodQuery) {
       // 추출된 검색어가 증상·형용사면 USDA는 건너뛰고 PubMed·내부 DB만 사용
@@ -633,12 +636,15 @@ export async function POST(req: Request) {
       console.log(`[${requestId}] [Drug RAG] MFDS_DRUG_INFO_API_KEY Exist:`, !!process.env.MFDS_DRUG_INFO_API_KEY)
       try {
         const admin = createAdminClient()
-        const drugResult = await runDrugRag(requestId, drugQuery, admin)
+        drugResult = await runDrugRag(requestId, drugQuery, admin)
         drugContext = drugResult.drugContext
         if (drugContext) {
           console.log(`💊 [${requestId}] 의약품 데이터 주입 완료 (${drugResult.itemCount}건, API=${drugResult.apiUsed})`)
+          if (drugResult.paperSearchKeywords.length > 0) {
+            drugPaperChunks = await searchRelevantPapers(drugResult.paperSearchKeywords.join(' '), 5)
+            console.log(`📚 [${requestId}] 의약품 성분명 논문 RAG: ${drugPaperChunks.length}건, paperSearchKeywords:`, drugResult.paperSearchKeywords)
+          }
         } else {
-          // 데이터 없거나 API 실패 → 일반 지식 답변 금지 플래그
           drugQueryMissing = true
           console.warn(`⚠️ [${requestId}] 의약품 데이터 조회 실패 → 일반 지식 답변 금지 주입`)
         }
@@ -654,10 +660,21 @@ export async function POST(req: Request) {
       paperChunks = result.papers
       refsForSidebar = result.refsForSidebar
       console.log(`📚 [${requestId}] RAG 반환: paperChunks=${paperChunks.length}건, refsForSidebar=${refsForSidebar.length}건`)
-      if (paperChunks.length > 0) {
-        const ctxPreview = formatPaperContext(paperChunks)
-        console.log(`📚 [${requestId}] 주입 컨텍스트 길이: ${ctxPreview.length}자, 미리보기(200자): ${ctxPreview.slice(0, 200).replace(/\n/g, ' ')}...`)
+    }
+    if (drugPaperChunks.length > 0) {
+      const seen = new Set(paperChunks.map((p) => p.id))
+      for (const c of drugPaperChunks) {
+        if (!seen.has(c.id)) {
+          seen.add(c.id)
+          paperChunks.push(c)
+        }
       }
+      refsForSidebar = [...refsForSidebar, ...drugPaperChunks.map((p) => ({ title: p.title, pmid: p.pmid ?? '', url: p.pmid ? `https://pubmed.ncbi.nlm.nih.gov/${p.pmid}` : '', journal: null, abstract: p.abstract ?? null }))]
+      console.log(`📚 [${requestId}] 의약품 논문 병합 후 paperChunks=${paperChunks.length}건`)
+    }
+    if (paperChunks.length > 0) {
+      const ctxPreview = formatPaperContext(paperChunks)
+      console.log(`📚 [${requestId}] 주입 컨텍스트 길이: ${ctxPreview.length}자, 미리보기(200자): ${ctxPreview.slice(0, 200).replace(/\n/g, ' ')}...`)
     }
 
     const useHaiku = shouldUseHaiku(message)
@@ -759,6 +776,24 @@ export async function POST(req: Request) {
 
     await incrementUsage(supabase, user.id)
     console.log(`✅ [${requestId}] 사용량 증가 완료`)
+
+    // 인기 의약품(5회 이상): 답변에서 [데이터 기반 안심 행동 지침] 추출 후 drug_master.paper_insight 업데이트
+    if (drugResult?.callCount >= 5 && drugResult?.productNamesForCache?.length && answer) {
+      const guideMatch = answer.match(/(?:\*\*)?\[?데이터 기반 안심 행동 지침\]?\*?\*?[\s:：]*([\s\S]*?)(?=\n\n\n|\n##|$)/i)
+        || answer.match(/(?:행동 지침|안심 행동 지침)[\s:：]*([\s\S]*?)(?=\n\n\n|\n##|$)/i)
+      const guideText = (guideMatch?.[1] ?? answer.slice(0, 3000)).trim()
+      if (guideText && guideText.length > 20) {
+        try {
+          const admin = createAdminClient()
+          for (const productName of drugResult.productNamesForCache.slice(0, 10)) {
+            await admin.from('drug_master').update({ paper_insight: guideText }).eq('product_name', productName)
+          }
+          console.log(`📥 [${requestId}] paper_insight 캐싱: ${drugResult.productNamesForCache.length}건 (인기 키워드)`)
+        } catch (cacheErr) {
+          console.warn(`⚠️ [${requestId}] paper_insight 업데이트 실패:`, cacheErr instanceof Error ? cacheErr.message : String(cacheErr))
+        }
+      }
+    }
 
     // JSON 응답: { answer, papers } — 참고 문헌 최대 3개, 답변 하단에만 노출
     const papers = refsForSidebar.slice(0, 3).map((r) => ({
