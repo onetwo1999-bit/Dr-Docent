@@ -1,10 +1,10 @@
 /**
- * 의약품 RAG 파이프라인 — 학습형 하이브리드 검색
+ * 의약품 RAG — 실시간 API 호출 및 지능형 캐싱
  *
  * 1) search_logs에 해당 키워드 call_count 1 증가 (RPC: increment_search_log)
  * 2) drug_master 우선 검색 (product_name ILIKE '%검색어%')
- * 3) 0건일 때만 식약처 API 호출
- * 4) 인기 키워드(call_count >= 5)면 API 결과를 drug_master에 영구 저장(캐싱)
+ * 3) DB 0건 또는 효능(ee_doc_data) 비어 있으면 즉시 e-약은요 API 폴백 → 프롬프트에 주입(할루시네이션 방지)
+ * 4) 답변 후 비동기 saveDrugResultAfterResponse: API 결과는 무조건 upsert, paper_insight는 5회 이상만 저장
  */
 
 import { fetchDrugPrdtMcpnDtlInq07, type MfdsMcpn07Item } from './mfds-drug-mcpn07'
@@ -126,6 +126,8 @@ export type DrugRagResult = {
   /** 인기 키워드(5회 이상) 시 paper_insight 업데이트 대상 제품명 목록 */
   productNamesForCache: string[]
   callCount: number
+  /** API 호출로 가져온 항목(답변 후 비동기 저장용). apiUsed일 때만 존재 */
+  apiItems?: MfdsMcpn07Item[]
 }
 
 /** search_logs에 검색 키워드 기록 후 현재 call_count 반환 (RPC: increment_search_log) */
@@ -183,8 +185,10 @@ export async function runDrugRag(
     }
 
     const cached = await getCachedDrugRows(supabaseAdmin, drugQuery, 20)
-    console.log(`[drug_master] keyword="${drugQuery}" → ${cached.length}건 (샘플: 중외5%포도당, 아네모정 등으로 테스트 가능)`)
-    if (cached.length > 0) {
+    const hasEfficacy = cached.length > 0 && cached.some((r) => (r.ee_doc_data ?? '').trim().length > 0)
+    console.log(`[drug_master] keyword="${drugQuery}" → ${cached.length}건, 효능 있음: ${hasEfficacy}`)
+
+    if (hasEfficacy) {
       console.log('DB 결과:', JSON.stringify(cached.map((r) => ({ product_name: r.product_name, main_ingredient: r.main_ingredient }))))
       const items = cacheRowsToItems(cached)
       const drugContext = formatDrugContextForPrompt(items)
@@ -202,11 +206,19 @@ export async function runDrugRag(
     }
 
     if (!apiKey) {
-      console.warn(`⚠️ [${requestId}] MFDS_DRUG_INFO_API_KEY 미설정 — API 폴백 불가`)
+      if (cached.length > 0) {
+        console.warn(`⚠️ [${requestId}] DB에 효능(ee_doc_data) 없음 — API 키 없어 폴백 불가`)
+      } else {
+        console.warn(`⚠️ [${requestId}] MFDS_DRUG_INFO_API_KEY 미설정 — API 폴백 불가`)
+      }
       return emptyDrugRagResult()
     }
 
-    console.log(`🌐 [${requestId}] DB 0건 → 식약처 API 폴백 (getDrugPrdtMcpnDtlInq07): "${drugQuery}"`)
+    if (cached.length > 0) {
+      console.log(`🌐 [${requestId}] DB에 효능 없음 → e-약은요 API 폴백: "${drugQuery}"`)
+    } else {
+      console.log(`🌐 [${requestId}] DB 0건 → 식약처 API 폴백 (getDrugPrdtMcpnDtlInq07): "${drugQuery}"`)
+    }
     const { items, totalCount } = await fetchDrugPrdtMcpnDtlInq07(apiKey, drugQuery, {
       pageNo: 1,
       numOfRows: 20,
@@ -217,22 +229,10 @@ export async function runDrugRag(
       return { ...emptyDrugRagResult(), apiUsed: true }
     }
 
-    const isPopular = callCount >= 5
-    if (isPopular) {
-      const insertResult = await saveDrugMasterFromApiItems(supabaseAdmin, items)
-      if (insertResult.saved > 0) {
-        console.log(`📥 [${requestId}] 인기 키워드(call_count=${callCount}) → drug_master 영구 캐싱: ${insertResult.saved}건`)
-      }
-      if (insertResult.error) {
-        console.warn(`⚠️ [${requestId}] drug_master 저장 실패(무시):`, insertResult.error)
-      }
-    } else {
-      console.log(`📋 [${requestId}] call_count ${callCount} < 5 → API 결과만 반환, DB 미저장`)
-    }
-
+    // 실시간 캐싱: API 호출 결과는 즉시 DB에 upsert(다음 검색 시 DB 히트). paper_insight는 답변 후 비동기로 5회 이상일 때만 저장.
     const drugContext = formatDrugContextForPrompt(items)
     const paperSearchKeywords = extractPaperSearchKeywords(items)
-    const productNamesForCache = isPopular ? items.map((i) => i.productName).filter(Boolean) : []
+    const productNamesForCache = callCount >= 5 ? items.map((i) => i.productName).filter(Boolean) : []
     console.log(`📚 [${requestId}] paperSearchKeywords(성분명):`, paperSearchKeywords)
     return {
       drugContext,
@@ -241,10 +241,48 @@ export async function runDrugRag(
       paperSearchKeywords,
       productNamesForCache,
       callCount,
+      apiItems: items,
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
     console.error(`❌ [${requestId}] MFDS API 호출 실패:`, msg)
     return emptyDrugRagResult()
+  }
+}
+
+/**
+ * 답변 전송 후 비동기로 호출: API 결과를 drug_master에 upsert하고, 5회 이상 검색된 약물에 한해 paper_insight(안심 행동 지침) 업데이트.
+ * - apiItems 있으면 무조건 upsert → 다음 검색 시 DB 히트(성능 유리).
+ * - paper_insight는 call_count >= 5일 때만 저장(저장 비용·품질 절충).
+ */
+export async function saveDrugResultAfterResponse(
+  supabaseAdmin: SupabaseAdmin,
+  opts: {
+    apiItems?: MfdsMcpn07Item[]
+    productNamesForCache?: string[]
+    callCount: number
+    guideText?: string | null
+    requestId?: string
+  }
+): Promise<void> {
+  const { apiItems, productNamesForCache, callCount, guideText, requestId = '' } = opts
+  if (apiItems?.length) {
+    const result = await saveDrugMasterFromApiItems(supabaseAdmin, apiItems)
+    if (result.saved > 0) {
+      console.log(`📥 [${requestId}] 답변 후 drug_master 실시간 캐싱: ${result.saved}건`)
+    }
+    if (result.error) {
+      console.warn(`⚠️ [${requestId}] drug_master upsert 실패:`, result.error)
+    }
+  }
+  if (callCount >= 5 && productNamesForCache?.length && guideText?.trim()) {
+    try {
+      for (const productName of productNamesForCache.slice(0, 10)) {
+        await supabaseAdmin.from('drug_master').update({ paper_insight: guideText.trim() }).eq('product_name', productName)
+      }
+      console.log(`📥 [${requestId}] paper_insight 캐싱: ${productNamesForCache.length}건 (call_count >= 5)`)
+    } catch (e) {
+      console.warn(`⚠️ [${requestId}] paper_insight 업데이트 실패:`, e instanceof Error ? e.message : String(e))
+    }
   }
 }

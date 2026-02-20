@@ -39,7 +39,7 @@ import { translateToPubMedQuery } from '@/lib/pubmed-query'
 import { searchAndGetNutrients, formatUsdaContextForPrompt } from '@/lib/usda'
 import { searchFoodKnowledge } from '@/lib/food-knowledge-search'
 import { runDniInference } from '@/lib/dni-inference'
-import { runDrugRag } from '@/lib/drug-rag'
+import { runDrugRag, saveDrugResultAfterResponse } from '@/lib/drugService'
 import { createAdminClient } from '@/utils/supabase/admin'
 
 export const dynamic = 'force-dynamic'
@@ -791,22 +791,19 @@ export async function POST(req: Request) {
     await incrementUsage(supabase, user.id)
     console.log(`✅ [${requestId}] 사용량 증가 완료`)
 
-    // 인기 의약품(5회 이상): 답변에서 [데이터 기반 안심 행동 지침] 추출 후 drug_master.paper_insight 업데이트
-    if (drugResult?.callCount >= 5 && drugResult?.productNamesForCache?.length && answer) {
-      const guideMatch = answer.match(/(?:\*\*)?\[?데이터 기반 안심 행동 지침\]?\*?\*?[\s:：]*([\s\S]*?)(?=\n\n\n|\n##|$)/i)
-        || answer.match(/(?:행동 지침|안심 행동 지침)[\s:：]*([\s\S]*?)(?=\n\n\n|\n##|$)/i)
-      const guideText = (guideMatch?.[1] ?? answer.slice(0, 3000)).trim()
-      if (guideText && guideText.length > 20) {
-        try {
-          const admin = createAdminClient()
-          for (const productName of drugResult.productNamesForCache.slice(0, 10)) {
-            await admin.from('drug_master').update({ paper_insight: guideText }).eq('product_name', productName)
-          }
-          console.log(`📥 [${requestId}] paper_insight 캐싱: ${drugResult.productNamesForCache.length}건 (인기 키워드)`)
-        } catch (cacheErr) {
-          console.warn(`⚠️ [${requestId}] paper_insight 업데이트 실패:`, cacheErr instanceof Error ? cacheErr.message : String(cacheErr))
-        }
-      }
+    // 답변 후 비동기 저장: API 결과 drug_master upsert + 5회 이상 시 paper_insight(안심 행동 지침) 저장
+    if (drugResult) {
+      const guideMatch = answer?.match(/(?:\*\*)?\[?데이터 기반 안심 행동 지침\]?\*?\*?[\s:：]*([\s\S]*?)(?=\n\n\n|\n##|$)/i)
+        || answer?.match(/(?:행동 지침|안심 행동 지침)[\s:：]*([\s\S]*?)(?=\n\n\n|\n##|$)/i)
+      const guideText = (guideMatch?.[1] ?? answer?.slice(0, 3000))?.trim() || null
+      const admin = createAdminClient()
+      saveDrugResultAfterResponse(admin, {
+        apiItems: drugResult.apiItems,
+        productNamesForCache: drugResult.productNamesForCache,
+        callCount: drugResult.callCount,
+        guideText: guideText && guideText.length > 20 ? guideText : null,
+        requestId,
+      }).catch((err) => console.warn(`⚠️ [${requestId}] saveDrugResultAfterResponse 실패:`, err instanceof Error ? err.message : String(err)))
     }
 
     // JSON 응답: { answer, papers } — 참고 문헌 최대 3개, 답변 하단에만 노출
