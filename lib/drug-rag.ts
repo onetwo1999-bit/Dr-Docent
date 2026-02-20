@@ -1,13 +1,10 @@
 /**
- * 의약품 RAG 파이프라인
+ * 의약품 RAG 파이프라인 — 하이브리드 검색
  *
- * 데이터 흐름:
- *   1) drug_master 캐시 조회(검색어 ilike) → 있으면 그대로 반환
- *   2) 없으면 식약처 getDrugPrdtMcpnDtlInq07 호출 → 핵심 필드만 drug_master에 Insert 후 반환
+ * 1) Supabase drug_master 우선: product_name ILIKE '%검색어%' (pg_trgm 인덱스 활용)
+ * 2) API 폴백: DB 결과 0건일 때만 식약처 getDrugPrdtMcpnDtlInq07 호출 후 drug_master Insert
  *
- * 중요:
- *   - MFDS_DRUG_INFO_API_KEY 미설정 시 null 반환 (일반 지식 답변 금지)
- *   - 출처 표기 '식품의약품안전처 공공데이터'는 buildSystemPrompt에서 강제
+ * 검색 결과 매핑: prduct → productName, mtral_nm → ingredientName (DB/API 동일 포맷으로 AI 전달)
  */
 
 import { fetchDrugPrdtMcpnDtlInq07, type MfdsMcpn07Item } from './mfds-drug-mcpn07'
@@ -81,7 +78,11 @@ async function saveDrugMasterFromApiItems(
   return { saved: payload.length }
 }
 
-/** drug_master 캐시 조회: 검색어로 product_name ilike, 최대 20건. 컬럼 없으면 [] 반환 */
+/**
+ * drug_master 캐시 조회: pg_trgm 인덱스 활용을 위한 ILIKE 검색 (제품명).
+ * - 패턴: %검색어% (Supabase .ilike → PostgreSQL ilike, trigram GIN 인덱스 사용)
+ * - 결과: prduct(product_name), mtral_nm(main_ingredient) 등 핵심 필드만
+ */
 async function getCachedDrugRows(
   supabase: SupabaseAdmin,
   query: string,
@@ -95,6 +96,7 @@ async function getCachedDrugRows(
       .from('drug_master')
       .select('product_name, main_ingredient, company_name, ee_doc_data, nb_doc_data')
       .ilike('product_name', pattern)
+      .order('product_name', { ascending: true })
       .limit(limit)
     if (error || !Array.isArray(data)) return []
     return data as DrugMasterRow[]
@@ -110,31 +112,30 @@ export type DrugRagResult = {
 }
 
 /**
- * 의약품 RAG 실행: drug_master 캐시 우선 → 없으면 API 호출 후 자동 Insert
+ * 의약품 RAG 실행: 하이브리드 검색 (DB 우선 → 0건일 때만 API 폴백)
  */
 export async function runDrugRag(
   requestId: string,
   drugQuery: string,
   supabaseAdmin: SupabaseAdmin
 ): Promise<DrugRagResult> {
-  console.log(`[${requestId}] [runDrugRag] MFDS_DRUG_INFO_API_KEY Exist:`, !!process.env.MFDS_DRUG_INFO_API_KEY)
-
   const apiKey = process.env.MFDS_DRUG_INFO_API_KEY?.trim()
-  if (!apiKey) {
-    console.warn(`⚠️ [${requestId}] MFDS_DRUG_INFO_API_KEY 미설정 — 약물 RAG 생략`)
-    return { drugContext: null, apiUsed: false, itemCount: 0 }
-  }
 
   try {
     const cached = await getCachedDrugRows(supabaseAdmin, drugQuery, 20)
     if (cached.length > 0) {
       const items = cacheRowsToItems(cached)
       const drugContext = formatDrugContextForPrompt(items)
-      console.log(`💊 [${requestId}] drug_master 캐시 사용: ${cached.length}건`)
+      console.log(`💊 [${requestId}] drug_master 캐시 사용: ${cached.length}건 (API 미호출)`)
       return { drugContext, apiUsed: false, itemCount: cached.length }
     }
 
-    console.log(`🌐 [${requestId}] MFDS getDrugPrdtMcpnDtlInq07 호출 (Prduct=%검색어%): "${drugQuery}"`)
+    if (!apiKey) {
+      console.warn(`⚠️ [${requestId}] MFDS_DRUG_INFO_API_KEY 미설정 — API 폴백 불가`)
+      return { drugContext: null, apiUsed: false, itemCount: 0 }
+    }
+
+    console.log(`🌐 [${requestId}] DB 0건 → 식약처 API 폴백 (getDrugPrdtMcpnDtlInq07): "${drugQuery}"`)
     const { items, totalCount } = await fetchDrugPrdtMcpnDtlInq07(apiKey, drugQuery, {
       pageNo: 1,
       numOfRows: 20,
