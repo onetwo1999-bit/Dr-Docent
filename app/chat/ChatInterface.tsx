@@ -436,7 +436,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
             onClick={isStreaming ? handleStop : undefined}
             className={`relative flex items-center justify-center w-[52px] h-[52px] rounded-xl text-white transition-colors duration-200 ${
               isStreaming
-                ? 'bg-red-500 hover:bg-red-600'
+                ? 'bg-[#2DD4BF] hover:bg-[#26b8a5]'
                 : 'bg-[#2DD4BF] hover:bg-[#26b8a5] disabled:bg-gray-200 disabled:cursor-not-allowed'
             }`}
             initial={false}
