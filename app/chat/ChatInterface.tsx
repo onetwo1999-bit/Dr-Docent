@@ -110,6 +110,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
   const [typewriterJob, setTypewriterJob] = useState<{ fullText: string; assistantIndex: number } | null>(null)
   const answerPendingDisplayRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const lastUserMessageRef = useRef('')
 
   const isStreaming = isLoading || typewriterJob !== null
 
@@ -167,6 +168,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
     setTypewriterJob(null)
     setIsLoading(false)
     answerPendingDisplayRef.current = false
+    setInput(lastUserMessageRef.current)
   }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -174,6 +176,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
     if (!input.trim() || isLoading) return
 
     const userMessage = input.trim()
+    lastUserMessageRef.current = userMessage
     setInput('')
     setIsAtBottom(true)
     answerPendingDisplayRef.current = false
@@ -244,6 +247,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
           }
           return next
         })
+        setInput(lastUserMessageRef.current)
         return
       }
       console.error('❌ [Chat] 에러:', error)
