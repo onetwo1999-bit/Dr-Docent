@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Send, Bot, User, ArrowLeft, ExternalLink } from 'lucide-react'
+import { Send, Bot, User, ArrowLeft, ExternalLink, Square } from 'lucide-react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
 import MedicalDisclaimer from '@/app/components/MedicalDisclaimer'
 import { isAnalysisIntent, isForcedSearchTrigger } from '@/lib/medical-papers/intent'
 import { useAppContextStore } from '@/store/useAppContextStore'
@@ -109,6 +109,9 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
   const isAtBottomRef = useRef(true)
   const [typewriterJob, setTypewriterJob] = useState<{ fullText: string; assistantIndex: number } | null>(null)
   const answerPendingDisplayRef = useRef(false)
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  const isStreaming = isLoading || typewriterJob !== null
 
   useEffect(() => {
     isAtBottomRef.current = isAtBottom
@@ -158,6 +161,14 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
     return () => clearInterval(timer)
   }, [typewriterJob])
 
+  const handleStop = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    abortControllerRef.current?.abort()
+    setTypewriterJob(null)
+    setIsLoading(false)
+    answerPendingDisplayRef.current = false
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
@@ -169,6 +180,9 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
     setIsLoading(true)
     setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }])
     const assistantIndex = messages.length + 1
+
+    const controller = new AbortController()
+    abortControllerRef.current = controller
 
     try {
       const actions = getRecentActionsForAPI().map(({ type, label, detail, path }) => ({
@@ -187,6 +201,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
           hesitationHint: getHesitationHint(),
           userName: displayName || undefined
         }),
+        signal: controller.signal
       })
 
       const data = await response.json().catch(() => ({}))
@@ -221,6 +236,16 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
       }
       if (isAtBottomRef.current) scrollToBottom('auto')
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        setMessages(prev => {
+          const next = [...prev]
+          if (next[assistantIndex]?.role === 'assistant' && !next[assistantIndex].content) {
+            next[assistantIndex] = { ...next[assistantIndex], content: '응답이 중단되었습니다.' }
+          }
+          return next
+        })
+        return
+      }
       console.error('❌ [Chat] 에러:', error)
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
       setMessages(prev => {
@@ -229,6 +254,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
         return next
       })
     } finally {
+      abortControllerRef.current = null
       if (!answerPendingDisplayRef.current) setIsLoading(false)
     }
   }
@@ -398,15 +424,46 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
             onChange={(e) => setInput(e.target.value)}
             placeholder="건강에 관해 궁금한 점을 물어보세요..."
             className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
-            disabled={isLoading}
+            disabled={isStreaming}
           />
-          <button
-            type="submit"
-            disabled={isLoading || !input.trim()}
-            className="bg-[#2DD4BF] hover:bg-[#26b8a5] disabled:bg-gray-200 disabled:cursor-not-allowed text-white px-4 py-3 rounded-xl transition-colors"
+          <motion.button
+            type={isStreaming ? 'button' : 'submit'}
+            disabled={!isStreaming && !input.trim()}
+            onClick={isStreaming ? handleStop : undefined}
+            className={`relative flex items-center justify-center w-[52px] h-[52px] rounded-xl text-white transition-colors duration-200 ${
+              isStreaming
+                ? 'bg-red-500 hover:bg-red-600'
+                : 'bg-[#2DD4BF] hover:bg-[#26b8a5] disabled:bg-gray-200 disabled:cursor-not-allowed'
+            }`}
+            initial={false}
+            aria-label={isStreaming ? '답변 중지' : '전송'}
           >
-            <Send className="w-5 h-5" />
-          </button>
+            <AnimatePresence mode="wait" initial={false}>
+              {isStreaming ? (
+                <motion.span
+                  key="stop"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute inset-0 flex items-center justify-center"
+                >
+                  <Square className="w-5 h-5 fill-current" strokeWidth={2} />
+                </motion.span>
+              ) : (
+                <motion.span
+                  key="send"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute inset-0 flex items-center justify-center"
+                >
+                  <Send className="w-5 h-5" />
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </motion.button>
         </form>
         </div>
       </div>
