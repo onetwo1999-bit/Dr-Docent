@@ -413,7 +413,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
                       message.content
                     )}
                     {isStreaming && lines.length > 0 && (
-                      <span className="inline-block w-2 h-4 ml-0.5 bg-[#2DD4BF] animate-pulse align-middle" />
+                      <span className="inline-block w-px h-[1em] ml-0.5 bg-[#2DD4BF] animate-pulse align-middle" />
                     )}
                   </p>
                   {message.role === 'assistant' && message.papers && message.papers.length > 0 && (
