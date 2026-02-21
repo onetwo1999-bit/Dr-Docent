@@ -104,24 +104,33 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
   const [isLoading, setIsLoading] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const userScrolledUpRef = useRef(false)
+  /** 사용자가 스크롤을 맨 아래에 두었을 때만 true → 조건부 자동 스크롤용 */
+  const [isAtBottom, setIsAtBottom] = useState(true)
+  const isAtBottomRef = useRef(true)
   const [typewriterJob, setTypewriterJob] = useState<{ fullText: string; assistantIndex: number } | null>(null)
   const answerPendingDisplayRef = useRef(false)
+
+  useEffect(() => {
+    isAtBottomRef.current = isAtBottom
+  }, [isAtBottom])
 
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior })
   }, [])
 
-  const isNearBottom = useCallback(() => {
+  /** 스크롤 위치가 맨 아래 근처인지 (사용자 스크롤 상태 감지) */
+  const handleScroll = useCallback(() => {
     const el = chatScrollRef.current
-    if (!el) return true
+    if (!el) return
     const { scrollTop, scrollHeight, clientHeight } = el
-    return scrollHeight - scrollTop - clientHeight < SCROLL_BOTTOM_THRESHOLD
+    const atBottom = scrollHeight - scrollTop - clientHeight < SCROLL_BOTTOM_THRESHOLD
+    setIsAtBottom(atBottom)
   }, [])
 
+  /** 조건부: 사용자가 맨 아래에 있을 때만 자동 스크롤 */
   useEffect(() => {
     if (!isLoading) return
-    if (!userScrolledUpRef.current) scrollToBottom()
+    if (isAtBottomRef.current) scrollToBottom()
   }, [messages, isLoading, scrollToBottom])
 
   useEffect(() => {
@@ -140,7 +149,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
       if (len === 1) {
         setTimeout(() => setIsLoading(false), 0)
       }
-      scrollToBottom('auto')
+      if (isAtBottomRef.current) scrollToBottom('auto')
       if (len >= fullText.length) {
         clearInterval(timer)
         setTypewriterJob(null)
@@ -149,24 +158,13 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
     return () => clearInterval(timer)
   }, [typewriterJob, scrollToBottom])
 
-  const handleScroll = useCallback(() => {
-    const el = chatScrollRef.current
-    if (!el) return
-    const { scrollTop, scrollHeight, clientHeight } = el
-    if (scrollHeight - scrollTop - clientHeight > SCROLL_BOTTOM_THRESHOLD) {
-      userScrolledUpRef.current = true
-    } else {
-      userScrolledUpRef.current = false
-    }
-  }, [])
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
 
     const userMessage = input.trim()
     setInput('')
-    userScrolledUpRef.current = false
+    setIsAtBottom(true)
     answerPendingDisplayRef.current = false
     setIsLoading(true)
     setMessages(prev => [...prev, { role: 'user', content: userMessage }, { role: 'assistant', content: '' }])
@@ -221,7 +219,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
           return next
         })
       }
-      scrollToBottom('auto')
+      if (isAtBottomRef.current) scrollToBottom('auto')
     } catch (error) {
       console.error('❌ [Chat] 에러:', error)
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'
