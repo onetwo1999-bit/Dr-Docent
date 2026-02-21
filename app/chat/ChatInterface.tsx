@@ -151,9 +151,14 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
   useEffect(() => {
     if (!typewriterJob) return
     const { fullText, assistantIndex: idx } = typewriterJob
-    const startTime = performance.now()
+    // startTime을 한 틱 앞당겨 첫 번째 틱에서 len=1이 보장되도록 보정
+    const startTime = performance.now() - TYPEWRITER_INTERVAL_MS
 
     typewriterStateRef.current = { fullText, idx, startTime, currentLen: 0 }
+
+    // 타이핑 시작 즉시 로딩 상태 해제 — expectedLen===1 조건 의존 제거
+    setIsLoading(false)
+    answerPendingDisplayRef.current = false
 
     const applyLen = (len: number) => {
       typewriterStateRef.current && (typewriterStateRef.current.currentLen = len)
@@ -167,7 +172,6 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
     }
 
     const timer = setInterval(() => {
-      // 경과 시간으로 예상 위치 계산 → 백그라운드 쓰로틀링 발생해도 자동 패스트포워드
       const elapsed = performance.now() - startTime
       const expectedLen = Math.min(
         Math.floor(elapsed / TYPEWRITER_INTERVAL_MS) + 1,
@@ -175,9 +179,6 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
       )
       applyLen(expectedLen)
 
-      if (expectedLen === 1) {
-        setTimeout(() => setIsLoading(false), 0)
-      }
       if (expectedLen >= fullText.length) {
         clearInterval(timer)
         setTypewriterJob(null)
@@ -237,7 +238,7 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!input.trim() || isLoading) return
+    if (!input.trim() || isStreaming) return
 
     const userMessage = input.trim()
     lastUserMessageRef.current = userMessage
@@ -323,7 +324,11 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
       })
     } finally {
       abortControllerRef.current = null
-      if (!answerPendingDisplayRef.current) setIsLoading(false)
+      // typewriterJob이 세팅되지 않은 모든 경우(오류·빈 응답 등) 반드시 로딩 해제
+      if (!answerPendingDisplayRef.current) {
+        setIsLoading(false)
+        setTypewriterJob(null)
+      }
     }
   }
 
