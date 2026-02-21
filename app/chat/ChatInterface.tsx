@@ -127,11 +127,12 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
     setIsAtBottom(atBottom)
   }, [])
 
-  /** 조건부: 사용자가 맨 아래에 있을 때만 자동 스크롤 */
+  /** 답변 스트리밍 중에는 자동 스크롤 안 함 → 스크롤 자유. 새 메시지 추가 시(맨 아래 있을 때만) 한 번만 스크롤 */
   useEffect(() => {
+    if (typewriterJob) return
     if (!isLoading) return
     if (isAtBottomRef.current) scrollToBottom()
-  }, [messages, isLoading, scrollToBottom])
+  }, [messages, isLoading, typewriterJob, scrollToBottom])
 
   useEffect(() => {
     if (!typewriterJob) return
@@ -149,14 +150,13 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
       if (len === 1) {
         setTimeout(() => setIsLoading(false), 0)
       }
-      if (isAtBottomRef.current) scrollToBottom('auto')
       if (len >= fullText.length) {
         clearInterval(timer)
         setTypewriterJob(null)
       }
     }, TYPEWRITER_INTERVAL_MS)
     return () => clearInterval(timer)
-  }, [typewriterJob, scrollToBottom])
+  }, [typewriterJob])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
