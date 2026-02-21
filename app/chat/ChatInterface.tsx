@@ -111,6 +111,16 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
   const answerPendingDisplayRef = useRef(false)
   const abortControllerRef = useRef<AbortController | null>(null)
   const lastUserMessageRef = useRef('')
+  /**
+   * 백그라운드 탭 복귀 시 동기화용 — 타이핑 중인 상태를 ref로 공유
+   * (state는 visibilitychange 클로저에서 오래된 값을 참조하므로 ref 사용)
+   */
+  const typewriterStateRef = useRef<{
+    fullText: string
+    idx: number
+    startTime: number
+    currentLen: number
+  } | null>(null)
 
   const isStreaming = isLoading || typewriterJob !== null
 
@@ -141,9 +151,12 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
   useEffect(() => {
     if (!typewriterJob) return
     const { fullText, assistantIndex: idx } = typewriterJob
-    let len = 0
-    const timer = setInterval(() => {
-      len += 1
+    const startTime = performance.now()
+
+    typewriterStateRef.current = { fullText, idx, startTime, currentLen: 0 }
+
+    const applyLen = (len: number) => {
+      typewriterStateRef.current && (typewriterStateRef.current.currentLen = len)
       setMessages(prev => {
         const next = [...prev]
         if (next[idx]?.role === 'assistant') {
@@ -151,16 +164,67 @@ export default function ChatInterface({ userId, initialNickname, emailPrefix }: 
         }
         return next
       })
-      if (len === 1) {
+    }
+
+    const timer = setInterval(() => {
+      // 경과 시간으로 예상 위치 계산 → 백그라운드 쓰로틀링 발생해도 자동 패스트포워드
+      const elapsed = performance.now() - startTime
+      const expectedLen = Math.min(
+        Math.floor(elapsed / TYPEWRITER_INTERVAL_MS) + 1,
+        fullText.length
+      )
+      applyLen(expectedLen)
+
+      if (expectedLen === 1) {
         setTimeout(() => setIsLoading(false), 0)
       }
-      if (len >= fullText.length) {
+      if (expectedLen >= fullText.length) {
         clearInterval(timer)
         setTypewriterJob(null)
+        typewriterStateRef.current = null
       }
     }, TYPEWRITER_INTERVAL_MS)
-    return () => clearInterval(timer)
+
+    return () => {
+      clearInterval(timer)
+      typewriterStateRef.current = null
+    }
   }, [typewriterJob])
+
+  /** 탭 복귀 시 백그라운드 동안 밀린 타이핑 내용을 즉시 동기화 */
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) return
+      const state = typewriterStateRef.current
+      if (!state) return
+
+      const { fullText, idx, startTime } = state
+      const elapsed = performance.now() - startTime
+      const expectedLen = Math.min(
+        Math.floor(elapsed / TYPEWRITER_INTERVAL_MS),
+        fullText.length
+      )
+      if (expectedLen <= state.currentLen) return
+
+      state.currentLen = expectedLen
+      setMessages(prev => {
+        const next = [...prev]
+        if (next[idx]?.role === 'assistant') {
+          next[idx] = { ...next[idx], content: fullText.slice(0, expectedLen) }
+        }
+        return next
+      })
+
+      if (expectedLen >= fullText.length) {
+        setTypewriterJob(null)
+        setIsLoading(false)
+        typewriterStateRef.current = null
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [])
 
   const handleStop = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
