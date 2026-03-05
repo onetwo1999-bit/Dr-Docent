@@ -112,7 +112,7 @@ function logSummary(log: HealthLogItem): string {
   return log.notes || log.note || '기록'
 }
 
-export default function HealthLogButtons() {
+export default function HealthLogButtons({ minimal = false }: { minimal?: boolean }) {
   const [todayStats, setTodayStats] = useState<TodayStats>({
     meal: 0,
     exercise: 0,
@@ -216,110 +216,36 @@ export default function HealthLogButtons() {
     setEditingLog(null)
   }
 
-  return (
-    <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-200 shadow-sm">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="font-bold text-gray-900 text-lg">오늘의 건강 기록</h3>
-          <p className="text-xs text-gray-400 mt-0.5">
-            {new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
-          </p>
-        </div>
-      </div>
-
-      {/* 에러 메시지 */}
-      {error && (
-        <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg">
-          ⚠️ {error}
-        </div>
-      )}
-
-      {/* 4개의 로그 버튼 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
-        <LogButton
-          category="meal"
-          icon={<Utensils className="w-5 h-5 md:w-6 md:h-6" />}
-          label="식사 기록"
-          count={todayStats.meal}
-          onLog={() => handleLog('meal')}
-          isLoading={loadingCategory === 'meal'}
-          isSuccess={successCategory === 'meal'}
-        />
-        <LogButton
-          category="exercise"
-          icon={<Dumbbell className="w-5 h-5 md:w-6 md:h-6" />}
-          label="운동 완료"
-          count={todayStats.exercise}
-          onLog={() => handleLog('exercise')}
-          isLoading={loadingCategory === 'exercise'}
-          isSuccess={successCategory === 'exercise'}
-        />
-        <LogButton
-          category="medication"
-          icon={<Pill className="w-5 h-5 md:w-6 md:h-6" />}
-          label="복약 완료"
-          count={todayStats.medication}
-          onLog={() => handleLog('medication')}
-          isLoading={loadingCategory === 'medication'}
-          isSuccess={successCategory === 'medication'}
-        />
-        <LogButton
-          category="sleep"
-          icon={<Moon className="w-5 h-5 md:w-6 md:h-6" />}
-          label="수면 기록"
-          count={todayStats.sleep}
-          onLog={() => handleLog('sleep')}
-          isLoading={loadingCategory === 'sleep'}
-          isSuccess={successCategory === 'sleep'}
-        />
-      </div>
-
-      {/* 성공 토스트 메시지 (저장/수정 구분) */}
-      {successCategory && (
-        <div className="mt-4 p-3 bg-orange-100 border border-orange-200 text-orange-500 text-sm rounded-lg text-center font-medium">
-          ✓ {categoryLabels[successCategory]} 기록이 {lastSuccessAction === 'edit' ? '수정' : '저장'}되었습니다!
-        </div>
-      )}
-
-      {/* 오늘의 기록 리스트 (수정/삭제) */}
+  // 공통 오늘의 기록 리스트
+  const TodayLogList = () => (
+    <>
       {todayLogs.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <h4 className="text-sm font-semibold text-gray-700 mb-2">오늘의 기록</h4>
-          <ul className="space-y-2 max-h-48 overflow-y-auto">
+        <div className="mt-3 space-y-1.5">
+          <h4 className="text-xs font-semibold text-gray-500 mb-1">오늘의 기록</h4>
+          <ul className="space-y-1.5 max-h-40 overflow-y-auto">
             {todayLogs.map((log) => {
               const cat = log.category as CategoryType
               const config = {
-                meal: { icon: <Utensils className="w-4 h-4" />, label: categoryLabels.meal },
-                exercise: { icon: <Dumbbell className="w-4 h-4" />, label: categoryLabels.exercise },
-                medication: { icon: <Pill className="w-4 h-4" />, label: categoryLabels.medication },
-                sleep: { icon: <Moon className="w-4 h-4" />, label: categoryLabels.sleep }
+                meal: { icon: <Utensils className="w-3.5 h-3.5" />, label: categoryLabels.meal },
+                exercise: { icon: <Dumbbell className="w-3.5 h-3.5" />, label: categoryLabels.exercise },
+                medication: { icon: <Pill className="w-3.5 h-3.5" />, label: categoryLabels.medication },
+                sleep: { icon: <Moon className="w-3.5 h-3.5" />, label: categoryLabels.sleep },
               }[cat]
               if (!config) return null
               return (
-                <li
-                  key={log.id}
-                  className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 border border-gray-100 hover:bg-gray-100/80"
-                >
-                  <span className="text-orange-500">{config.icon}</span>
+                <li key={log.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/70 border border-orange-100">
+                  <span className="text-orange-400">{config.icon}</span>
                   <div className="flex-1 min-w-0">
-                    <span className="text-xs text-gray-500">{formatTime(log.logged_at)}</span>
-                    <p className="text-sm text-gray-800 truncate">{logSummary(log)}</p>
+                    <span className="text-[10px] text-gray-400">{formatTime(log.logged_at)}</span>
+                    <p className="text-xs text-gray-700 truncate">{logSummary(log)}</p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleLog(cat, log) }}
-                    className="p-1.5 text-gray-400 hover:text-orange-500 hover:bg-orange-100 rounded-lg transition-colors"
-                    title="수정"
-                  >
-                    <Pencil className="w-4 h-4" />
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleLog(cat, log) }}
+                    className="p-1 text-gray-300 hover:text-orange-400 rounded transition-colors" title="수정">
+                    <Pencil className="w-3 h-3" />
                   </button>
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); handleDelete(log) }}
-                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    title="삭제"
-                  >
-                    <Trash2 className="w-4 h-4" />
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(log) }}
+                    className="p-1 text-gray-300 hover:text-red-400 rounded transition-colors" title="삭제">
+                    <Trash2 className="w-3 h-3" />
                   </button>
                 </li>
               )
@@ -327,13 +253,12 @@ export default function HealthLogButtons() {
           </ul>
         </div>
       )}
+    </>
+  )
 
-      {/* 안내 문구 */}
-      <p className="mt-4 text-xs text-gray-400 text-center">
-        버튼을 눌러 상세 정보를 입력하세요
-      </p>
-
-      {/* 모달들 */}
+  // 공통 모달 묶음
+  const Modals = () => (
+    <>
       <MealLogModal
         isOpen={openModal === 'meal'}
         onClose={handleCloseModal}
@@ -358,6 +283,102 @@ export default function HealthLogButtons() {
         onSuccess={(payload) => handleModalSuccess('sleep', payload)}
         initialData={openModal === 'sleep' ? editingLog : null}
       />
+    </>
+  )
+
+  // minimal 모드: 카드 UI 없이 기록 리스트 + 모달만 렌더링 (OtterCard 내부 전용)
+  if (minimal) {
+    return (
+      <div>
+        {error && (
+          <div className="mb-2 p-2 bg-red-50 border border-red-100 text-red-600 text-xs rounded-lg">⚠️ {error}</div>
+        )}
+        {successCategory && (
+          <div className="mb-2 p-2 bg-orange-50 border border-orange-200 text-orange-500 text-xs rounded-lg text-center font-medium">
+            ✓ {categoryLabels[successCategory]} 기록이 {lastSuccessAction === 'edit' ? '수정' : '저장'}되었습니다!
+          </div>
+        )}
+        <TodayLogList />
+        <Modals />
+      </div>
+    )
+  }
+
+  // 기본 모드: 독립 카드 UI
+  return (
+    <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-200 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="font-bold text-gray-900 text-lg">오늘의 건강 기록</h3>
+          <p className="text-xs text-gray-400 mt-0.5">
+            {new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' })}
+          </p>
+        </div>
+      </div>
+
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg">⚠️ {error}</div>
+      )}
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-3">
+        <LogButton category="meal" icon={<Utensils className="w-5 h-5 md:w-6 md:h-6" />} label="식사 기록"
+          count={todayStats.meal} onLog={() => handleLog('meal')}
+          isLoading={loadingCategory === 'meal'} isSuccess={successCategory === 'meal'} />
+        <LogButton category="exercise" icon={<Dumbbell className="w-5 h-5 md:w-6 md:h-6" />} label="운동 완료"
+          count={todayStats.exercise} onLog={() => handleLog('exercise')}
+          isLoading={loadingCategory === 'exercise'} isSuccess={successCategory === 'exercise'} />
+        <LogButton category="medication" icon={<Pill className="w-5 h-5 md:w-6 md:h-6" />} label="복약 완료"
+          count={todayStats.medication} onLog={() => handleLog('medication')}
+          isLoading={loadingCategory === 'medication'} isSuccess={successCategory === 'medication'} />
+        <LogButton category="sleep" icon={<Moon className="w-5 h-5 md:w-6 md:h-6" />} label="수면 기록"
+          count={todayStats.sleep} onLog={() => handleLog('sleep')}
+          isLoading={loadingCategory === 'sleep'} isSuccess={successCategory === 'sleep'} />
+      </div>
+
+      {successCategory && (
+        <div className="mt-4 p-3 bg-orange-100 border border-orange-200 text-orange-500 text-sm rounded-lg text-center font-medium">
+          ✓ {categoryLabels[successCategory]} 기록이 {lastSuccessAction === 'edit' ? '수정' : '저장'}되었습니다!
+        </div>
+      )}
+
+      {todayLogs.length > 0 && (
+        <div className="mt-4 pt-4 border-t border-gray-100">
+          <h4 className="text-sm font-semibold text-gray-700 mb-2">오늘의 기록</h4>
+          <ul className="space-y-2 max-h-48 overflow-y-auto">
+            {todayLogs.map((log) => {
+              const cat = log.category as CategoryType
+              const config = {
+                meal: { icon: <Utensils className="w-4 h-4" />, label: categoryLabels.meal },
+                exercise: { icon: <Dumbbell className="w-4 h-4" />, label: categoryLabels.exercise },
+                medication: { icon: <Pill className="w-4 h-4" />, label: categoryLabels.medication },
+                sleep: { icon: <Moon className="w-4 h-4" />, label: categoryLabels.sleep },
+              }[cat]
+              if (!config) return null
+              return (
+                <li key={log.id} className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 border border-gray-100 hover:bg-gray-100/80">
+                  <span className="text-orange-500">{config.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs text-gray-500">{formatTime(log.logged_at)}</span>
+                    <p className="text-sm text-gray-800 truncate">{logSummary(log)}</p>
+                  </div>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleLog(cat, log) }}
+                    className="p-1.5 text-gray-400 hover:text-orange-500 hover:bg-orange-100 rounded-lg transition-colors" title="수정">
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); handleDelete(log) }}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="삭제">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+
+      <p className="mt-4 text-xs text-gray-400 text-center">버튼을 눌러 상세 정보를 입력하세요</p>
+
+      <Modals />
     </div>
   )
 }

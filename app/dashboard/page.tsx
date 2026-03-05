@@ -182,15 +182,17 @@ export default async function DashboardPage() {
   const hypertension = hasHypertension(profile?.conditions, profile?.chronic_diseases)
 
   // 📅 health_logs 기록 날짜 수 (KST distinct date 기준)
-  const { data: rawLogDates } = await supabase
+  const { data: rawLogDates, error: logDatesError } = await supabase
     .from('health_logs')
     .select('logged_at')
     .eq('user_id', user.id)
+  if (logDatesError) console.error('[Dashboard] health_logs 날짜 조회 실패:', logDatesError.message)
   const loggedDays = new Set(
-    (rawLogDates || []).map(r =>
-      new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date(r.logged_at))
-    )
+    (rawLogDates || [])
+      .map(r => r.logged_at ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date(r.logged_at)) : null)
+      .filter(Boolean)
   ).size
+  console.log(`[Dashboard] 기록 일수: ${loggedDays}일 / 잠금해제: ${loggedDays >= 7}`)
   const isHealthDataUnlocked = loggedDays >= 7
 
   // 시간대별 인사말

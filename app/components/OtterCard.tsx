@@ -216,9 +216,9 @@ export default function OtterCard() {
 
       <p className="mt-3 text-xs text-gray-400 text-center">{moodSummary}</p>
 
-      {/* 건강 기록 버튼 통합 */}
-      <div className="mt-4 pt-4 border-t border-orange-100">
-        <HealthLogButtons />
+      {/* 기록 리스트 + 모달 (minimal: 카드 UI 없이 OtterCard 안에 통합) */}
+      <div className="mt-3 pt-3 border-t border-orange-100">
+        <HealthLogButtons minimal />
       </div>
     </div>
   )
