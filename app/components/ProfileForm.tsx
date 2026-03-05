@@ -99,7 +99,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
   return (
     <div className="bg-white rounded-2xl w-full max-w-md border border-gray-100 shadow-sm overflow-hidden">
       {/* 헤더 */}
-      <div className="bg-[#2DD4BF] p-4 text-white">
+      <div className="bg-orange-500 p-4 text-white">
         <div className="flex items-center gap-3">
           <Link href="/dashboard" className="hover:bg-white/20 p-1 rounded-lg transition-colors">
             <ArrowLeft className="w-5 h-5" />
@@ -115,7 +115,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
         {/* 기본 정보 */}
         <div className="space-y-4">
           <h3 className="font-semibold flex items-center gap-2 text-gray-900">
-            <User className="w-5 h-5 text-[#2DD4BF]" />
+            <User className="w-5 h-5 text-orange-500" />
             기본 정보
           </h3>
           
@@ -136,7 +136,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
               <select
                 value={data.gender}
                 onChange={(e) => handleChange('gender', e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
               >
                 <option value="">선택</option>
                 <option value="male">남성</option>
@@ -149,7 +149,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
         {/* 신체 정보 */}
         <div className="space-y-4">
           <h3 className="font-semibold flex items-center gap-2 text-gray-900">
-            <Ruler className="w-5 h-5 text-[#2DD4BF]" />
+            <Ruler className="w-5 h-5 text-orange-500" />
             신체 정보
           </h3>
           
@@ -161,7 +161,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
                 value={data.height}
                 onChange={(e) => handleChange('height', e.target.value)}
                 placeholder="170"
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
               />
             </div>
 
@@ -172,7 +172,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
                 value={data.weight}
                 onChange={(e) => handleChange('weight', e.target.value)}
                 placeholder="65"
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent"
               />
             </div>
           </div>
@@ -181,7 +181,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
         {/* 건강 정보 */}
         <div className="space-y-4">
           <h3 className="font-semibold flex items-center gap-2 text-gray-900">
-            <Pill className="w-5 h-5 text-[#2DD4BF]" />
+            <Pill className="w-5 h-5 text-orange-500" />
             건강 정보
           </h3>
           
@@ -192,7 +192,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
               onChange={(e) => handleChange('conditions', e.target.value)}
               placeholder="예: 고혈압, 당뇨 (없으면 비워두세요)"
               rows={2}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent resize-none"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent resize-none"
             />
           </div>
 
@@ -203,7 +203,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
               onChange={(e) => handleChange('medications', e.target.value)}
               placeholder="예: 혈압약, 비타민 (없으면 비워두세요)"
               rows={2}
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2DD4BF] focus:border-transparent resize-none"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-gray-800 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-orange-400 focus:border-transparent resize-none"
             />
           </div>
         </div>
@@ -212,7 +212,7 @@ export default function ProfileForm({ userId, userName, initialProfile }: Profil
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full bg-[#2DD4BF] hover:bg-[#26b8a5] disabled:bg-gray-200 disabled:cursor-not-allowed text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
+          className="w-full bg-orange-500 hover:bg-orange-600 disabled:bg-gray-200 disabled:cursor-not-allowed text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
         >
           <Save className="w-5 h-5" />
           {isSubmitting ? '저장 중...' : '변경사항 저장'}

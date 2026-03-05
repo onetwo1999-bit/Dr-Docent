@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { OTTER_STATUS_LABELS, getOtterMoodSummary } from '@/lib/otter'
 import type { OtterState, OtterActionType } from '@/lib/otter'
+import HealthLogButtons from './HealthLogButtons'
 
 const ACTION_ORDER: OtterActionType[] = ['feed', 'walk', 'sleep', 'supplement']
 
@@ -187,15 +188,17 @@ export default function OtterCard() {
         </div>
       )}
 
-      {/* 4개 상태 뱃지 */}
+      {/* 4개 상태 뱃지 (클릭하면 기록 모달 오픈) */}
       <div className="grid grid-cols-4 gap-2">
         {ACTION_ORDER.map((action) => {
           const done = state.status[action]
           return (
-            <div
+            <button
               key={action}
-              className={`flex flex-col items-center py-2.5 px-1 rounded-xl border transition-all ${
-                done ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100'
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-health-log-modal', { detail: { action } }))}
+              className={`flex flex-col items-center py-2.5 px-1 rounded-xl border transition-all active:scale-95 ${
+                done ? 'bg-orange-50 border-orange-200' : 'bg-white border-gray-100 hover:border-orange-200 hover:bg-orange-50/50'
               }`}
             >
               <span className={`text-xl mb-1 ${done ? '' : 'grayscale opacity-35'}`}>
@@ -206,12 +209,17 @@ export default function OtterCard() {
               }`}>
                 {done ? OTTER_STATUS_LABELS[action].done : OTTER_STATUS_LABELS[action].pending}
               </span>
-            </div>
+            </button>
           )
         })}
       </div>
 
       <p className="mt-3 text-xs text-gray-400 text-center">{moodSummary}</p>
+
+      {/* 건강 기록 버튼 통합 */}
+      <div className="mt-4 pt-4 border-t border-orange-100">
+        <HealthLogButtons />
+      </div>
     </div>
   )
 }

@@ -129,6 +129,26 @@ export default function HealthLogButtons() {
   /** 성공 토스트에 수정/저장 구분 표시용 */
   const [lastSuccessAction, setLastSuccessAction] = useState<'add' | 'edit'>('add')
 
+  // 수달 카드 뱃지 클릭 시 모달 열기 (open-health-log-modal 이벤트)
+  useEffect(() => {
+    const ACTION_TO_CATEGORY: Record<string, CategoryType> = {
+      feed: 'meal',
+      walk: 'exercise',
+      supplement: 'medication',
+      sleep: 'sleep',
+    }
+    const handler = (e: Event) => {
+      const action = (e as CustomEvent<{ action: string }>).detail?.action
+      const category = action ? ACTION_TO_CATEGORY[action] : null
+      if (category) {
+        setEditingLog(null)
+        setOpenModal(category)
+      }
+    }
+    window.addEventListener('open-health-log-modal', handler)
+    return () => window.removeEventListener('open-health-log-modal', handler)
+  }, [])
+
   // 오늘 통계 + 오늘 기록 목록 불러오기
   useEffect(() => {
     fetchTodayStats()
