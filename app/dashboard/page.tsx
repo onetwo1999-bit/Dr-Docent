@@ -217,222 +217,171 @@ export default async function DashboardPage() {
             greeting={greeting}
           />
 
-          {/* 📊 4개의 데이터 카드 그리드 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            
-            {/* 카드 1: 기본 신체 지표 */}
-            <Link 
-              href="/profile"
-              className="group bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300 cursor-pointer"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-lg bg-[#2DD4BF]/10 flex items-center justify-center flex-shrink-0">
-                    <User className="w-4 h-4 text-[#2DD4BF]" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-base md:text-lg font-bold text-gray-900">기본 신체 지표</h3>
-                    <p className="text-xs md:text-sm text-gray-500">Basic Metrics</p>
-                  </div>
-                </div>
-                <ArrowUpRight className="w-4 h-4 text-gray-300 flex-shrink-0 group-hover:text-[#2DD4BF] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-              </div>
-              
-              {hasProfile && profile ? (
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-600 font-medium">나이</span>
-                    <span className="font-bold text-gray-900">{currentAge != null ? `${currentAge}세` : '-'}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-600 font-medium">키</span>
-                    <span className="font-bold text-gray-900">{profile.height || '-'}cm</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-600 font-medium">몸무게</span>
-                    <span className="font-bold text-gray-900">{profile.weight || '-'}kg</span>
-                  </div>
-                  <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                    <span className="text-gray-600 text-sm font-medium">BMI</span>
-                    <div className="text-right">
-                      <span className={`font-bold text-lg md:text-xl ${bmi?.color || 'text-gray-900'}`}>
-                        {bmi?.value || '-'}
-                      </span>
-                      <span className={`ml-2 text-sm md:text-base font-medium ${bmi?.color || 'text-gray-600'}`}>
-                        ({bmi?.category || '-'})
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-gray-400 text-sm">프로필을 등록해주세요</p>
-                  <p className="text-[#2DD4BF] text-xs mt-1 font-medium">클릭하여 설정 →</p>
-                </div>
-              )}
-            </Link>
+          {/* 1. 수달 카드 */}
+          <OtterCard />
 
-            {/* 카드 2: AI 건강 리포트 */}
-            <HealthReport profile={profile} userId={user.id} />
+          {/* 2. 오늘의 건강 기록 */}
+          <HealthLogButtons />
 
-            {/* 카드 3: AI 분석 요약 */}
-            <Link 
-              href="/chat"
-              className="group bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300 cursor-pointer"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-lg bg-[#2DD4BF]/10 flex items-center justify-center flex-shrink-0">
-                    <MessageSquare className="w-4 h-4 text-[#2DD4BF]" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-base md:text-lg font-bold text-gray-900">AI 분석 요약</h3>
-                    <p className="text-xs md:text-sm text-gray-500">Last Consultation</p>
-                  </div>
+          {/* 3. AI 분석 요약 */}
+          <Link
+            href="/chat"
+            className="group bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-300 transition-all duration-300 cursor-pointer block"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                  <MessageSquare className="w-4 h-4 text-orange-500" />
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-gray-300 flex-shrink-0 group-hover:text-[#2DD4BF] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-              </div>
-              
-              <div className="space-y-2">
-                <div className="flex items-center gap-2 text-gray-500 text-sm">
-                  <span>💡 최근 상담 키워드</span>
-                </div>
-                
-                {hasProfile ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {bmi && bmi.value >= 25 && (
-                      <span className="px-2.5 py-1 bg-orange-50 text-orange-600 text-xs rounded-full">
-                        #체중관리
-                      </span>
-                    )}
-                    {profile?.conditions?.includes('고혈압') && (
-                      <span className="px-2.5 py-1 bg-rose-50 text-rose-600 text-xs rounded-full">
-                        #혈압관리
-                      </span>
-                    )}
-                    {profile?.conditions?.includes('당뇨') && (
-                      <span className="px-2.5 py-1 bg-amber-50 text-amber-600 text-xs rounded-full">
-                        #혈당관리
-                      </span>
-                    )}
-                    {currentAge != null && currentAge >= 50 && (
-                      <span className="px-2.5 py-1 bg-purple-50 text-purple-600 text-xs rounded-full">
-                        #중장년건강
-                      </span>
-                    )}
-                    <span className="px-2.5 py-1 bg-[#2DD4BF]/10 text-[#2DD4BF] text-xs rounded-full font-medium">
-                      #맞춤상담
-                    </span>
-                  </div>
-                ) : (
-                  <p className="text-gray-400 text-sm">프로필 등록 후 맞춤 분석 가능</p>
-                )}
-                
-                <div className="pt-2 mt-1 border-t border-gray-100">
-                  <div className="flex items-center justify-between">
-                    <span className="text-gray-500 text-sm">AI 상담 시작하기</span>
-                    <span className="text-[#2DD4BF] text-sm font-medium group-hover:underline">
-                      채팅방 →
-                    </span>
-                  </div>
+                <div className="min-w-0">
+                  <h3 className="text-base md:text-lg font-bold text-gray-900">AI 분석 요약</h3>
+                  <p className="text-xs md:text-sm text-gray-500">Last Consultation</p>
                 </div>
               </div>
-            </Link>
-
-            {/* 카드 4: 종합 건강 점수 */}
-            <div className="group bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300">
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-lg bg-[#2DD4BF]/10 flex items-center justify-center flex-shrink-0">
-                    <Activity className="w-4 h-4 text-[#2DD4BF]" />
-                  </div>
-                  <div className="min-w-0">
-                    <h3 className="text-base md:text-lg font-bold text-gray-900">종합 건강 점수</h3>
-                    <p className="text-xs md:text-sm text-gray-500">Health Score</p>
-                  </div>
-                </div>
-                <div className={`text-2xl md:text-3xl font-bold flex-shrink-0 ${getScoreColor(healthScore)}`}>
-                  {hasProfile ? healthScore : '-'}
-                  <span className="text-base md:text-lg font-normal text-gray-600">/100</span>
-                </div>
+              <ArrowUpRight className="w-4 h-4 text-gray-300 flex-shrink-0 group-hover:text-orange-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-gray-500 text-sm">
+                <span>💡 최근 상담 키워드</span>
               </div>
-              
               {hasProfile ? (
-                <div className="space-y-2">
-                  {/* 점수 프로그레스 바 */}
-                  <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
-                    <div 
-                      className={`h-full rounded-full transition-all duration-500 ${
-                        healthScore >= 80 ? 'bg-green-500' :
-                        healthScore >= 60 ? 'bg-yellow-500' :
-                        healthScore >= 40 ? 'bg-orange-500' : 'bg-red-500'
-                      }`}
-                      style={{ width: `${healthScore}%` }}
-                    />
-                  </div>
-                  
-                  {/* 5대 지표 미니 요약 */}
-                  <div className="grid grid-cols-5 gap-0.5 text-center text-[11px]">
-                    <div className="p-1">
-                      <div className="text-[#2DD4BF]">💪</div>
-                      <div className="text-gray-400">체력</div>
-                    </div>
-                    <div className="p-1">
-                      <div className="text-[#2DD4BF]">❤️</div>
-                      <div className="text-gray-400">심장</div>
-                    </div>
-                    <div className="p-1">
-                      <div className="text-[#2DD4BF]">🦴</div>
-                      <div className="text-gray-400">근골격</div>
-                    </div>
-                    <div className="p-1">
-                      <div className="text-[#2DD4BF]">🥗</div>
-                      <div className="text-gray-400">영양</div>
-                    </div>
-                    <div className="p-1">
-                      <div className="text-[#2DD4BF]">🧘</div>
-                      <div className="text-gray-400">대사</div>
-                    </div>
-                  </div>
-                  
-                  <p className="text-center text-xs text-gray-400">
-                    글로벌 의료 가이드라인 기준
-                  </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {bmi && bmi.value >= 25 && (
+                    <span className="px-2.5 py-1 bg-orange-50 text-orange-600 text-xs rounded-full">#체중관리</span>
+                  )}
+                  {profile?.conditions?.includes('고혈압') && (
+                    <span className="px-2.5 py-1 bg-rose-50 text-rose-600 text-xs rounded-full">#혈압관리</span>
+                  )}
+                  {profile?.conditions?.includes('당뇨') && (
+                    <span className="px-2.5 py-1 bg-amber-50 text-amber-600 text-xs rounded-full">#혈당관리</span>
+                  )}
+                  {currentAge != null && currentAge >= 50 && (
+                    <span className="px-2.5 py-1 bg-purple-50 text-purple-600 text-xs rounded-full">#중장년건강</span>
+                  )}
+                  <span className="px-2.5 py-1 bg-orange-50 text-orange-500 text-xs rounded-full font-medium">#맞춤상담</span>
                 </div>
               ) : (
-                <div className="text-center py-2">
-                  <p className="text-gray-400 text-sm">프로필을 등록하면</p>
-                  <p className="text-gray-400 text-sm">건강 점수를 확인할 수 있어요</p>
+                <p className="text-gray-400 text-sm">프로필 등록 후 맞춤 분석 가능</p>
+              )}
+              <div className="pt-2 mt-1 border-t border-gray-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 text-sm">AI 상담 시작하기</span>
+                  <span className="text-orange-500 text-sm font-medium group-hover:underline">채팅방 →</span>
+                </div>
+              </div>
+            </div>
+          </Link>
+
+          {/* 4. 기본 신체 지표 */}
+          <Link
+            href="/profile"
+            className="group bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-300 transition-all duration-300 cursor-pointer block"
+          >
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4 text-orange-500" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base md:text-lg font-bold text-gray-900">기본 신체 지표</h3>
+                  <p className="text-xs md:text-sm text-gray-500">Basic Metrics</p>
+                </div>
+              </div>
+              <ArrowUpRight className="w-4 h-4 text-gray-300 flex-shrink-0 group-hover:text-orange-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+            </div>
+            {hasProfile && profile ? (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-600 font-medium">나이</span>
+                  <span className="font-bold text-gray-900">{currentAge != null ? `${currentAge}세` : '-'}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-600 font-medium">키</span>
+                  <span className="font-bold text-gray-900">{profile.height || '-'}cm</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-gray-600 font-medium">몸무게</span>
+                  <span className="font-bold text-gray-900">{profile.weight || '-'}kg</span>
+                </div>
+                <div className="flex justify-between items-center pt-2 border-t border-gray-100">
+                  <span className="text-gray-600 text-sm font-medium">BMI</span>
+                  <span className="font-bold text-lg md:text-xl text-gray-900">{bmi?.value || '-'}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-4">
+                <p className="text-gray-400 text-sm">프로필을 등록해주세요</p>
+                <p className="text-orange-400 text-xs mt-1 font-medium">클릭하여 설정 →</p>
+              </div>
+            )}
+          </Link>
+
+          {/* 종합 건강 점수 */}
+          <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
+            <div className="flex items-start justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                  <Activity className="w-4 h-4 text-orange-500" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base md:text-lg font-bold text-gray-900">종합 건강 점수</h3>
+                  <p className="text-xs md:text-sm text-gray-500">Health Score</p>
+                </div>
+              </div>
+              {hasProfile && (
+                <div className={`text-2xl md:text-3xl font-bold flex-shrink-0 ${getScoreColor(healthScore)}`}>
+                  {healthScore}
+                  <span className="text-base md:text-lg font-normal text-gray-600">/100</span>
                 </div>
               )}
             </div>
+            {hasProfile ? (
+              <div className="space-y-2">
+                <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      healthScore >= 80 ? 'bg-green-500' :
+                      healthScore >= 60 ? 'bg-yellow-500' :
+                      healthScore >= 40 ? 'bg-orange-500' : 'bg-red-500'
+                    }`}
+                    style={{ width: `${healthScore}%` }}
+                  />
+                </div>
+                <div className="grid grid-cols-5 gap-0.5 text-center text-[11px]">
+                  <div className="p-1"><div className="text-orange-400">💪</div><div className="text-gray-400">체력</div></div>
+                  <div className="p-1"><div className="text-orange-400">❤️</div><div className="text-gray-400">심장</div></div>
+                  <div className="p-1"><div className="text-orange-400">🦴</div><div className="text-gray-400">근골격</div></div>
+                  <div className="p-1"><div className="text-orange-400">🥗</div><div className="text-gray-400">영양</div></div>
+                  <div className="p-1"><div className="text-orange-400">🧘</div><div className="text-gray-400">대사</div></div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-2">
+                <p className="text-gray-400 text-sm">기록을 시작하면 점수가 생겨요</p>
+              </div>
+            )}
           </div>
 
-          {/* 🦦 수달 상태 카드 */}
-          <OtterCard />
+          {/* AI 건강 리포트 */}
+          <HealthReport profile={profile} userId={user.id} />
 
-          {/* 📝 오늘의 건강 기록 버튼 */}
-          <HealthLogButtons />
-
-          {/* 👥 그룹 캘린더 */}
+          {/* 그룹 캘린더 */}
           <DashboardGroupSection />
 
-          {/* 🌸 그날 케어 (여성 사용자 또는 미설정 시에만 표시) */}
+          {/* 그날 케어 */}
           {(!profile?.gender || profile?.gender === 'female') && (
             <CycleCareCard />
           )}
 
-          {/* 🕸️ 건강 레이더 차트 (확장 섹션) */}
+          {/* 건강 레이더 차트 */}
           {hasProfile && profile && (
             <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-base font-semibold flex items-center gap-2 text-gray-900">
-                  <Activity className="w-4 h-4 text-[#2DD4BF]" />
+                  <Activity className="w-4 h-4 text-orange-500" />
                   5대 건강 지표 레이더 차트
                 </h2>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">
-                  실시간 분석
-                </span>
+                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">실시간 분석</span>
               </div>
               <HealthRadarChart profile={profile} />
               <p className="text-xs text-gray-400 text-center mt-3">
@@ -441,37 +390,32 @@ export default async function DashboardPage() {
             </div>
           )}
 
-          {/* 🎮 주요 액션 버튼 */}
+          {/* 주요 액션 버튼 */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-3">
-            {/* AI 상담 버튼 (메인) */}
-            <Link 
+            <Link
               href="/chat"
-              className="bg-[#2DD4BF] hover:bg-[#26b8a5] text-white py-3 md:py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.01] shadow-md"
+              className="bg-orange-500 hover:bg-orange-600 text-white py-3 md:py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all hover:scale-[1.01] shadow-md"
             >
               <MessageSquare className="w-5 h-5" />
               <span className="text-base">AI 상담</span>
             </Link>
-
-            {/* 캘린더 버튼 */}
-            <Link 
+            <Link
               href="/calendar"
-              className="bg-white hover:bg-gray-50 text-[#2DD4BF] py-3 md:py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all border-2 border-[#2DD4BF] hover:scale-[1.01]"
+              className="bg-white hover:bg-orange-50 text-orange-500 py-3 md:py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all border-2 border-orange-400 hover:scale-[1.01]"
             >
               <Calendar className="w-5 h-5" />
               <span className="text-base">캘린더</span>
             </Link>
-
-            {/* 프로필 설정 버튼 */}
-            <Link 
+            <Link
               href="/profile"
               className="bg-white hover:bg-gray-50 text-gray-600 py-3 md:py-3.5 rounded-xl font-bold flex items-center justify-center gap-2 transition-all border border-gray-200 hover:scale-[1.01]"
             >
-              <Settings className="w-5 h-5 text-[#2DD4BF]" />
+              <Settings className="w-5 h-5 text-orange-500" />
               <span className="text-base">{hasProfile ? '프로필' : '설정'}</span>
             </Link>
           </div>
 
-          {/* 📋 계정 정보 (접이식) */}
+          {/* 계정 정보 */}
           <details className="bg-white rounded-xl md:rounded-2xl border border-gray-100 shadow-sm">
             <summary className="p-3 md:p-4 cursor-pointer text-gray-500 text-sm hover:text-gray-700 transition-colors">
               계정 정보 보기
@@ -483,13 +427,11 @@ export default async function DashboardPage() {
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">가입일</span>
-                <span className="text-gray-700">
-                  {new Date(user.created_at).toLocaleDateString('ko-KR')}
-                </span>
+                <span className="text-gray-700">{new Date(user.created_at).toLocaleDateString('ko-KR')}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-400">차트 번호</span>
-                <span className="text-[#2DD4BF] font-semibold">#{chartNumber}</span>
+                <span className="text-orange-500 font-semibold">#{chartNumber}</span>
               </div>
             </div>
           </details>
