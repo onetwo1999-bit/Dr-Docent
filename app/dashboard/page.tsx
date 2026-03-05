@@ -13,13 +13,11 @@ import { getAgeFromBirthDate } from '@/utils/health'
 import LogoutSection from '../components/LogoutSection'
 import DashboardClient from '../components/DashboardClient'
 import HealthRadarChart from '../components/HealthRadarChart'
-import HealthLogButtons from '../components/HealthLogButtons'
 import CycleCareCard from '../components/CycleCareCard'
 import HealthReport from '../components/HealthReport'
 import DashboardGroupSection from '../components/DashboardGroupSection'
 import OtterCard from '../components/OtterCard'
 import DashboardShell from '../components/DashboardShell'
-import DashboardGreeting from '../components/DashboardGreeting'
 
 // 🔒 HTTP → HTTPS 변환 함수
 function toSecureUrl(url: string | null | undefined): string | null {
@@ -208,20 +206,8 @@ export default async function DashboardPage() {
       <div className="min-h-screen bg-white text-gray-800 p-3 md:p-5 pb-[env(safe-area-inset-bottom)]">
         <div className="max-w-6xl mx-auto space-y-4">
           
-          {/* 🎯 VIP 인사말 헤더 — Realtime 닉네임 동기화 */}
-          <DashboardGreeting
-            userId={user.id}
-            initialNickname={profileNickname}
-            emailPrefix={emailPrefix}
-            chartNumber={chartNumber}
-            greeting={greeting}
-          />
-
-          {/* 1. 수달 카드 */}
+          {/* 1. 수달 카드 (기록 버튼 포함) */}
           <OtterCard />
-
-          {/* 2. 오늘의 건강 기록 */}
-          <HealthLogButtons />
 
           {/* 3. AI 분석 요약 */}
           <Link
@@ -272,49 +258,53 @@ export default async function DashboardPage() {
             </div>
           </Link>
 
-          {/* 4. 기본 신체 지표 */}
-          <Link
-            href="/profile"
-            className="group bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-300 transition-all duration-300 cursor-pointer block"
-          >
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-orange-500" />
+          {/* 4. 기본 신체 지표 + AI 건강 리포트 (50:50) */}
+          <div className="grid grid-cols-2 gap-3">
+            <Link
+              href="/profile"
+              className="group bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-300 transition-all duration-300 cursor-pointer block"
+            >
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                    <User className="w-4 h-4 text-orange-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-gray-900">신체 지표</h3>
+                    <p className="text-[10px] text-gray-500">Basic Metrics</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <h3 className="text-base md:text-lg font-bold text-gray-900">기본 신체 지표</h3>
-                  <p className="text-xs md:text-sm text-gray-500">Basic Metrics</p>
-                </div>
+                <ArrowUpRight className="w-3.5 h-3.5 text-gray-300 flex-shrink-0 group-hover:text-orange-400 transition-all" />
               </div>
-              <ArrowUpRight className="w-4 h-4 text-gray-300 flex-shrink-0 group-hover:text-orange-400 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
-            </div>
-            {hasProfile && profile ? (
-              <div className="space-y-2">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-600 font-medium">나이</span>
-                  <span className="font-bold text-gray-900">{currentAge != null ? `${currentAge}세` : '-'}</span>
+              {hasProfile && profile ? (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-500">나이</span>
+                    <span className="font-bold text-gray-900">{currentAge != null ? `${currentAge}세` : '-'}</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-500">키</span>
+                    <span className="font-bold text-gray-900">{profile.height || '-'}cm</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-gray-500">몸무게</span>
+                    <span className="font-bold text-gray-900">{profile.weight || '-'}kg</span>
+                  </div>
+                  <div className="flex justify-between items-center pt-1.5 border-t border-gray-100">
+                    <span className="text-gray-500 text-xs">BMI</span>
+                    <span className="font-bold text-base text-gray-900">{bmi?.value || '-'}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-600 font-medium">키</span>
-                  <span className="font-bold text-gray-900">{profile.height || '-'}cm</span>
+              ) : (
+                <div className="text-center py-3">
+                  <p className="text-gray-400 text-xs">프로필을 등록해주세요</p>
+                  <p className="text-orange-400 text-[10px] mt-1 font-medium">클릭하여 설정 →</p>
                 </div>
-                <div className="flex justify-between items-center text-sm">
-                  <span className="text-gray-600 font-medium">몸무게</span>
-                  <span className="font-bold text-gray-900">{profile.weight || '-'}kg</span>
-                </div>
-                <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-                  <span className="text-gray-600 text-sm font-medium">BMI</span>
-                  <span className="font-bold text-lg md:text-xl text-gray-900">{bmi?.value || '-'}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-4">
-                <p className="text-gray-400 text-sm">프로필을 등록해주세요</p>
-                <p className="text-orange-400 text-xs mt-1 font-medium">클릭하여 설정 →</p>
-              </div>
-            )}
-          </Link>
+              )}
+            </Link>
+
+            <HealthReport profile={profile} userId={user.id} />
+          </div>
 
           {/* 종합 건강 점수 */}
           <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
@@ -361,9 +351,6 @@ export default async function DashboardPage() {
               </div>
             )}
           </div>
-
-          {/* AI 건강 리포트 */}
-          <HealthReport profile={profile} userId={user.id} />
 
           {/* 그룹 캘린더 */}
           <DashboardGroupSection />

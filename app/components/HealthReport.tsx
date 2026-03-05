@@ -230,7 +230,7 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
     return (
       <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-200 shadow-sm">
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 text-[#2DD4BF] animate-spin" />
+          <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
         </div>
       </div>
     )
@@ -259,28 +259,28 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
 
   const SummaryCard = () => (
     <div
-      className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-[#2DD4BF] transition-all duration-300 cursor-pointer group"
+      className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-300 transition-all duration-300 cursor-pointer group"
       onClick={() => setIsModalOpen(true)}
     >
       {/* 헤더 */}
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-[#2DD4BF]/10 flex items-center justify-center">
-            <FileText className="w-4 h-4 text-[#2DD4BF]" />
+          <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center">
+            <FileText className="w-4 h-4 text-orange-500" />
           </div>
           <div>
             <h3 className="font-semibold text-gray-900">AI 건강 리포트</h3>
             <p className="text-xs text-gray-400">단기 신체 리포트</p>
           </div>
         </div>
-        <ArrowUpRight className="w-5 h-5 text-gray-300 group-hover:text-[#2DD4BF] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
+        <ArrowUpRight className="w-5 h-5 text-gray-300 group-hover:text-orange-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all" />
       </div>
 
       {/* 긍정 피드백 한줄: 짧으면 통째로, 길면 일부 선명 + 아래쪽 페이드 */}
       {report && (
-        <div className="relative rounded-lg bg-[#2DD4BF]/5 border border-[#2DD4BF]/15 p-3">
+        <div className="relative rounded-lg bg-orange-50 border border-orange-100 p-3">
           <div className="flex items-start gap-2">
-            <CheckCircle className="w-4 h-4 text-[#2DD4BF] mt-0.5 flex-shrink-0" />
+            <CheckCircle className="w-4 h-4 text-orange-500 mt-0.5 flex-shrink-0" />
             <div className="flex-1 min-w-0 relative">
               <p
                 className="text-sm text-gray-700 leading-[1.375] pr-1"
@@ -307,7 +307,7 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
             </div>
           </div>
           {showFade && (
-            <p className="text-xs text-[#2DD4BF] mt-2 font-medium">탭하면 전체 보기</p>
+            <p className="text-xs text-orange-500 mt-2 font-medium">탭하면 전체 보기</p>
           )}
         </div>
       )}
@@ -335,8 +335,8 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
             {/* 모달 헤더 */}
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-[#2DD4BF]/10 flex items-center justify-center">
-                  <FileText className="w-6 h-6 text-[#2DD4BF]" />
+                <div className="w-12 h-12 rounded-xl bg-orange-50 flex items-center justify-center">
+                  <FileText className="w-6 h-6 text-orange-500" />
                 </div>
                 <div>
                   <h3 className="font-bold text-lg text-gray-900">AI 건강 리포트</h3>
@@ -376,11 +376,11 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
                 </div>
 
                 {/* 피드백 */}
-                <div className="p-4 bg-[#2DD4BF]/10 rounded-xl border border-[#2DD4BF]/20">
+                <div className="p-4 bg-orange-50 rounded-xl border border-orange-200">
                   <div className="flex items-start gap-3">
-                    <CheckCircle className="w-5 h-5 text-[#2DD4BF] mt-0.5 flex-shrink-0" />
+                    <CheckCircle className="w-5 h-5 text-orange-500 mt-0.5 flex-shrink-0" />
                     <div className="flex-1">
-                      <h4 className="font-semibold text-[#2DD4BF] mb-1">긍정 피드백</h4>
+                      <h4 className="font-semibold text-orange-500 mb-1">긍정 피드백</h4>
                       <p className="text-sm text-gray-700 leading-relaxed">{report.feedback}</p>
                     </div>
                   </div>
@@ -421,7 +421,7 @@ export default function HealthReport({ profile, userId }: HealthReportProps) {
     return (
       <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 text-[#2DD4BF] animate-spin" />
+          <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
         </div>
       </div>
     )

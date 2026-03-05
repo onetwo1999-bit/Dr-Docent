@@ -65,22 +65,22 @@ function LogButton({ category, icon, label, count, onLog, isLoading, isSuccess }
       className={`
         flex flex-col items-center justify-center p-3 md:p-4 rounded-xl border transition-all duration-200
         ${isSuccess 
-          ? 'bg-[#2DD4BF]/5 border-[#2DD4BF] scale-[1.02]' 
-          : 'bg-white border-gray-200 hover:border-[#2DD4BF] hover:bg-[#2DD4BF]/5'
+          ? 'bg-orange-50 border-orange-400 scale-[1.02]' 
+          : 'bg-white border-gray-200 hover:border-orange-400 hover:bg-orange-50'
         }
         ${isLoading ? 'opacity-60 cursor-wait' : 'cursor-pointer active:scale-[0.98]'}
       `}
     >
       <div className={`
         w-11 h-11 md:w-12 md:h-12 rounded-xl flex items-center justify-center mb-2 transition-all
-        ${isSuccess ? 'bg-[#2DD4BF] shadow-sm' : 'bg-[#2DD4BF]/10'}
+        ${isSuccess ? 'bg-orange-500 shadow-sm' : 'bg-orange-100'}
       `}>
         {isLoading ? (
-          <Loader2 className="w-5 h-5 md:w-6 md:h-6 text-[#2DD4BF] animate-spin" />
+          <Loader2 className="w-5 h-5 md:w-6 md:h-6 text-orange-500 animate-spin" />
         ) : isSuccess ? (
           <Check className="w-5 h-5 md:w-6 md:h-6 text-white" />
         ) : (
-          <span className="text-[#2DD4BF]">{icon}</span>
+          <span className="text-orange-500">{icon}</span>
         )}
       </div>
       <span className="text-xs md:text-sm font-semibold text-gray-800 mb-0.5">{label}</span>
@@ -256,7 +256,7 @@ export default function HealthLogButtons() {
 
       {/* 성공 토스트 메시지 (저장/수정 구분) */}
       {successCategory && (
-        <div className="mt-4 p-3 bg-[#2DD4BF]/10 border border-[#2DD4BF]/20 text-[#2DD4BF] text-sm rounded-lg text-center font-medium">
+        <div className="mt-4 p-3 bg-orange-100 border border-orange-200 text-orange-500 text-sm rounded-lg text-center font-medium">
           ✓ {categoryLabels[successCategory]} 기록이 {lastSuccessAction === 'edit' ? '수정' : '저장'}되었습니다!
         </div>
       )}
@@ -280,7 +280,7 @@ export default function HealthLogButtons() {
                   key={log.id}
                   className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 border border-gray-100 hover:bg-gray-100/80"
                 >
-                  <span className="text-[#2DD4BF]">{config.icon}</span>
+                  <span className="text-orange-500">{config.icon}</span>
                   <div className="flex-1 min-w-0">
                     <span className="text-xs text-gray-500">{formatTime(log.logged_at)}</span>
                     <p className="text-sm text-gray-800 truncate">{logSummary(log)}</p>
@@ -288,7 +288,7 @@ export default function HealthLogButtons() {
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); handleLog(cat, log) }}
-                    className="p-1.5 text-gray-400 hover:text-[#2DD4BF] hover:bg-[#2DD4BF]/10 rounded-lg transition-colors"
+                    className="p-1.5 text-gray-400 hover:text-orange-500 hover:bg-orange-100 rounded-lg transition-colors"
                     title="수정"
                   >
                     <Pencil className="w-4 h-4" />
