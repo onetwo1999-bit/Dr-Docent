@@ -16,8 +16,8 @@ import HealthRadarChart from '../components/HealthRadarChart'
 import HealthLogButtons from '../components/HealthLogButtons'
 import CycleCareCard from '../components/CycleCareCard'
 import HealthReport from '../components/HealthReport'
-import DashboardRankingSection from '../components/DashboardRankingSection'
 import DashboardGroupSection from '../components/DashboardGroupSection'
+import OtterCard from '../components/OtterCard'
 import DashboardShell from '../components/DashboardShell'
 import DashboardGreeting from '../components/DashboardGreeting'
 
@@ -408,11 +408,11 @@ export default async function DashboardPage() {
             </div>
           </div>
 
+          {/* 🦦 수달 상태 카드 */}
+          <OtterCard />
+
           {/* 📝 오늘의 건강 기록 버튼 */}
           <HealthLogButtons />
-
-          {/* 🏆 실시간 건강 랭킹 */}
-          <DashboardRankingSection />
 
           {/* 👥 그룹 캘린더 */}
           <DashboardGroupSection />
