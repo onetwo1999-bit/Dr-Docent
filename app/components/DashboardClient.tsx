@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import OnboardingModal from './OnboardingModal'
-import AIActiveStatusPanel from './AIActiveStatusPanel'
 import AICoachToast from './AICoachToast'
 import { useAppContextStore } from '@/store/useAppContextStore'
 
@@ -57,9 +56,6 @@ export default function DashboardClient({ userId, userName, profile, children }:
 
       {/* AI 코치의 한마디 토스트 (상단) */}
       <AICoachToast />
-
-      {/* 닥터 도슨트 AI 상태창 (우측 하단) */}
-      <AIActiveStatusPanel />
       
       {/* 온보딩 모달 */}
       {showOnboarding && (
