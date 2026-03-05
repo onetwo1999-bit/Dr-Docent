@@ -181,6 +181,18 @@ export default async function DashboardPage() {
   const healthScore = profile ? calculateHealthScore({ ...profile, age: currentAge }) : 0
   const hypertension = hasHypertension(profile?.conditions, profile?.chronic_diseases)
 
+  // 📅 health_logs 기록 날짜 수 (KST distinct date 기준)
+  const { data: rawLogDates } = await supabase
+    .from('health_logs')
+    .select('logged_at')
+    .eq('user_id', user.id)
+  const loggedDays = new Set(
+    (rawLogDates || []).map(r =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(new Date(r.logged_at))
+    )
+  ).size
+  const isHealthDataUnlocked = loggedDays >= 7
+
   // 시간대별 인사말
   const hour = new Date().getHours()
   let greeting = '안녕하세요'
@@ -307,50 +319,82 @@ export default async function DashboardPage() {
           </div>
 
           {/* 종합 건강 점수 */}
-          <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
-                  <Activity className="w-4 h-4 text-orange-500" />
+          {isHealthDataUnlocked ? (
+            <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
+              <div className="flex items-start justify-between mb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                    <Activity className="w-4 h-4 text-orange-500" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-base md:text-lg font-bold text-gray-900">종합 건강 점수</h3>
+                    <p className="text-xs md:text-sm text-gray-500">Health Score</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <h3 className="text-base md:text-lg font-bold text-gray-900">종합 건강 점수</h3>
-                  <p className="text-xs md:text-sm text-gray-500">Health Score</p>
-                </div>
+                {hasProfile && (
+                  <div className={`text-2xl md:text-3xl font-bold flex-shrink-0 ${getScoreColor(healthScore)}`}>
+                    {healthScore}
+                    <span className="text-base md:text-lg font-normal text-gray-600">/100</span>
+                  </div>
+                )}
               </div>
-              {hasProfile && (
-                <div className={`text-2xl md:text-3xl font-bold flex-shrink-0 ${getScoreColor(healthScore)}`}>
-                  {healthScore}
-                  <span className="text-base md:text-lg font-normal text-gray-600">/100</span>
+              {hasProfile ? (
+                <div className="space-y-2">
+                  <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        healthScore >= 80 ? 'bg-green-500' :
+                        healthScore >= 60 ? 'bg-yellow-500' :
+                        healthScore >= 40 ? 'bg-orange-500' : 'bg-red-500'
+                      }`}
+                      style={{ width: `${healthScore}%` }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-5 gap-0.5 text-center text-[11px]">
+                    <div className="p-1"><div className="text-orange-400">💪</div><div className="text-gray-400">체력</div></div>
+                    <div className="p-1"><div className="text-orange-400">❤️</div><div className="text-gray-400">심장</div></div>
+                    <div className="p-1"><div className="text-orange-400">🦴</div><div className="text-gray-400">근골격</div></div>
+                    <div className="p-1"><div className="text-orange-400">🥗</div><div className="text-gray-400">영양</div></div>
+                    <div className="p-1"><div className="text-orange-400">🧘</div><div className="text-gray-400">대사</div></div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-2">
+                  <p className="text-gray-400 text-sm">기록을 시작하면 점수가 생겨요</p>
                 </div>
               )}
             </div>
-            {hasProfile ? (
-              <div className="space-y-2">
-                <div className="w-full bg-gray-100 rounded-full h-2.5 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${
-                      healthScore >= 80 ? 'bg-green-500' :
-                      healthScore >= 60 ? 'bg-yellow-500' :
-                      healthScore >= 40 ? 'bg-orange-500' : 'bg-red-500'
-                    }`}
-                    style={{ width: `${healthScore}%` }}
-                  />
+          ) : (
+            <div className="bg-[#FFF8F0] rounded-xl md:rounded-2xl p-5 border border-orange-100 shadow-sm">
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                  <Activity className="w-4 h-4 text-orange-400" />
                 </div>
-                <div className="grid grid-cols-5 gap-0.5 text-center text-[11px]">
-                  <div className="p-1"><div className="text-orange-400">💪</div><div className="text-gray-400">체력</div></div>
-                  <div className="p-1"><div className="text-orange-400">❤️</div><div className="text-gray-400">심장</div></div>
-                  <div className="p-1"><div className="text-orange-400">🦴</div><div className="text-gray-400">근골격</div></div>
-                  <div className="p-1"><div className="text-orange-400">🥗</div><div className="text-gray-400">영양</div></div>
-                  <div className="p-1"><div className="text-orange-400">🧘</div><div className="text-gray-400">대사</div></div>
+                <div>
+                  <h3 className="text-base font-bold text-gray-900">종합 건강 점수</h3>
+                  <p className="text-xs text-gray-500">Health Score</p>
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-2">
-                <p className="text-gray-400 text-sm">기록을 시작하면 점수가 생겨요</p>
+              <div className="flex flex-col items-center gap-3 py-2">
+                <span className="text-3xl">🔒</span>
+                <p className="text-sm font-semibold text-gray-700 text-center leading-snug">
+                  7일 기록하면 첫 번째 건강 지도가 그려져요
+                </p>
+                <div className="w-full">
+                  <div className="flex justify-between text-xs mb-1.5">
+                    <span className="text-gray-500">현재 <span className="text-orange-500 font-bold">{loggedDays}일</span> 기록</span>
+                    <span className="text-gray-400">목표 7일</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                    <div
+                      className="h-full bg-orange-400 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.round((loggedDays / 7) * 100)}%` }}
+                    />
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* 그룹 캘린더 */}
           <DashboardGroupSection />
@@ -362,19 +406,51 @@ export default async function DashboardPage() {
 
           {/* 건강 레이더 차트 */}
           {hasProfile && profile && (
-            <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
-              <div className="flex items-center justify-between mb-3">
-                <h2 className="text-base font-semibold flex items-center gap-2 text-gray-900">
-                  <Activity className="w-4 h-4 text-orange-500" />
-                  5대 건강 지표 레이더 차트
-                </h2>
-                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">실시간 분석</span>
+            isHealthDataUnlocked ? (
+              <div className="bg-white rounded-xl md:rounded-2xl p-4 border border-gray-100 shadow-sm">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-base font-semibold flex items-center gap-2 text-gray-900">
+                    <Activity className="w-4 h-4 text-orange-500" />
+                    5대 건강 지표 레이더 차트
+                  </h2>
+                  <span className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded-full">실시간 분석</span>
+                </div>
+                <HealthRadarChart profile={profile} />
+                <p className="text-xs text-gray-400 text-center mt-3">
+                  * 본 분석은 입력된 정보 기반의 참고용 지표이며, 정확한 진단은 전문의와 상담하세요.
+                </p>
               </div>
-              <HealthRadarChart profile={profile} />
-              <p className="text-xs text-gray-400 text-center mt-3">
-                * 본 분석은 입력된 정보 기반의 참고용 지표이며, 정확한 진단은 전문의와 상담하세요.
-              </p>
-            </div>
+            ) : (
+              <div className="bg-[#FFF8F0] rounded-xl md:rounded-2xl p-5 border border-orange-100 shadow-sm">
+                <div className="flex items-center gap-2.5 mb-4">
+                  <div className="w-9 h-9 rounded-lg bg-orange-50 flex items-center justify-center flex-shrink-0">
+                    <Activity className="w-4 h-4 text-orange-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">5대 건강 지표</h3>
+                    <p className="text-xs text-gray-500">Health Radar</p>
+                  </div>
+                </div>
+                <div className="flex flex-col items-center gap-3 py-2">
+                  <span className="text-3xl">🦦</span>
+                  <p className="text-sm font-semibold text-gray-700 text-center leading-snug">
+                    7일 기록하면 첫 번째 건강 지도가 그려져요
+                  </p>
+                  <div className="w-full">
+                    <div className="flex justify-between text-xs mb-1.5">
+                      <span className="text-gray-500">현재 <span className="text-orange-500 font-bold">{loggedDays}일</span> 기록</span>
+                      <span className="text-gray-400">목표 7일</span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full bg-orange-400 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.round((loggedDays / 7) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
           )}
 
           {/* 주요 액션 버튼 */}
