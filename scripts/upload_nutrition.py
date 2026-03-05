@@ -11,21 +11,19 @@ upload_nutrition.py
 """
 
 import os, re, sys
-from pathlib import Path
 import pandas as pd
-from dotenv import load_dotenv
 from supabase import create_client
 
-# ── 환경 변수 (.env.local 우선 로드) ──────────────────────────────
-_root = Path(__file__).resolve().parent.parent
-load_dotenv(_root / ".env.local")
+# ── 환경 변수 ──────────────────────────────────────────────────────
+SUPABASE_URL = "https://fddoizheudxxqescjpbq.supabase.co"
+SUPABASE_KEY = 
 
-SUPABASE_URL = os.environ.get("NEXT_PUBLIC_SUPABASE_URL", "")
-SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+FOOD_CSV  = "/Users/jaysmac/Downloads/식품의약품안전처_통합식품영양성분정보(음식)_20251229.csv"
+SUPP_CSV  = "/Users/jaysmac/Downloads/식품의약품안전처_건강기능식품영양성분정보_20251230.csv"
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("\u274c .env.local 에서 NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 를 찾을 수 없습니다.")
-    import sys; sys.exit(1)
+BATCH = 500
+
+sb = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
 # ── 공통 유틸 ──────────────────────────────────────────────────────
