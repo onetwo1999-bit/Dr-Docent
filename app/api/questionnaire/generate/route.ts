@@ -54,13 +54,18 @@ export async function POST(req: Request) {
     // 2. 최근 30일 health_logs 조회
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
-    const { data: healthLogs } = await supabase
+    const { data: healthLogs, error: logsError } = await supabase
       .from('health_logs')
-      .select('category, logged_at, notes, meal_description, exercise_type, duration_minutes, medication_name, sleep_duration_hours')
+      .select('category, logged_at, note, notes, meal_description, exercise_type, duration_minutes, medication_name, sleep_duration_hours')
       .eq('user_id', user.id)
       .gte('logged_at', thirtyDaysAgo.toISOString())
       .order('logged_at', { ascending: false })
-      .limit(100)
+      .limit(200)
+    if (logsError) {
+      console.error('[Questionnaire] health_logs 조회 실패:', logsError.message, logsError.code)
+    }
+    console.log(`[Questionnaire] health_logs 조회 결과: ${healthLogs?.length ?? 0}건 (user: ${user.id.slice(0, 8)})`)
+
 
     // 3. 복용 약물 (user_medications 있으면 사용, 없으면 profiles.medications 사용)
     let medicationsList = profile?.medications?.trim() || '없음'

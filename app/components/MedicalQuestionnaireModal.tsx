@@ -78,8 +78,23 @@ export default function MedicalQuestionnaireModal({ isOpen, onClose }: Props) {
 
   return (
     <>
-      {/* ───── 화면 모달 (인쇄 시 숨김) ───── */}
-      <div className="print:hidden">
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #questionnaire-print-area,
+          #questionnaire-print-area * { visibility: visible; }
+          #questionnaire-print-area {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 2rem;
+          }
+        }
+      `}</style>
+
+      {/* ───── 화면 모달 ───── */}
+      <div>
         {/* 오버레이 */}
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
@@ -258,30 +273,33 @@ export default function MedicalQuestionnaireModal({ isOpen, onClose }: Props) {
 
       {/* ───── 인쇄 전용 뷰 (화면에서는 숨김) ───── */}
       {step === 'result' && result && (
-        <div className="hidden print:block p-8 max-w-3xl mx-auto font-sans">
-          <div className="border-b-2 border-gray-800 pb-4 mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">
-              {activeTab === 'general' ? '문진표 (일반인용)' : 'Medical Questionnaire (의료진용)'}
-            </h1>
-            <p className="text-sm text-gray-600 mt-1">방문 목적: {result.visit_purpose}</p>
-            <p className="text-xs text-gray-400 mt-0.5">생성: {createdAtLabel}</p>
-          </div>
+        <div id="questionnaire-print-area" style={{ position: 'fixed', left: '-9999px', top: 0 }}>
+          <div style={{ fontFamily: 'sans-serif', maxWidth: '700px', margin: '0 auto' }}>
+            <div style={{ borderBottom: '2px solid #1f2937', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+              <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>닥터 도슨</p>
+              <h1 style={{ fontSize: '22px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
+                {activeTab === 'general' ? '문진표 (일반인용)' : 'Medical Questionnaire (의료진용)'}
+              </h1>
+              <p style={{ fontSize: '13px', color: '#374151', marginTop: '6px' }}>방문 목적: {result.visit_purpose}</p>
+              <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>생성일시: {createdAtLabel}</p>
+            </div>
 
-          {currentSections.map((section, i) => (
-            <div key={i} className="mb-6">
-              <h2 className="font-bold text-gray-900 text-base border-b border-gray-300 pb-1 mb-2">
-                {section.title}
-              </h2>
-              <p className="text-sm text-gray-700 whitespace-pre-line leading-relaxed">
-                {section.content}
+            {currentSections.map((section, i) => (
+              <div key={i} style={{ marginBottom: '1.5rem' }}>
+                <h2 style={{ fontWeight: 'bold', color: '#111827', fontSize: '14px', borderBottom: '1px solid #d1d5db', paddingBottom: '4px', marginBottom: '8px' }}>
+                  {section.title}
+                </h2>
+                <p style={{ fontSize: '13px', color: '#374151', whiteSpace: 'pre-line', lineHeight: '1.6' }}>
+                  {section.content}
+                </p>
+              </div>
+            ))}
+
+            <div style={{ marginTop: '3rem', paddingTop: '1rem', borderTop: '1px solid #d1d5db' }}>
+              <p style={{ fontSize: '10px', color: '#6b7280', textAlign: 'center' }}>
+                본 문서는 의료 진단 목적이 아니며, 정확한 진단은 전문의와 상담하세요
               </p>
             </div>
-          ))}
-
-          <div className="mt-12 pt-4 border-t border-gray-300">
-            <p className="text-xs text-gray-500 text-center">
-              본 문서는 의료 진단 목적이 아니며, 정확한 진단은 전문의와 상담하세요
-            </p>
           </div>
         </div>
       )}
