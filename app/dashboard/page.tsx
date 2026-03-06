@@ -18,6 +18,7 @@ import HealthReport from '../components/HealthReport'
 import DashboardGroupSection from '../components/DashboardGroupSection'
 import OtterCard from '../components/OtterCard'
 import DashboardShell from '../components/DashboardShell'
+import QuestionnaireButton from '../components/QuestionnaireButton'
 
 // 🔒 HTTP → HTTPS 변환 함수
 function toSecureUrl(url: string | null | undefined): string | null {
@@ -454,6 +455,9 @@ export default async function DashboardPage() {
               </div>
             )
           )}
+
+          {/* 문진표 발급 */}
+          <QuestionnaireButton />
 
           {/* 주요 액션 버튼 */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-3">
