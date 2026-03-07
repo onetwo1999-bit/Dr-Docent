@@ -468,48 +468,42 @@ export default function LandingPage() {
           섹션 4 — 핵심 기능 3가지
       ══════════════════════════════════════════ */}
       <section className="py-20 px-6 bg-white">
-        <div className="max-w-4xl mx-auto space-y-20">
-          {[
-            {
-              num: '01',
-              title: '기록',
-              desc: '매일의 식사, 운동, 수면, 복약을\n부담 없이 남깁니다',
-              icon: <PenLine className="w-10 h-10 text-orange-500" />,
-              reverse: false,
-            },
-            {
-              num: '02',
-              title: '분석',
-              desc: '누적된 기록이\n나만의 건강 패턴이 됩니다',
-              icon: <BarChart2 className="w-10 h-10 text-orange-500" />,
-              reverse: true,
-            },
-            {
-              num: '03',
-              title: '변환',
-              desc: '병원 방문 전 두 가지 문진표로 정리해드립니다\n나를 위한 버전, 의사를 위한 버전',
-              icon: <ClipboardList className="w-10 h-10 text-orange-500" />,
-              reverse: false,
-            },
-          ].map(({ num, title, desc, icon, reverse }) => (
-            <FadeSection key={num}>
-              <div className={`grid grid-cols-1 sm:grid-cols-2 items-center gap-16 ${reverse ? 'sm:[&>*:first-child]:order-2 sm:[&>*:last-child]:order-1' : ''}`}>
-                {/* 이미지 카드 */}
-                <div className="flex items-center justify-center">
-                  <div className="w-56 h-56 rounded-3xl bg-orange-50 border border-orange-100 flex items-center justify-center">
+        <div className="max-w-4xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            {[
+              {
+                num: '01',
+                title: '기록',
+                desc: '매일의 식사, 운동, 수면, 복약을\n부담 없이 남깁니다',
+                icon: <PenLine className="w-7 h-7 text-orange-500" />,
+              },
+              {
+                num: '02',
+                title: '분석',
+                desc: '누적된 기록이\n나만의 건강 패턴이 됩니다',
+                icon: <BarChart2 className="w-7 h-7 text-orange-500" />,
+              },
+              {
+                num: '03',
+                title: '변환',
+                desc: '병원 방문 전 두 가지 문진표로\n정리해드립니다',
+                icon: <ClipboardList className="w-7 h-7 text-orange-500" />,
+              },
+            ].map(({ num, title, desc, icon }, i) => (
+              <FadeSection key={num} delay={i * 120}>
+                <div className="bg-white rounded-2xl p-7 shadow-sm border border-gray-100 flex flex-col gap-4 h-full">
+                  <div className="w-12 h-12 rounded-xl bg-[#FFF8F0] flex items-center justify-center">
                     {icon}
                   </div>
+                  <div>
+                    <p className="text-xs font-bold text-orange-400 tracking-widest uppercase mb-1">{num}</p>
+                    <h3 className="font-bold text-gray-900 text-lg mb-2">{title}</h3>
+                    <p className="text-sm text-gray-500 leading-relaxed whitespace-pre-line">{desc}</p>
+                  </div>
                 </div>
-
-                {/* 텍스트 블록 */}
-                <div className="flex flex-col justify-center text-center sm:text-left">
-                  <p className="text-xs font-bold text-orange-400 tracking-widest uppercase mb-2">{num}</p>
-                  <h3 className="text-3xl font-bold text-gray-900 mb-4">{title}</h3>
-                  <p className="text-gray-500 text-base leading-relaxed whitespace-pre-line">{desc}</p>
-                </div>
-              </div>
-            </FadeSection>
-          ))}
+              </FadeSection>
+            ))}
+          </div>
         </div>
       </section>
 
