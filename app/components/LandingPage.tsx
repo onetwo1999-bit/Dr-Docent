@@ -493,13 +493,16 @@ export default function LandingPage() {
             },
           ].map(({ num, title, desc, icon, reverse }) => (
             <FadeSection key={num}>
-              <div className={`flex flex-col ${reverse ? 'sm:flex-row-reverse' : 'sm:flex-row'} items-center gap-10`}>
-                <div className="flex-1 flex items-center justify-center self-center">
-                  <div className="w-48 h-48 sm:w-56 sm:h-56 rounded-3xl bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0">
+              <div className={`grid grid-cols-1 sm:grid-cols-2 items-center gap-16 ${reverse ? 'sm:[&>*:first-child]:order-2 sm:[&>*:last-child]:order-1' : ''}`}>
+                {/* 이미지 카드 */}
+                <div className="flex items-center justify-center">
+                  <div className="w-56 h-56 rounded-3xl bg-orange-50 border border-orange-100 flex items-center justify-center">
                     {icon}
                   </div>
                 </div>
-                <div className="flex-1 flex flex-col justify-center self-center text-center sm:text-left">
+
+                {/* 텍스트 블록 */}
+                <div className="flex flex-col justify-center text-center sm:text-left">
                   <p className="text-xs font-bold text-orange-400 tracking-widest uppercase mb-2">{num}</p>
                   <h3 className="text-3xl font-bold text-gray-900 mb-4">{title}</h3>
                   <p className="text-gray-500 text-base leading-relaxed whitespace-pre-line">{desc}</p>
