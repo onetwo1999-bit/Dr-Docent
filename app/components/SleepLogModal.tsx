@@ -113,7 +113,7 @@ export default function SleepLogModal({ isOpen, onClose, onSuccess, initialData,
       <div className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-md bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-gray-100">
           <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Moon className="w-5 h-5 text-[#2DD4BF]" />
+            <Moon className="w-5 h-5 text-indigo-500" />
             수면 시간 입력
           </h3>
           <button type="button" onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-lg transition-colors">
@@ -157,7 +157,7 @@ export default function SleepLogModal({ isOpen, onClose, onSuccess, initialData,
                 step={HOURS_STEP}
                 value={hours}
                 onChange={e => setHours(Number(e.target.value))}
-                className="flex-1 h-3 rounded-full appearance-none bg-gray-200 accent-[#2DD4BF]"
+                className="flex-1 h-3 rounded-full appearance-none bg-gray-200 accent-indigo-500"
               />
               <input
                 type="number"
@@ -197,7 +197,7 @@ export default function SleepLogModal({ isOpen, onClose, onSuccess, initialData,
             type="button"
             onClick={handleSubmit}
             disabled={isSubmitting}
-            className="flex-1 py-3 rounded-xl bg-[#2DD4BF] text-white font-medium hover:bg-[#26b8a5] disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
+            className="flex-1 py-3 rounded-xl bg-indigo-500 text-white font-medium hover:bg-indigo-600 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
           >
             {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
             {isSubmitting ? '저장 중...' : '저장'}

@@ -1,13 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { 
-  ChevronLeft, 
-  ChevronRight, 
+import {
+  ChevronLeft,
+  ChevronRight,
   Calendar as CalendarIcon,
   Utensils,
   Dumbbell,
   Pill,
+  Moon,
   Heart,
   Plus,
   X,
@@ -22,9 +23,10 @@ import type { HealthLogItem } from './HealthLogButtons'
 import MealLogModal from './MealLogModal'
 import ExerciseLogModal from './ExerciseLogModal'
 import MedicationLogModal from './MedicationLogModal'
+import SleepLogModal from './SleepLogModal'
 
 type ViewType = 'month' | 'week' | 'day'
-type CategoryType = 'meal' | 'exercise' | 'medication' | 'cycle'
+type CategoryType = 'meal' | 'exercise' | 'medication' | 'sleep' | 'cycle'
 
 interface HealthLog {
   id: string
@@ -54,31 +56,36 @@ interface CalendarViewProps {
   userId: string
 }
 
-// 카테고리별 아이콘 및 색상 (시그니처 컬러 #2DD4BF 사용)
-const categoryConfig: Record<CategoryType, { 
+// 카테고리별 아이콘 및 색상
+const categoryConfig: Record<CategoryType, {
   icon: (props?: { className?: string }) => React.ReactNode
   color: string
   label: string
 }> = {
-  meal: { 
-    icon: (props) => <Utensils className={props?.className || "w-3.5 h-3.5"} />, 
-    color: 'text-[#2DD4BF]', 
-    label: '식사' 
+  meal: {
+    icon: (props) => <Utensils className={props?.className || "w-3.5 h-3.5"} />,
+    color: 'text-orange-400',
+    label: '식사'
   },
-  exercise: { 
-    icon: (props) => <Dumbbell className={props?.className || "w-3.5 h-3.5"} />, 
-    color: 'text-[#2DD4BF]', 
-    label: '운동' 
+  exercise: {
+    icon: (props) => <Dumbbell className={props?.className || "w-3.5 h-3.5"} />,
+    color: 'text-emerald-500',
+    label: '운동'
   },
-  medication: { 
-    icon: (props) => <Pill className={props?.className || "w-3.5 h-3.5"} />, 
-    color: 'text-[#2DD4BF]', 
-    label: '복약' 
+  medication: {
+    icon: (props) => <Pill className={props?.className || "w-3.5 h-3.5"} />,
+    color: 'text-sky-500',
+    label: '복약'
   },
-  cycle: { 
-    icon: (props) => <Heart className={props?.className || "w-3.5 h-3.5"} />, 
-    color: 'text-[#FF6B9D]', // 그날은 따뜻한 핑크 톤으로 구분
-    label: '그날' 
+  sleep: {
+    icon: (props) => <Moon className={props?.className || 'w-3.5 h-3.5'} />,
+    color: 'text-indigo-500',
+    label: '수면',
+  },
+  cycle: {
+    icon: (props) => <Heart className={props?.className || "w-3.5 h-3.5"} />,
+    color: 'text-[#FF6B9D]',
+    label: '그날'
   }
 }
 
@@ -756,9 +763,12 @@ export default function CalendarView({ userId }: CalendarViewProps) {
                   if (!config) return null
                   const isCycle = log.category === 'cycle'
                   const canEdit = !isCycle
+                  const sleepHours = (log as HealthLogItem).sleep_duration_hours
                   const description = isCycle
                     ? '그날 시작'
-                    : (log as HealthLogItem).notes || log.note || '내용 없음'
+                    : log.category === 'sleep' && sleepHours != null
+                      ? `${sleepHours}시간 수면`
+                      : (log as HealthLogItem).notes || log.note || '내용 없음'
                   return (
                     <div
                       key={log.id}
@@ -879,7 +889,7 @@ export default function CalendarView({ userId }: CalendarViewProps) {
         </div>
       )}
 
-      {/* 식사/운동/복약 상세 입력 모달 (캘린더 기록 추가 시) 또는 수정 모달 */}
+      {/* 식사/운동/복약/수면 상세 입력 모달 (캘린더 기록 추가 시) 또는 수정 모달 */}
       <MealLogModal
         isOpen={(!!editingLog && editModalCategory === 'meal') || (addDetailCategory === 'meal' && !!selectedDate)}
         onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
@@ -900,6 +910,13 @@ export default function CalendarView({ userId }: CalendarViewProps) {
         onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
         initialData={editModalCategory === 'medication' ? editingLog ?? undefined : undefined}
         defaultLoggedAt={addDetailCategory === 'medication' && selectedDate ? toLocalDateString(selectedDate) : undefined}
+      />
+      <SleepLogModal
+        isOpen={(!!editingLog && editModalCategory === 'sleep') || (addDetailCategory === 'sleep' && !!selectedDate)}
+        onClose={() => { setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null) }}
+        onSuccess={() => { fetchLogs(); setEditingLog(null); setEditModalCategory(null); setAddDetailCategory(null); window.dispatchEvent(new Event('health-log-updated')) }}
+        initialData={editModalCategory === 'sleep' ? editingLog ?? null : null}
+        defaultLoggedAt={addDetailCategory === 'sleep' && selectedDate ? toLocalDateString(selectedDate) : undefined}
       />
     </div>
   )
