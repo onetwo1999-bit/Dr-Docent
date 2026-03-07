@@ -3,6 +3,116 @@
 import { useState } from 'react'
 import { X, FileText, Printer, Loader2, ChevronRight, ArrowLeft, ClipboardList } from 'lucide-react'
 
+function printQuestionnaire(
+  sections: Array<{ title: string; content: string }>,
+  visitPurpose: string,
+  tabLabel: string,
+  createdAtLabel: string,
+) {
+  const sectionsHtml = sections
+    .map(
+      s => `
+      <div class="section">
+        <h2>${s.title}</h2>
+        <p>${s.content.replace(/\n/g, '<br/>')}</p>
+      </div>`,
+    )
+    .join('')
+
+  const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>문진표 - ${visitPurpose}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif;
+      font-size: 12pt;
+      line-height: 1.8;
+      margin: 20mm;
+      color: #1f2937;
+    }
+    .header {
+      border-bottom: 2px solid #1f2937;
+      padding-bottom: 12px;
+      margin-bottom: 24px;
+    }
+    .header .brand {
+      font-size: 10pt;
+      color: #6b7280;
+      margin-bottom: 4px;
+    }
+    .header h1 {
+      font-size: 18pt;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    .header .meta {
+      font-size: 10pt;
+      color: #374151;
+    }
+    .header .date {
+      font-size: 9pt;
+      color: #9ca3af;
+      margin-top: 2px;
+    }
+    .section {
+      margin-bottom: 20px;
+    }
+    .section h2 {
+      font-size: 11pt;
+      font-weight: bold;
+      border-bottom: 1px solid #d1d5db;
+      padding-bottom: 4px;
+      margin-bottom: 8px;
+    }
+    .section p {
+      font-size: 11pt;
+      color: #374151;
+    }
+    .footer {
+      position: fixed;
+      bottom: 15mm;
+      left: 20mm;
+      right: 20mm;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 6px;
+      font-size: 8pt;
+      color: #9ca3af;
+      text-align: center;
+    }
+    @media print {
+      body { margin: 20mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <p class="brand">닥터 도슨 (Dr. Docent)</p>
+    <h1>${tabLabel}</h1>
+    <p class="meta">방문 목적: ${visitPurpose}</p>
+    <p class="date">생성일시: ${createdAtLabel}</p>
+  </div>
+  ${sectionsHtml}
+  <div class="footer">
+    본 문서는 의료 진단 목적이 아니며, 정확한 진단은 전문의와 상담하세요
+  </div>
+  <script>
+    window.onload = function() {
+      window.print();
+      window.onafterprint = function() { window.close(); };
+    };
+  </script>
+</body>
+</html>`
+
+  const win = window.open('', '_blank', 'width=800,height=900')
+  if (!win) return
+  win.document.write(html)
+  win.document.close()
+}
+
 interface QSection {
   title: string
   content: string
@@ -78,21 +188,6 @@ export default function MedicalQuestionnaireModal({ isOpen, onClose }: Props) {
 
   return (
     <>
-      <style>{`
-        @media print {
-          body * { visibility: hidden; }
-          #questionnaire-print-area,
-          #questionnaire-print-area * { visibility: visible; }
-          #questionnaire-print-area {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            padding: 2rem;
-          }
-        }
-      `}</style>
-
       {/* ───── 화면 모달 ───── */}
       <div>
         {/* 오버레이 */}
@@ -256,7 +351,12 @@ export default function MedicalQuestionnaireModal({ isOpen, onClose }: Props) {
             {step === 'result' && result && (
               <div className="border-t border-gray-100 p-4 space-y-3 flex-shrink-0">
                 <button
-                  onClick={() => window.print()}
+                  onClick={() => printQuestionnaire(
+                    currentSections,
+                    result.visit_purpose,
+                    activeTab === 'general' ? '문진표 (일반인용)' : 'Medical Questionnaire (의료진용)',
+                    createdAtLabel,
+                  )}
                   className="w-full bg-gray-900 hover:bg-gray-800 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2 transition-colors"
                 >
                   <Printer className="w-4 h-4" />
@@ -271,38 +371,6 @@ export default function MedicalQuestionnaireModal({ isOpen, onClose }: Props) {
         </div>
       </div>
 
-      {/* ───── 인쇄 전용 뷰 (화면에서는 숨김) ───── */}
-      {step === 'result' && result && (
-        <div id="questionnaire-print-area" style={{ position: 'fixed', left: '-9999px', top: 0 }}>
-          <div style={{ fontFamily: 'sans-serif', maxWidth: '700px', margin: '0 auto' }}>
-            <div style={{ borderBottom: '2px solid #1f2937', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <p style={{ fontSize: '12px', color: '#6b7280', marginBottom: '4px' }}>닥터 도슨</p>
-              <h1 style={{ fontSize: '22px', fontWeight: 'bold', color: '#111827', margin: 0 }}>
-                {activeTab === 'general' ? '문진표 (일반인용)' : 'Medical Questionnaire (의료진용)'}
-              </h1>
-              <p style={{ fontSize: '13px', color: '#374151', marginTop: '6px' }}>방문 목적: {result.visit_purpose}</p>
-              <p style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>생성일시: {createdAtLabel}</p>
-            </div>
-
-            {currentSections.map((section, i) => (
-              <div key={i} style={{ marginBottom: '1.5rem' }}>
-                <h2 style={{ fontWeight: 'bold', color: '#111827', fontSize: '14px', borderBottom: '1px solid #d1d5db', paddingBottom: '4px', marginBottom: '8px' }}>
-                  {section.title}
-                </h2>
-                <p style={{ fontSize: '13px', color: '#374151', whiteSpace: 'pre-line', lineHeight: '1.6' }}>
-                  {section.content}
-                </p>
-              </div>
-            ))}
-
-            <div style={{ marginTop: '3rem', paddingTop: '1rem', borderTop: '1px solid #d1d5db' }}>
-              <p style={{ fontSize: '10px', color: '#6b7280', textAlign: 'center' }}>
-                본 문서는 의료 진단 목적이 아니며, 정확한 진단은 전문의와 상담하세요
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   )
 }
