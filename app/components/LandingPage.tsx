@@ -169,57 +169,53 @@ function CountUp({ target, suffix = '', duration = 1500 }: {
 ════════════════════════════════════════════ */
 const TYPING_LINES = [
   'Chief Complaint: 내과 외래 방문',
-  'Hx: HTN — ARB 계열 복용 중',
-  'Sleep avg: 6.8h/night (30d)',
-  'Activity: Aerobic 3×/wk, 40min',
-  'ROS: Headache freq ↑ (2wks)',
+  'Medical History: 고혈압 진단력, 통풍 병력',
+  'Current Medications: 콜킨정, 페북트정',
+  'Recent Activity: 주 3회 유산소, 평균 수면 6.8h',
+  'Review of Systems: 최근 2주 두통 빈도 증가',
 ]
+
+const sleep = (ms: number) => new Promise<void>(res => setTimeout(res, ms))
 
 function TypingEffect() {
   const { ref, visible } = useFadeIn(0.2)
-  const [lines, setLines] = useState<string[]>([])
-  const [currentLine, setCurrentLine] = useState('')
-  const [lineIdx, setLineIdx] = useState(0)
-  const [charIdx, setCharIdx] = useState(0)
+  const [displayLines, setDisplayLines] = useState<string[]>([])
+  const [currentText, setCurrentText] = useState('')
   const [cursorOn, setCursorOn] = useState(true)
-  const started = useRef(false)
 
-  // 커서 깜빡임
   useEffect(() => {
     const id = setInterval(() => setCursorOn(v => !v), 530)
     return () => clearInterval(id)
   }, [])
 
-  // 타이핑 시작
   useEffect(() => {
-    if (!visible || started.current) return
-    started.current = true
+    if (!visible) return
+    let cancelled = false
+
+    ;(async () => {
+      while (!cancelled) {
+        setDisplayLines([])
+        setCurrentText('')
+
+        for (let li = 0; li < TYPING_LINES.length && !cancelled; li++) {
+          const line = TYPING_LINES[li]
+          for (let c = 0; c <= line.length && !cancelled; c++) {
+            setCurrentText(line.slice(0, c))
+            await sleep(45)
+          }
+          if (!cancelled) {
+            await sleep(500)
+            setDisplayLines(prev => [...prev, line])
+            setCurrentText('')
+          }
+        }
+
+        if (!cancelled) await sleep(1200)
+      }
+    })()
+
+    return () => { cancelled = true }
   }, [visible])
-
-  // 한 글자씩 타이핑
-  useEffect(() => {
-    if (!started.current) return
-    if (lineIdx >= TYPING_LINES.length) return
-
-    const target = TYPING_LINES[lineIdx]
-
-    if (charIdx < target.length) {
-      const id = setTimeout(() => {
-        setCurrentLine(prev => prev + target[charIdx])
-        setCharIdx(c => c + 1)
-      }, 45)
-      return () => clearTimeout(id)
-    } else {
-      // 줄 완성 → 2.5초 후 다음 줄
-      const id = setTimeout(() => {
-        setLines(prev => [...prev, target])
-        setCurrentLine('')
-        setCharIdx(0)
-        setLineIdx(l => l + 1)
-      }, 2500)
-      return () => clearTimeout(id)
-    }
-  }, [charIdx, lineIdx])
 
   return (
     <div
@@ -228,15 +224,13 @@ function TypingEffect() {
     >
       <div className="text-[10px] text-gray-500 mb-3 uppercase tracking-widest">의료진용 · Medical Report</div>
       <div className="space-y-1.5">
-        {lines.map((line, i) => (
+        {displayLines.map((line, i) => (
           <p key={i} className="text-sm text-green-300/90">{line}</p>
         ))}
-        {lineIdx < TYPING_LINES.length && (
-          <p className="text-sm text-green-300/90">
-            {currentLine}
-            <span className={cursorOn ? 'opacity-100' : 'opacity-0'}>▋</span>
-          </p>
-        )}
+        <p className="text-sm text-green-300/90 min-h-[1.25rem]">
+          {currentText}
+          <span className={cursorOn ? 'opacity-100' : 'opacity-0'}>▋</span>
+        </p>
       </div>
     </div>
   )
@@ -500,12 +494,12 @@ export default function LandingPage() {
           ].map(({ num, title, desc, icon, reverse }) => (
             <FadeSection key={num}>
               <div className={`flex flex-col ${reverse ? 'sm:flex-row-reverse' : 'sm:flex-row'} items-center gap-10`}>
-                <div className="flex-1 flex items-center justify-center">
-                  <div className="w-48 h-48 sm:w-56 sm:h-56 rounded-3xl bg-orange-50 border border-orange-100 flex items-center justify-center">
+                <div className="flex-1 flex items-center justify-center self-center">
+                  <div className="w-48 h-48 sm:w-56 sm:h-56 rounded-3xl bg-orange-50 border border-orange-100 flex items-center justify-center flex-shrink-0">
                     {icon}
                   </div>
                 </div>
-                <div className="flex-1 text-center sm:text-left">
+                <div className="flex-1 flex flex-col justify-center self-center text-center sm:text-left">
                   <p className="text-xs font-bold text-orange-400 tracking-widest uppercase mb-2">{num}</p>
                   <h3 className="text-3xl font-bold text-gray-900 mb-4">{title}</h3>
                   <p className="text-gray-500 text-base leading-relaxed whitespace-pre-line">{desc}</p>
