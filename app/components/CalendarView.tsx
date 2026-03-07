@@ -148,11 +148,11 @@ export default function CalendarView({ userId }: CalendarViewProps) {
   const fetchLogs = async () => {
     setIsLoading(true)
     try {
-      const { startDate, endDate } = getDateRange()
-      
-      // health_logs 조회
+      const { startUtc, endUtc } = getDateRange()
+
+      // health_logs 조회 (로컬 날짜 기준 UTC 범위로 조회)
       const healthResponse = await fetch(
-        `/api/health-logs?start_date=${startDate}&end_date=${endDate}`
+        `/api/health-logs?start_utc=${encodeURIComponent(startUtc)}&end_utc=${encodeURIComponent(endUtc)}`
       )
       const healthData = await healthResponse.json()
       if (healthData.success) {
@@ -172,31 +172,36 @@ export default function CalendarView({ userId }: CalendarViewProps) {
     }
   }
 
-  // 날짜 범위 계산
+  // 날짜 범위 계산 — 로컬 날짜 기준 UTC 범위 반환 (KST 등 타임존 밀림 방지)
   const getDateRange = () => {
-    const year = currentDate.getFullYear()
-    const month = currentDate.getMonth()
-    
+    const y = currentDate.getFullYear()
+    const mo = currentDate.getMonth()
+    const d = currentDate.getDate()
+
+    const localMidnight = (year: number, month: number, day: number) =>
+      new Date(year, month, day, 0, 0, 0, 0).toISOString().slice(0, 19)
+    const localEndOfDay = (year: number, month: number, day: number) =>
+      new Date(year, month, day, 23, 59, 59, 999).toISOString().slice(0, 19)
+
     if (viewType === 'month') {
-      const start = new Date(year, month, 1)
-      const end = new Date(year, month + 1, 0)
+      const lastDay = new Date(y, mo + 1, 0).getDate()
       return {
-        startDate: start.toISOString().split('T')[0],
-        endDate: end.toISOString().split('T')[0]
+        startUtc: localMidnight(y, mo, 1),
+        endUtc: localEndOfDay(y, mo, lastDay),
       }
     } else if (viewType === 'week') {
-      const dayOfWeek = currentDate.getDay()
-      const start = new Date(currentDate)
-      start.setDate(currentDate.getDate() - dayOfWeek)
-      const end = new Date(start)
-      end.setDate(start.getDate() + 6)
+      const dow = currentDate.getDay()
+      const startDate = new Date(y, mo, d - dow)
+      const endDate = new Date(y, mo, d - dow + 6)
       return {
-        startDate: start.toISOString().split('T')[0],
-        endDate: end.toISOString().split('T')[0]
+        startUtc: localMidnight(startDate.getFullYear(), startDate.getMonth(), startDate.getDate()),
+        endUtc: localEndOfDay(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()),
       }
     } else {
-      const dateStr = currentDate.toISOString().split('T')[0]
-      return { startDate: dateStr, endDate: dateStr }
+      return {
+        startUtc: localMidnight(y, mo, d),
+        endUtc: localEndOfDay(y, mo, d),
+      }
     }
   }
 
